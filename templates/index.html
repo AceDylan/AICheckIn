@@ -1123,14 +1123,8 @@
       return false;
     }
 
-    // 兑换码仅缓存在本机浏览器（账号已改为服务端持久化，不再本地存）。
-    function rdLoadCache() {
-      try { $('rd_codes').value = localStorage.getItem('rd_codes') || ''; } catch (e) { /* 忽略 */ }
-    }
-    $('rd_codes').addEventListener('input', () => {
-      try { localStorage.setItem('rd_codes', $('rd_codes').value); } catch (e) { /* 忽略 */ }
-      rdUpdateStat();
-    });
+    // 兑换码不持久化：每次刷新页面输入框为空，避免误用上次残留的码。
+    $('rd_codes').addEventListener('input', rdUpdateStat);
 
     // 解析兑换码：支持「1. code」「2) code」「3、code」编号列表 + 空格/逗号分隔，去重保序。
     // 与后端 parse_codes 保持一致，避免行首编号被当成兑换码（之前 10 个码被拆成 20 个的根因）。
@@ -1189,12 +1183,23 @@
           </label>
           <div class="cfg-main">
             <div class="cfg-name">${escapeHtml(a.email)}</div>
-            <div class="cfg-sub">余额 <b style="color:var(--green)">${escapeHtml(String(bal))}</b><span>${stamp}</span></div>
+            <div class="cfg-sub">余额 <b id="rd_bal_${i}" style="color:var(--green)">${escapeHtml(String(bal))}</b><span id="rd_balts_${i}">${stamp}</span></div>
           </div>
           <div class="cfg-actions">${adminBtns(i)}</div>
         </div>`;
       }).join('');
       rdUpdateStat();
+    }
+
+    // 运行过程中实时把取到的余额更新到对应账号行下方（按邮箱匹配）。
+    function rdApplyBalance(email, balance) {
+      const idx = RD.accounts.findIndex(a => (a.email || '').toLowerCase() === String(email || '').toLowerCase());
+      if (idx < 0) return;
+      RD.accounts[idx].balance = balance;
+      RD.accounts[idx].balance_updated_at = '刚刚';
+      const b = $('rd_bal_' + idx), ts = $('rd_balts_' + idx);
+      if (b) b.textContent = balance;
+      if (ts) ts.textContent = ' · ↻ 刚刚';
     }
 
     $('rd_selAll').addEventListener('click', () => { document.querySelectorAll('#rd_accList .rd-sel').forEach(c => c.checked = true); rdUpdateStat(); });
@@ -1312,6 +1317,8 @@
         const data = await resp.json();
         if (!data.ok) { $('rd_error').textContent = data.error || '任务查询失败'; $('rd_error').style.display = 'block'; rdFinish(false); return; }
         rdRenderLogs(data.logs);
+        // 实时把余额事件更新到账号行（幂等，每轮重复应用无副作用）。
+        data.logs.forEach(l => { if (l.type === 'balance' && l.ok && l.balance) rdApplyBalance(l.account, l.balance); });
         const done = data.logs.filter(l => l.type === 'redeem').length;
         $('rd_progress').textContent = `已处理 ${done}/${data.total_codes} 个兑换码`;
         if (data.status === 'running') {
@@ -1376,7 +1383,6 @@
       $('rd_progress').textContent = '';
     });
 
-    rdLoadCache();
     loadRedeem();
 
     // 弹窗点击遮罩关闭
