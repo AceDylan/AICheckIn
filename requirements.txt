@@ -1,0 +1,4 @@
+Flask>=3.0,<4.0
+gunicorn>=22.0
+# curl_cffi 提供浏览器 TLS 指纹，规避部分 WAF；gyqd 在缺失时会自动回退到 urllib。
+curl_cffi>=0.7,<0.12

@@ -1,0 +1,121 @@
+{
+  "configs": [
+    {
+      "name": "烁",
+      "base_url": "https://elysiver.h-e.top",
+      "user_id": "29929",
+      "access_token": "xJUoNSbsOWSXufImlH7tzrof44iKWA==",
+      "enabled": true,
+      "turnstile": ""
+    },
+    {
+      "name": "jiujiu",
+      "base_url": "https://jiuuij.de5.net",
+      "user_id": "15184",
+      "access_token": "ncNj42xaifDeDcty1WYlsLbNnOw2ceE=",
+      "enabled": true,
+      "turnstile": ""
+    },
+    {
+      "name": "君",
+      "base_url": "https://muyuan.do",
+      "user_id": "32271",
+      "access_token": "+pxpCsKSHjJ3WXnF4Ddrq+uA0ujw",
+      "enabled": true,
+      "turnstile": ""
+    },
+    {
+      "name": "duck",
+      "base_url": "https://www.duckcoding.ai",
+      "user_id": "25376",
+      "access_token": "vlQNtKzviV3mc3APeBHu2pCcVLSqKGVy",
+      "enabled": true,
+      "turnstile": ""
+    },
+    {
+      "name": "薄荷",
+      "base_url": "https://x666.me/",
+      "user_id": "32701",
+      "access_token": "SnS3EVK1psIO7l/xBoZ6lgRgZ76EIx6e",
+      "enabled": false,
+      "turnstile": ""
+    },
+    {
+      "name": "ark",
+      "base_url": "https://windhub.cc",
+      "user_id": "23990",
+      "access_token": "rWPI4axrl0nYJvELW0f2486tzlYe",
+      "enabled": false,
+      "turnstile": ""
+    },
+    {
+      "name": "anyrouter",
+      "base_url": "https://anyrouter.top/",
+      "user_id": "141626",
+      "access_token": "yKKKGFNvj2tfOFHuTYbpL92wuhqD",
+      "enabled": false,
+      "turnstile": ""
+    },
+    {
+      "name": "42",
+      "base_url": "https://api.42w.shop",
+      "user_id": "12673",
+      "access_token": "fD2urHYbQ6ihxZ2T6wT0npEcoWHCzg==",
+      "enabled": true,
+      "turnstile": ""
+    }
+  ],
+  "proxy_url": "",
+  "schedule": {
+    "enabled": true,
+    "time": "08:00",
+    "last_run_date": "2026-06-17",
+    "last_run_time": "2026-06-17 08:00:21"
+  },
+  "bookmarks": [
+    {
+      "name": "yce",
+      "url": "https://yce.aigy.de/console"
+    },
+    {
+      "name": "百倍",
+      "url": "https://sub.100xlabs.space/dashboard"
+    },
+    {
+      "name": "中转",
+      "url": "https://claude-zhongzhuan.cloud/redeem"
+    },
+    {
+      "name": "Linux-hub",
+      "url": "https://hub.linux.do/"
+    },
+    {
+      "name": "reclaude",
+      "url": "https://reclaude.ai/app"
+    },
+    {
+      "name": "Monkey",
+      "url": "https://www.monkeycoding.club/dashboard"
+    },
+    {
+      "name": "Neko",
+      "url": "https://nekocode.ai/dashboard"
+    },
+    {
+      "name": "EXA",
+      "url": "https://dashboard.exa.ai/api-keys"
+    },
+    {
+      "name": "firecrawl",
+      "url": "https://www.firecrawl.dev/app/usage"
+    },
+    {
+      "name": "88code",
+      "url": "https://www.88code.ai/home-page"
+    },
+    {
+      "name": "图生视频",
+      "url": "https://l0veyou.com/image"
+    }
+  ]
+}

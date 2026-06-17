@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>签到与AI站点</title>
+  <!-- 内联 SVG favicon：紫色渐变圆角方块 + 白色对勾，匹配应用主题；# 需编码为 %23。 -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366f1'/><stop offset='1' stop-color='%238b5cf6'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M9 16.5l4.5 4.5L23 11' fill='none' stroke='%23ffffff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <style>
+    :root {
+      --bg: #070b16;
+      --bg-glow-1: rgba(99,102,241,0.16);
+      --bg-glow-2: rgba(139,92,246,0.14);
+      --card: rgba(22, 31, 51, 0.66);
+      --card-solid: #141d31;
+      --card-2: #1b2740;
+      --card-hover: #1f2c49;
+      --border: rgba(148, 163, 184, 0.14);
+      --border-strong: #2c3a57;
+      --text: #e6ebf5;
+      --muted: #8a98b5;
+      --muted-2: #61708f;
+      --accent: #6366f1;
+      --accent-2: #8b5cf6;
+      --accent-soft: rgba(99,102,241,0.14);
+      --green: #34d399;
+      --cyan: #22d3ee;
+      --gray: #64748b;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --radius: 16px;
+      --radius-lg: 20px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      --shadow-sm: 0 6px 20px rgba(0, 0, 0, 0.28);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(1000px 560px at 12% -8%, var(--bg-glow-1), transparent 58%),
+        radial-gradient(1000px 600px at 92% -4%, var(--bg-glow-2), transparent 55%),
+        var(--bg);
+      background-attachment: fixed;
+      color: var(--text);
+      min-height: 100vh;
+      padding: 30px 18px 72px;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    header { text-align: center; margin-bottom: 8px; }
+    header h1 {
+      font-size: 30px; font-weight: 800; letter-spacing: 0.2px;
+      background: linear-gradient(92deg, #c7d2fe 10%, #a78bfa 60%, #67e8f9 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    header p { color: var(--muted); margin-top: 9px; font-size: 14px; }
+
+    /* 标签页导航 */
+    .tabs { display: flex; gap: 6px; justify-content: center; margin: 26px 0 22px; flex-wrap: wrap; }
+    .tab {
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 12px; padding: 10px 22px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: all .18s ease; backdrop-filter: blur(10px);
+    }
+    .tab:hover { color: var(--text); border-color: var(--border-strong); transform: translateY(-1px); }
+    .tab.active { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; box-shadow: 0 8px 22px rgba(99,102,241,.4); }
+    .tab .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-left: 6px; vertical-align: middle; box-shadow: 0 0 8px var(--green); }
+
+    .view { display: none; animation: fade .28s ease; }
+    .view.active { display: block; }
+    @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    .panel {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 22px; box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .panel + .panel { margin-top: 18px; }
+    .panel-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .panel-title .sub { font-size: 12px; font-weight: 500; color: var(--muted); }
+
+    .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+    /* 总览仪表盘 */
+    .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .kpi {
+      background: linear-gradient(160deg, var(--card-solid), var(--card-2));
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; display: flex; align-items: center; gap: 14px;
+      box-shadow: var(--shadow-sm); position: relative; overflow: hidden;
+      transition: transform .16s ease, border-color .16s ease;
+    }
+    .kpi:hover { transform: translateY(-2px); border-color: var(--border-strong); }
+    .kpi::after { content: ""; position: absolute; right: -30px; top: -30px; width: 90px; height: 90px; border-radius: 50%; background: var(--accent-soft); filter: blur(6px); }
+    .kpi-icon { font-size: 26px; line-height: 1; z-index: 1; }
+    .kpi-body { z-index: 1; min-width: 0; }
+    .kpi-num { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 0.3px; }
+    .kpi-label { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    /* 一键签到：作为总览网格内、与各 KPI 同尺寸的可点击方框 */
+    .run-meta { text-align: center; min-height: 18px; margin-bottom: 14px; }
+    .kpi-run { cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; }
+    .kpi-run::after { background: rgba(255,255,255,.18); }
+    .kpi-run .kpi-num, .kpi-run .kpi-label { color: #fff; }
+    .kpi-run .kpi-label { opacity: .88; }
+    .kpi-run:hover { transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 8px 22px rgba(99,102,241,.4); }
+    .kpi-run.busy { cursor: default; opacity: .85; }
+
+    /* 按钮 */
+    .btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: none;
+      border-radius: 12px; padding: 12px 26px; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: filter .15s, transform .05s, box-shadow .15s; white-space: nowrap;
+      text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .btn:hover { filter: brightness(1.1); box-shadow: 0 8px 20px rgba(99,102,241,.35); }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { background: var(--gray); cursor: not-allowed; opacity: .6; box-shadow: none; }
+    .btn.ghost { background: var(--card-2); color: var(--text); border: 1px solid var(--border-strong); }
+    .btn.ghost:hover { filter: none; border-color: var(--accent); box-shadow: none; }
+    .btn.danger { background: rgba(248,113,113,.14); color: #fca5a5; border: 1px solid rgba(248,113,113,.4); }
+    .btn.danger:hover { background: rgba(248,113,113,.24); filter: none; box-shadow: none; }
+    .btn.sm { padding: 7px 14px; font-size: 13px; border-radius: 9px; }
+
+    .spinner {
+      display: inline-block; width: 15px; height: 15px; margin-right: 8px;
+      border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+      border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 输入 */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .input, select.input {
+      background: var(--card-2); border: 1px solid var(--border-strong);
+      color: var(--text); border-radius: 10px; padding: 11px 13px; font-size: 14px; width: 100%;
+    }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.18); }
+    .input::placeholder { color: var(--muted-2); }
+
+    .meta { color: var(--muted); font-size: 13px; }
+    .note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+    .warn-banner {
+      background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.32);
+      color: #fde68a; border-radius: 12px; padding: 11px 14px; font-size: 13px; margin-bottom: 16px; line-height: 1.6;
+    }
+    .error {
+      background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.4);
+      color: #fca5a5; border-radius: 10px; padding: 12px 14px; margin-top: 14px; font-size: 14px; width: 100%;
+    }
+    .toast-wrap { position: fixed; top: 18px; right: 18px; display: flex; flex-direction: column; gap: 10px; z-index: 99; }
+    .toast {
+      background: var(--card-solid); border: 1px solid var(--border-strong); border-left: 3px solid var(--accent);
+      color: var(--text); padding: 12px 16px; border-radius: 10px; font-size: 13px; box-shadow: var(--shadow);
+      animation: slidein .2s ease; max-width: 320px;
+    }
+    .toast.ok { border-left-color: var(--green); }
+    .toast.err { border-left-color: var(--red); }
+    @keyframes slidein { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+    /* 分区标题 */
+    .section-label { font-size: 13px; font-weight: 700; color: var(--muted); margin: 24px 2px 12px; display: flex; align-items: center; gap: 8px; letter-spacing: 0.3px; }
+    .section-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+    .section-label .count { font-weight: 600; color: var(--muted-2); }
+
+    /* 可点击网址 */
+    .url-link {
+      display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+      color: #93c5fd; font-size: 12.5px; text-decoration: none; word-break: break-all;
+      transition: color .15s;
+    }
+    .url-link:hover { color: #bfdbfe; text-decoration: underline; }
+    .url-link .arrow { font-size: 11px; opacity: .7; flex-shrink: 0; }
+
+    /* 启用配置卡片 */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 16px; }
+    .card {
+      background: var(--card-solid); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px; position: relative; overflow: hidden;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .card:hover { transform: translateY(-3px); border-color: var(--border-strong); background: var(--card-hover); }
+    .card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--gray); }
+    .card.green::before { background: var(--green); }
+    .card.cyan::before { background: var(--cyan); }
+    .card.red::before { background: var(--red); }
+    .card.gray::before { background: var(--gray); }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+    .card-name { font-size: 16px; font-weight: 700; }
+    .badge { font-size: 12px; font-weight: 700; padding: 3px 11px; border-radius: 999px; white-space: nowrap; }
+    .badge.green { background: rgba(52,211,153,.16); color: var(--green); }
+    .badge.cyan { background: rgba(34,211,238,.16); color: var(--cyan); }
+    .badge.red { background: rgba(248,113,113,.16); color: var(--red); }
+    .badge.gray { background: rgba(100,116,139,.22); color: var(--muted); }
+    .kvs { margin-top: 12px; }
+    .kv { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+    .kv:last-child { border-bottom: none; }
+    .kv .k { color: var(--muted); }
+    .kv .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .card-msg { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.5; word-break: break-all; }
+    .stamp { margin-top: 8px; font-size: 11px; color: var(--muted-2); }
+    .card-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+    /* 禁用配置分组（需手动签到） */
+    .disabled-group { border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 6px 14px; background: rgba(20,29,49,.4); }
+    .dlist { display: flex; flex-direction: column; }
+    .dcard { display: flex; align-items: center; gap: 14px; padding: 14px 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+    .dcard:last-child { border-bottom: none; }
+    .dcard-main { flex: 1; min-width: 200px; }
+    .dcard-main .card-name { font-size: 15px; display: flex; align-items: center; gap: 8px; }
+    .dmetrics { font-size: 12px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .dcard .card-actions { margin-top: 0; }
+
+    /* 配置管理列表 */
+    .cfg-list { display: flex; flex-direction: column; gap: 12px; }
+    .cfg-row {
+      background: var(--card-2); border: 1px solid var(--border); border-radius: 14px;
+      padding: 14px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      transition: border-color .15s;
+    }
+    .cfg-row:hover { border-color: var(--border-strong); }
+    .cfg-row.disabled { opacity: .58; }
+    .cfg-main { flex: 1; min-width: 200px; }
+    .cfg-name { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .cfg-sub { font-size: 12px; color: var(--muted); margin-top: 5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cfg-token { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: #a5b4fc; }
+    .cfg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* 开关 */
+    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; inset: 0; background: var(--gray); border-radius: 999px; transition: .2s; }
+    .slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: var(--green); }
+    .switch input:checked + .slider::before { transform: translateX(18px); }
+
+    /* 弹窗 */
+    .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.62); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; backdrop-filter: blur(3px); }
+    .modal-mask.show { display: flex; }
+    .modal { background: var(--card-solid); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 24px; width: 100%; max-width: 460px; box-shadow: var(--shadow); }
+    .modal h3 { font-size: 18px; margin-bottom: 18px; }
+    .modal .field + .field { margin-top: 14px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 22px; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .empty { text-align: center; color: var(--muted); padding: 48px 0; font-size: 14px; }
+
+    /* 历史 */
+    .hist-item { background: var(--card-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+    .hist-item + .hist-item { margin-top: 10px; }
+    .hist-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hist-time { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .hist-trigger { font-size: 11px; padding: 2px 9px; border-radius: 999px; background: var(--card); color: var(--muted); }
+    .hist-trigger.scheduled { color: #c4b5fd; background: rgba(139,92,246,.15); }
+    .hist-stats { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; margin-right: 6px; }
+    .pill.green { background: rgba(52,211,153,.16); color: var(--green); }
+    .pill.red { background: rgba(248,113,113,.16); color: var(--red); }
+    .pill.cyan { background: rgba(34,211,238,.16); color: var(--cyan); }
+
+    /* 兑换日志 */
+    .rd-log { display: flex; flex-direction: column; gap: 7px; max-height: 460px; overflow-y: auto; }
+    .rd-line {
+      display: flex; align-items: center; gap: 10px; font-size: 13px;
+      background: var(--card-2); border: 1px solid var(--border); border-left: 3px solid var(--gray);
+      border-radius: 9px; padding: 8px 12px; line-height: 1.45;
+    }
+    .rd-line.ok { border-left-color: var(--green); }
+    .rd-line.err { border-left-color: var(--red); }
+    .rd-line.info { border-left-color: var(--accent); }
+    .rd-ic { flex-shrink: 0; }
+    .rd-acc { color: #a5b4fc; font-family: ui-monospace, monospace; font-size: 12px; flex-shrink: 0; }
+    .rd-code { color: var(--muted); font-family: ui-monospace, monospace; font-size: 11.5px; word-break: break-all; }
+    .rd-msg { color: var(--text); flex: 1; min-width: 0; word-break: break-all; }
+    .rd-sum-box {
+      background: linear-gradient(160deg, var(--card-solid), var(--card-2)); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px; font-size: 13.5px; line-height: 1.7;
+    }
+    .rd-sum-box .pill { font-size: 12px; }
+
+    @media (max-width: 560px) {
+      .row-2 { grid-template-columns: 1fr; }
+      .cfg-actions { width: 100%; }
+      .kpi-num { font-size: 23px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toast-wrap" id="toasts"></div>
+
+  <div class="wrap">
+    <header>
+      <h1>✨ new-api 自动签到</h1>
+      <p>一键签到 · 在线管理配置 · 每日定时无人值守</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-view="checkin">🎯 签到</button>
+      <button class="tab" data-view="redeem">🎁 兑换</button>
+      <button class="tab" data-view="configs">⚙️ 配置管理</button>
+      <button class="tab" data-view="bookmarks">📌 收藏</button>
+      <button class="tab" data-view="history">📜 历史</button>
+      <button class="tab" data-view="settings">🔧 设置 <span class="dot" id="schedDot" style="display:none"></span></button>
+    </div>
+
+    <!-- ===== 签到 ===== -->
+    <div class="view active" id="view-checkin">
+      <div id="overview" class="overview" style="display:none"></div>
+
+      <div class="run-meta"><span class="meta" id="meta"></span></div>
+      <div id="error" class="error" style="display:none"></div>
+
+      <div id="disabledWrap" style="display:none">
+        <div class="section-label">🖐 需手动签到 <span class="count" id="disabledCount"></span></div>
+        <div class="disabled-group">
+          <div id="disabledCards" class="dlist"></div>
+        </div>
+      </div>
+
+      <div class="section-label" id="enabledLabel" style="display:none">🎯 启用配置 <span class="count" id="enabledCount"></span></div>
+      <div id="cards" class="cards"></div>
+
+      <div id="empty" class="empty">尚未配置任何平台，请到「配置管理」添加</div>
+    </div>
+
+    <!-- ===== 兑换（claude-zhongzhuan.cloud 批量兑换，账号轮换） ===== -->
+    <div class="view" id="view-redeem">
+      <div class="panel">
+        <div class="panel-title">🎁 批量兑换 <span class="sub">自动登录 → 兑换 → 账号轮换</span></div>
+        <div class="note" style="margin-top:0">
+          每个账号成功兑换达到设定次数后自动切换下一个账号；兑换码按顺序分配，每个码只用一次。
+          账号仅存于本机浏览器，不会上传保存（运行时才发送给后端）。
+        </div>
+
+        <div class="row-2" style="margin-top:16px; align-items:start">
+          <div class="field">
+            <label>账号（每行一个，格式：邮箱 密码，也支持 邮箱----密码 / 邮箱,密码）</label>
+            <textarea class="input" id="rd_accounts" rows="6"
+              style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
+              placeholder="user1@example.com  password1&#10;user2@example.com  password2"></textarea>
+          </div>
+          <div class="field">
+            <label>兑换码（每行一个，或用空格/逗号分隔，自动去重）</label>
+            <textarea class="input" id="rd_codes" rows="6"
+              style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
+              placeholder="08c79289cd6189fb836221baf9cf2d55&#10;88d6dd799d7d01c393a4cd859bf9432e"></textarea>
+          </div>
+        </div>
+
+        <div class="controls" style="margin-top:14px; align-items:flex-end">
+          <div class="field" style="max-width:200px">
+            <label>每个账号成功兑换次数</label>
+            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2">
+          </div>
+          <span class="meta" id="rd_stat"></span>
+          <span style="flex:1"></span>
+          <button class="btn" id="rd_run">🚀 开始兑换</button>
+        </div>
+        <div id="rd_error" class="error" style="display:none"></div>
+      </div>
+
+      <div class="panel" id="rd_resultPanel" style="display:none">
+        <div class="panel-title">
+          运行日志 <span class="sub" id="rd_progress"></span>
+          <span style="flex:1"></span>
+          <button class="btn sm ghost" id="rd_clear">清空</button>
+        </div>
+        <div id="rd_summary" style="margin-bottom:12px; display:none"></div>
+        <div id="rd_log" class="rd-log"></div>
+      </div>
+    </div>
+
+    <!-- ===== 配置管理 ===== -->
+    <div class="view" id="view-configs">
+      <div class="panel">
+        <div class="panel-title">
+          配置组 <span class="sub" id="cfgCount"></span>
+          <span style="flex:1"></span>
+          <button class="btn sm" id="addCfg">＋ 新增</button>
+          <button class="btn sm ghost" id="exportCfg">导出</button>
+          <button class="btn sm ghost" id="importCfg">导入</button>
+        </div>
+        <div id="cfgList" class="cfg-list"></div>
+        <div id="cfgEmpty" class="empty">暂无配置，点击「新增」添加第一组</div>
+      </div>
+    </div>
+
+    <!-- ===== 收藏（仅存储不签到的站点） ===== -->
+    <div class="view" id="view-bookmarks">
+      <div class="panel">
+        <div class="panel-title">
+          收藏站点 <span class="sub" id="bmCount"></span>
+          <span style="flex:1"></span>
+          <button class="btn sm" id="addBm">＋ 新增</button>
+        </div>
+        <div class="note" style="margin-top:0">仅收藏、不参与签到的站点。只需名称 + 网址，点击即可跳转。</div>
+        <div id="bmList" class="cfg-list" style="margin-top:16px"></div>
+        <div id="bmEmpty" class="empty">暂无收藏，点击「新增」添加站点</div>
+      </div>
+    </div>
+
+    <!-- ===== 历史 ===== -->
+    <div class="view" id="view-history">
+      <div class="panel">
+        <div class="panel-title">
+          运行历史 <span class="sub">最近 50 次（含定时任务）</span>
+          <span style="flex:1"></span>
+          <button class="btn sm ghost" id="refreshHist">刷新</button>
+        </div>
+        <div id="histList"></div>
+        <div id="histEmpty" class="empty">暂无历史记录</div>
+      </div>
+    </div>
+
+    <!-- ===== 设置 ===== -->
+    <div class="view" id="view-settings">
+      <div class="panel">
+        <div class="panel-title">⏰ 定时自动签到</div>
+        <div class="warn-banner" id="schedTzNote">
+          定时基于服务器本地时间。容器请在 docker-compose 中设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。
+        </div>
+        <div class="controls" style="align-items:flex-end">
+          <label class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></label>
+          <div class="field" style="max-width:140px">
+            <label>每天执行时间</label>
+            <input class="input" type="time" id="schedTime" value="08:30">
+          </div>
+          <button class="btn sm" id="saveSched">保存定时</button>
+        </div>
+        <div class="note" id="schedStatus"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">🌐 全局代理</div>
+        <div class="controls" style="align-items:flex-end">
+          <div class="field" style="flex:1; min-width:240px">
+            <label>代理地址（留空直连，支持 http/https/socks5）</label>
+            <input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890">
+          </div>
+          <button class="btn sm" id="saveProxy">保存代理</button>
+        </div>
+      </div>
+
+      <div class="panel" id="adminPanel" style="display:none">
+        <div class="panel-title">🔐 管理密码</div>
+        <div class="note" id="adminStatus"></div>
+        <div class="controls" style="margin-top:10px; align-items:flex-end">
+          <div class="field" style="flex:1; min-width:200px">
+            <label>输入管理密码以解锁配置编辑</label>
+            <input class="input" id="adminPwd" type="password" placeholder="管理密码" autocomplete="off">
+          </div>
+          <button class="btn sm" id="unlockBtn">解锁</button>
+          <button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 配置编辑弹窗 -->
+  <div class="modal-mask" id="cfgModal">
+    <div class="modal">
+      <h3 id="cfgModalTitle">新增配置</h3>
+      <div class="field"><label>名称 *</label><input class="input" id="m_name" placeholder="平台别名"></div>
+      <div class="field" style="margin-top:14px"><label>base_url *</label><input class="input" id="m_base" placeholder="https://example.com"></div>
+      <div class="row-2" style="margin-top:14px">
+        <div class="field"><label>user_id *</label><input class="input" id="m_uid" placeholder="数字 ID"></div>
+        <div class="field"><label>turnstile（可选）</label><input class="input" id="m_ts" placeholder="留空即可"></div>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>access_token * <span id="m_tokenHint" style="color:var(--muted)"></span></label>
+        <input class="input" id="m_token" placeholder="访问令牌" autocomplete="off">
+      </div>
+      <div class="controls" style="margin-top:14px">
+        <label class="switch"><input type="checkbox" id="m_enabled" checked><span class="slider"></span></label>
+        <span class="note" style="margin:0">启用此配置（关闭后改为手动签到，不参与一键/定时签到）</span>
+      </div>
+      <div id="m_error" class="error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="cfgCancel">取消</button>
+        <button class="btn sm" id="cfgSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入弹窗 -->
+  <div class="modal-mask" id="importModal">
+    <div class="modal">
+      <h3>导入配置</h3>
+      <div class="note" style="margin-top:0">粘贴 JSON（数组或 {proxy_url, configs, schedule} 对象）。导入将<b>覆盖</b>现有全部配置。</div>
+      <div class="field" style="margin-top:12px">
+        <textarea class="input" id="importText" rows="8" style="resize:vertical; font-family:ui-monospace,monospace; font-size:12px"></textarea>
+      </div>
+      <div id="import_error" class="error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="importCancel">取消</button>
+        <button class="btn sm" id="importDo">导入并覆盖</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 收藏编辑弹窗 -->
+  <div class="modal-mask" id="bmModal">
+    <div class="modal">
+      <h3 id="bmModalTitle">新增收藏</h3>
+      <div class="field"><label>名称 *</label><input class="input" id="bm_name" placeholder="站点名称"></div>
+      <div class="field" style="margin-top:14px"><label>URL *</label><input class="input" id="bm_url" placeholder="https://example.com"></div>
+      <div id="bm_error" class="error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="bmCancel">取消</button>
+        <button class="btn sm" id="bmSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== 全局状态 =====
+    let STATE = { configs: [], bookmarks: [], proxy_url: '', schedule: {}, admin_required: false, admin_unlocked: true };
+    let RESULTS = [];  // 与 configs 同序的本次签到结果；未签到项为空，回退到持久化指标快照。
+    const $ = (id) => document.getElementById(id);
+
+    function adminPwd() { return sessionStorage.getItem('gyqd_admin') || ''; }
+    function setAdminPwd(v) { v ? sessionStorage.setItem('gyqd_admin', v) : sessionStorage.removeItem('gyqd_admin'); }
+    function adminHeaders(base) {
+      const h = Object.assign({ 'Content-Type': 'application/json' }, base || {});
+      const p = adminPwd();
+      if (p) h['X-Admin-Password'] = p;
+      return h;
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    // 仅允许 http/https 链接，避免 javascript: 等危险协议注入 href。
+    function safeUrl(u) {
+      const s = String(u == null ? '' : u).trim();
+      return /^https?:\/\//i.test(s) ? s : '';
+    }
+    function urlLink(u) {
+      const safe = safeUrl(u);
+      if (!safe) return `<span class="url-link" style="color:var(--muted-2)">${escapeHtml(u)}</span>`;
+      const e = escapeHtml(safe);
+      return `<a class="url-link" href="${e}" target="_blank" rel="noopener noreferrer" title="${e}">${e}<span class="arrow">↗</span></a>`;
+    }
+    function parseNum(s) { const n = parseFloat(String(s == null ? '' : s).replace(/,/g, '')); return isFinite(n) ? n : 0; }
+    function fmtNum(n) { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+
+    // ===== Toast =====
+    function toast(msg, kind) {
+      const el = document.createElement('div');
+      el.className = 'toast ' + (kind || '');
+      el.textContent = msg;
+      $('toasts').appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2800);
+    }
+
+    // ===== 标签页切换 =====
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        tab.classList.add('active');
+        $('view-' + tab.dataset.view).classList.add('active');
+        if (tab.dataset.view === 'history') loadHistory();
+      });
+    });
+
+    // ===== 签到视图渲染 =====
+    // 取某配置的展示指标：优先本次签到结果，其次持久化快照，最后占位 “-”。
+    function displayMetrics(idx) {
+      const r = RESULTS[idx];
+      if (r) {
+        return {
+          quota_awarded: r.quota_awarded, wallet_balance: r.wallet_balance,
+          used_quota: r.used_quota, request_count: r.request_count, updated_at: null,
+        };
+      }
+      const m = (STATE.configs[idx] && STATE.configs[idx].metrics) || {};
+      const pick = (v) => (v == null || v === '') ? '-' : v;
+      return {
+        quota_awarded: pick(m.quota_awarded), wallet_balance: pick(m.wallet_balance),
+        used_quota: pick(m.used_quota), request_count: pick(m.request_count),
+        updated_at: m.updated_at || null,
+      };
+    }
+
+    // 顶部仪表盘：钱包合计 / 今日已签 / 待签·禁用 / 下次定时。
+    function renderOverview() {
+      const el = $('overview');
+      if (!STATE.configs.length) { el.style.display = 'none'; return; }
+      let walletSum = 0, signed = 0, enabled = 0, disabled = 0;
+      STATE.configs.forEach((c, i) => {
+        if (c.enabled) enabled++; else disabled++;
+        walletSum += parseNum(displayMetrics(i).wallet_balance);
+        const r = RESULTS[i];
+        const signedNow = r && (r.status === 'signed' || r.status === 'skipped');
+        // 已签判定：本次会话结果优先，否则采用后端持久化的「今日已签」，使刷新/重启后待签到仍准确。
+        if (c.enabled && (signedNow || c.checked_in_today)) signed++;
+      });
+      const pending = Math.max(0, enabled - signed);
+      const s = STATE.schedule || {};
+      const next = s.enabled ? (s.time || '--:--') : '未启用';
+      const kpi = (icon, num, label) =>
+        `<div class="kpi"><div class="kpi-icon">${icon}</div><div class="kpi-body"><div class="kpi-num">${escapeHtml(String(num))}</div><div class="kpi-label">${escapeHtml(label)}</div></div></div>`;
+      // 一键签到方框：与各 KPI 同尺寸，紧随「下次定时」之后，点击/回车即触发全量签到。
+      const runBox =
+        `<div class="kpi kpi-run" id="runBox" role="button" tabindex="0" onclick="runCheckin()"` +
+        ` onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();runCheckin();}">` +
+        `<div class="kpi-icon">🚀</div><div class="kpi-body">` +
+        `<div class="kpi-num" id="runBoxNum">一键签到</div>` +
+        `<div class="kpi-label" id="runBoxLabel">点击立即签到</div></div></div>`;
+      el.innerHTML = [
+        kpi('💰', fmtNum(walletSum), '钱包余额合计'),
+        kpi('✅', `${signed}/${enabled}`, '今日已签 / 启用'),
+        kpi('🕒', disabled ? `${pending} · ${disabled}` : `${pending}`, disabled ? '待签到 · 已禁用' : '待签到'),
+        kpi('⏰', next, '下次定时'),
+        runBox,
+      ].join('');
+      el.style.display = 'grid';
+    }
+
+    function enabledCardHtml(c, i) {
+      const r = RESULTS[i];
+      const m = displayMetrics(i);
+      // badge 优先用本次会话结果；刷新后回退到后端持久化的「今日已签」，否则显示未签到。
+      const badge = r
+        ? { label: r.status_label, color: r.color }
+        : (c.checked_in_today ? { label: '今日已签', color: 'green' } : { label: '未签到', color: 'gray' });
+      const stamp = (!r && m.updated_at) ? `<div class="stamp">↻ 上次获取 ${escapeHtml(m.updated_at)}</div>` : '';
+      return `<div class="card ${badge.color}" data-idx="${i}">
+        <div class="card-head">
+          <span class="card-name">${escapeHtml(c.name)}</span>
+          <span class="badge ${badge.color}">${escapeHtml(badge.label)}</span>
+        </div>
+        ${urlLink(c.base_url)}
+        <div class="kvs">
+          <div class="kv"><span class="k">签到奖励</span><span class="v">${escapeHtml(m.quota_awarded)}</span></div>
+          <div class="kv"><span class="k">钱包余额</span><span class="v">${escapeHtml(m.wallet_balance)}</span></div>
+          <div class="kv"><span class="k">已用额度</span><span class="v">${escapeHtml(m.used_quota)}</span></div>
+          <div class="kv"><span class="k">请求数</span><span class="v">${escapeHtml(m.request_count)}</span></div>
+        </div>
+        ${r && r.message ? `<div class="card-msg">${escapeHtml(r.message)}</div>` : ''}
+        ${stamp}
+        <div class="card-actions">
+          <button class="btn sm" onclick="checkinOne(${i})">签到</button>
+          <button class="btn sm ghost" onclick="testOne(${i})">测试</button>
+        </div>
+      </div>`;
+    }
+
+    function disabledItemHtml(c, i) {
+      const m = displayMetrics(i);
+      const safe = safeUrl(c.base_url);
+      const stamp = m.updated_at ? ` · ↻ ${escapeHtml(m.updated_at)}` : '';
+      const goBtn = safe
+        ? `<a class="btn sm" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">🔗 去签到</a>`
+        : `<button class="btn sm" disabled>无网址</button>`;
+      return `<div class="dcard" data-idx="${i}">
+        <div class="dcard-main">
+          <div class="card-name">${escapeHtml(c.name)} <span class="badge gray">禁用</span></div>
+          ${urlLink(c.base_url)}
+          <div class="dmetrics">余额 ${escapeHtml(m.wallet_balance)} · 已用 ${escapeHtml(m.used_quota)} · 请求 ${escapeHtml(m.request_count)}${stamp}</div>
+        </div>
+        <div class="card-actions">
+          ${goBtn}
+          <button class="btn sm ghost" onclick="testOne(${i})">测试</button>
+        </div>
+      </div>`;
+    }
+
+    // 渲染签到视图：启用项走卡片网格，禁用项归入「需手动签到」分组。
+    function renderCheckinCards() {
+      const cardsEl = $('cards'), emptyEl = $('empty');
+      const enabledIdx = [], disabledIdx = [];
+      STATE.configs.forEach((c, i) => { (c.enabled ? enabledIdx : disabledIdx).push(i); });
+
+      if (!STATE.configs.length) {
+        cardsEl.innerHTML = '';
+        $('enabledLabel').style.display = 'none';
+        $('disabledWrap').style.display = 'none';
+        emptyEl.style.display = 'block';
+        renderOverview();
+        return;
+      }
+      emptyEl.style.display = 'none';
+
+      $('enabledLabel').style.display = enabledIdx.length ? 'flex' : 'none';
+      $('enabledCount').textContent = enabledIdx.length ? `${enabledIdx.length} 组` : '';
+      cardsEl.innerHTML = enabledIdx.map(i => enabledCardHtml(STATE.configs[i], i)).join('');
+
+      if (disabledIdx.length) {
+        $('disabledWrap').style.display = 'block';
+        $('disabledCount').textContent = `${disabledIdx.length} 组 · 不参与一键/定时签到`;
+        $('disabledCards').innerHTML = disabledIdx.map(i => disabledItemHtml(STATE.configs[i], i)).join('');
+      } else {
+        $('disabledWrap').style.display = 'none';
+      }
+      renderOverview();
+    }
+
+    // ===== 签到动作 =====
+    // 设置一键签到方框的忙碌态（方框在 renderOverview 中动态重建，故每次取最新节点）。
+    function setRunBusy(busy) {
+      const box = $('runBox');
+      if (!box) return;
+      box.classList.toggle('busy', busy);
+      const num = $('runBoxNum'), label = $('runBoxLabel');
+      if (num) num.innerHTML = busy ? '<span class="spinner"></span>签到中' : '一键签到';
+      if (label) label.textContent = busy ? '请稍候…' : '点击立即签到';
+    }
+
+    async function runCheckin() {
+      const box = $('runBox');
+      if (box && box.classList.contains('busy')) return;  // 防止签到进行中重复触发。
+      $('error').style.display = 'none';
+      setRunBusy(true);
+      try {
+        const resp = await fetch('/api/checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await resp.json();
+        if (!data.ok) { $('error').textContent = data.error || ('HTTP ' + resp.status); $('error').style.display = 'block'; return; }
+        RESULTS = data.results.slice();
+        renderCheckinCards();
+        $('meta').textContent = `最近执行 ${data.time} · 本次额度 +${data.summary.quota_total}`;
+        toast('签到完成', 'ok');
+      } catch (e) {
+        $('error').textContent = '网络错误：' + e.message; $('error').style.display = 'block';
+      } finally {
+        setRunBusy(false);
+      }
+    }
+
+    async function checkinOne(idx) {
+      try {
+        const resp = await fetch('/api/checkin/' + idx, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '失败', 'err'); return; }
+        RESULTS[idx] = data.result;
+        renderCheckinCards();
+        toast(data.result.name + '：' + data.result.status_label, 'ok');
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+    async function testOne(idx) {
+      try {
+        const resp = await fetch('/api/test/' + idx, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await resp.json();
+        if (!data.ok) { toast('测试失败：' + (data.error || ''), 'err'); return; }
+        // 测试拿到的钱包指标本地写回快照，立即刷新卡片显示（后端也已持久化）。
+        const c = STATE.configs[idx];
+        if (c) {
+          c.metrics = Object.assign({}, c.metrics, {
+            wallet_balance: data.wallet_balance, used_quota: data.used_quota,
+            request_count: data.request_count, updated_at: '刚刚',
+          });
+        }
+        renderCheckinCards();
+        toast(`连接正常 · 余额 ${data.wallet_balance}`, 'ok');
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    // ===== 配置管理 =====
+    async function loadConfigs() {
+      try {
+        const resp = await fetch('/api/configs', { headers: adminHeaders() });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '加载配置失败', 'err'); return; }
+        STATE = data;
+        // 配置数量变化（增删/导入）会打乱结果索引对齐，重置本次结果。
+        if (RESULTS.length !== STATE.configs.length) RESULTS = [];
+        renderConfigs();
+        renderBookmarks();
+        renderSettings();
+        renderCheckinCards();
+      } catch (e) { toast('加载配置失败：' + e.message, 'err'); }
+    }
+
+    function canEdit() { return !STATE.admin_required || STATE.admin_unlocked; }
+
+    function renderConfigs() {
+      const list = $('cfgList'), empty = $('cfgEmpty');
+      $('cfgCount').textContent = `共 ${STATE.configs.length} 组`;
+      if (!STATE.configs.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+      list.innerHTML = STATE.configs.map((c, i) => `
+        <div class="cfg-row ${c.enabled ? '' : 'disabled'}">
+          <label class="switch" title="启用/禁用"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCfg(${i}, this.checked)"><span class="slider"></span></label>
+          <div class="cfg-main">
+            <div class="cfg-name">${escapeHtml(c.name)}</div>
+            <div class="cfg-sub">${urlLink(c.base_url)} <span>· uid ${escapeHtml(c.user_id)} ·</span> <span class="cfg-token" id="tok-${i}">${escapeHtml(c.token_masked)}</span></div>
+          </div>
+          <div class="cfg-actions">
+            <button class="btn sm ghost" onclick="revealToken(${i})">👁</button>
+            <button class="btn sm ghost" onclick="editCfg(${i})">编辑</button>
+            <button class="btn sm danger" onclick="deleteCfg(${i})">删除</button>
+          </div>
+        </div>`).join('');
+    }
+
+    function guardAdmin() {
+      if (canEdit()) return true;
+      toast('请先在「设置」中输入管理密码解锁', 'err');
+      return false;
+    }
+
+    async function revealToken(i) {
+      if (!guardAdmin()) return;
+      try {
+        const resp = await fetch(`/api/configs/${i}/secret`, { headers: adminHeaders() });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '失败', 'err'); return; }
+        const el = $('tok-' + i);
+        el.textContent = data.access_token;
+        setTimeout(() => { el.textContent = STATE.configs[i].token_masked; }, 8000);
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    async function toggleCfg(i, enabled) {
+      if (!guardAdmin()) { renderConfigs(); return; }
+      const c = STATE.configs[i];
+      try {
+        const resp = await fetch('/api/configs/' + i, {
+          method: 'PUT', headers: adminHeaders(),
+          body: JSON.stringify({ name: c.name, base_url: c.base_url, user_id: c.user_id, turnstile: c.turnstile, enabled, access_token: '' }),
+        });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '失败', 'err'); renderConfigs(); return; }
+        STATE.configs[i].enabled = enabled;
+        renderConfigs();
+        renderCheckinCards();  // 启用/禁用变化即时反映到签到视图的分组。
+      } catch (e) { toast('网络错误：' + e.message, 'err'); renderConfigs(); }
+    }
+
+    // ----- 编辑/新增弹窗 -----
+    let editIdx = -1;
+    function openCfgModal(idx) {
+      editIdx = idx;
+      $('m_error').style.display = 'none';
+      const isEdit = idx >= 0;
+      $('cfgModalTitle').textContent = isEdit ? '编辑配置' : '新增配置';
+      const c = isEdit ? STATE.configs[idx] : { name: '', base_url: '', user_id: '', turnstile: '', enabled: true };
+      $('m_name').value = c.name; $('m_base').value = c.base_url; $('m_uid').value = c.user_id;
+      $('m_ts').value = c.turnstile || ''; $('m_enabled').checked = c.enabled !== false;
+      $('m_token').value = '';
+      $('m_tokenHint').textContent = isEdit ? '（留空 = 不修改原 token）' : '';
+      $('cfgModal').classList.add('show');
+    }
+    function editCfg(i) { if (!guardAdmin()) return; openCfgModal(i); }
+    $('addCfg').addEventListener('click', () => { if (guardAdmin()) openCfgModal(-1); });
+    $('cfgCancel').addEventListener('click', () => $('cfgModal').classList.remove('show'));
+
+    $('cfgSave').addEventListener('click', async () => {
+      const body = {
+        name: $('m_name').value.trim(), base_url: $('m_base').value.trim(),
+        user_id: $('m_uid').value.trim(), turnstile: $('m_ts').value.trim(),
+        access_token: $('m_token').value.trim(), enabled: $('m_enabled').checked,
+      };
+      const url = editIdx >= 0 ? '/api/configs/' + editIdx : '/api/configs';
+      const method = editIdx >= 0 ? 'PUT' : 'POST';
+      try {
+        const resp = await fetch(url, { method, headers: adminHeaders(), body: JSON.stringify(body) });
+        const data = await resp.json();
+        if (!data.ok) { $('m_error').textContent = data.error || '保存失败'; $('m_error').style.display = 'block'; return; }
+        $('cfgModal').classList.remove('show');
+        toast('已保存', 'ok');
+        loadConfigs();
+      } catch (e) { $('m_error').textContent = '网络错误：' + e.message; $('m_error').style.display = 'block'; }
+    });
+
+    async function deleteCfg(i) {
+      if (!guardAdmin()) return;
+      if (!confirm(`确认删除配置「${STATE.configs[i].name}」？`)) return;
+      try {
+        const resp = await fetch('/api/configs/' + i, { method: 'DELETE', headers: adminHeaders() });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
+        toast('已删除', 'ok');
+        loadConfigs();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    // ===== 收藏站点（仅存储不签到的站点） =====
+    function renderBookmarks() {
+      const list = $('bmList'), empty = $('bmEmpty');
+      const bms = STATE.bookmarks || [];
+      $('bmCount').textContent = `共 ${bms.length} 个`;
+      if (!bms.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+      list.innerHTML = bms.map((b, i) => `
+        <div class="cfg-row">
+          <div class="cfg-main">
+            <div class="cfg-name">${escapeHtml(b.name)}</div>
+            <div class="cfg-sub">${urlLink(b.url)}</div>
+          </div>
+          <div class="cfg-actions">
+            <button class="btn sm ghost" onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''} title="置顶">置顶</button>
+            <button class="btn sm ghost" onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''} title="上移">↑</button>
+            <button class="btn sm ghost" onclick="moveBm(${i},'down')" ${i === bms.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+            <button class="btn sm ghost" onclick="editBm(${i})">编辑</button>
+            <button class="btn sm danger" onclick="deleteBm(${i})">删除</button>
+          </div>
+        </div>`).join('');
+    }
+
+    let bmEditIdx = -1;
+    function openBmModal(idx) {
+      bmEditIdx = idx;
+      $('bm_error').style.display = 'none';
+      const isEdit = idx >= 0;
+      $('bmModalTitle').textContent = isEdit ? '编辑收藏' : '新增收藏';
+      const b = isEdit ? STATE.bookmarks[idx] : { name: '', url: '' };
+      $('bm_name').value = b.name || ''; $('bm_url').value = b.url || '';
+      $('bmModal').classList.add('show');
+    }
+    function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
+    $('addBm').addEventListener('click', () => { if (guardAdmin()) openBmModal(-1); });
+    $('bmCancel').addEventListener('click', () => $('bmModal').classList.remove('show'));
+
+    $('bmSave').addEventListener('click', async () => {
+      const body = { name: $('bm_name').value.trim(), url: $('bm_url').value.trim() };
+      const url = bmEditIdx >= 0 ? '/api/bookmarks/' + bmEditIdx : '/api/bookmarks';
+      const method = bmEditIdx >= 0 ? 'PUT' : 'POST';
+      try {
+        const resp = await fetch(url, { method, headers: adminHeaders(), body: JSON.stringify(body) });
+        const data = await resp.json();
+        if (!data.ok) { $('bm_error').textContent = data.error || '保存失败'; $('bm_error').style.display = 'block'; return; }
+        $('bmModal').classList.remove('show');
+        toast('已保存', 'ok');
+        loadConfigs();
+      } catch (e) { $('bm_error').textContent = '网络错误：' + e.message; $('bm_error').style.display = 'block'; }
+    });
+
+    async function deleteBm(i) {
+      if (!guardAdmin()) return;
+      if (!confirm(`确认删除收藏「${STATE.bookmarks[i].name}」？`)) return;
+      try {
+        const resp = await fetch('/api/bookmarks/' + i, { method: 'DELETE', headers: adminHeaders() });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
+        toast('已删除', 'ok');
+        loadConfigs();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    // 收藏排序：action 为 'up'|'down'|'top'，本地重排后把完整新顺序提交后端持久化。
+    async function moveBm(i, action) {
+      if (!guardAdmin()) return;
+      const bms = STATE.bookmarks || [];
+      const n = bms.length;
+      const order = bms.map((_, k) => k);  // 旧下标的当前排列
+      if (action === 'top') {
+        if (i <= 0) return;
+        order.splice(i, 1);
+        order.unshift(i);
+      } else {
+        const j = action === 'up' ? i - 1 : i + 1;
+        if (j < 0 || j >= n) return;
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      try {
+        const resp = await fetch('/api/bookmarks/reorder', { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ order }) });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '排序失败', 'err'); return; }
+        STATE.bookmarks = order.map(k => bms[k]);  // 与后端顺序同步，立即刷新
+        renderBookmarks();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    // ----- 导入导出 -----
+    $('exportCfg').addEventListener('click', async () => {
+      if (!guardAdmin()) return;
+      try {
+        const resp = await fetch('/api/configs/export', { headers: adminHeaders() });
+        if (!resp.ok) { const d = await resp.json(); toast(d.error || '导出失败', 'err'); return; }
+        const data = await resp.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = 'gyqd-config.json'; a.click();
+        URL.revokeObjectURL(a.href);
+        toast('已导出', 'ok');
+      } catch (e) { toast('导出失败：' + e.message, 'err'); }
+    });
+    $('importCfg').addEventListener('click', () => { if (!guardAdmin()) return; $('import_error').style.display = 'none'; $('importText').value = ''; $('importModal').classList.add('show'); });
+    $('importCancel').addEventListener('click', () => $('importModal').classList.remove('show'));
+    $('importDo').addEventListener('click', async () => {
+      let parsed;
+      try { parsed = JSON.parse($('importText').value); }
+      catch (e) { $('import_error').textContent = 'JSON 解析失败：' + e.message; $('import_error').style.display = 'block'; return; }
+      try {
+        const resp = await fetch('/api/configs/import', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(parsed) });
+        const data = await resp.json();
+        if (!data.ok) { $('import_error').textContent = data.error || '导入失败'; $('import_error').style.display = 'block'; return; }
+        $('importModal').classList.remove('show');
+        toast(`已导入 ${data.count} 组`, 'ok');
+        loadConfigs();
+      } catch (e) { $('import_error').textContent = '网络错误：' + e.message; $('import_error').style.display = 'block'; }
+    });
+
+    // ===== 设置 =====
+    function renderSettings() {
+      const s = STATE.schedule || {};
+      $('schedEnabled').checked = !!s.enabled;
+      if (s.time) $('schedTime').value = s.time;
+      $('proxyUrl').value = STATE.proxy_url || '';
+      $('schedDot').style.display = s.enabled ? 'inline-block' : 'none';
+      let status = s.enabled ? `已启用：每天 ${s.time} 自动签到` : '未启用';
+      if (s.last_run_time) status += ` · 上次定时执行：${s.last_run_time}`;
+      if (!STATE.scheduler_running) status += '（注意：后台调度未运行，GYQD_SCHEDULER=0）';
+      $('schedStatus').textContent = status;
+
+      // 管理密码面板
+      $('adminPanel').style.display = STATE.admin_required ? 'block' : 'none';
+      if (STATE.admin_required) {
+        const unlocked = STATE.admin_unlocked;
+        $('adminStatus').textContent = unlocked ? '✅ 已解锁，可编辑配置' : '🔒 未解锁，配置为只读';
+        $('unlockBtn').style.display = unlocked ? 'none' : 'inline-block';
+        $('lockBtn').style.display = unlocked ? 'inline-block' : 'none';
+        $('adminPwd').style.display = unlocked ? 'none' : 'block';
+      }
+    }
+
+    $('saveSched').addEventListener('click', async () => {
+      if (!guardAdmin()) return;
+      const body = { schedule: { enabled: $('schedEnabled').checked, time: $('schedTime').value } };
+      await saveSettings(body, '定时已保存');
+    });
+    $('saveProxy').addEventListener('click', async () => {
+      if (!guardAdmin()) return;
+      await saveSettings({ proxy_url: $('proxyUrl').value.trim() }, '代理已保存');
+    });
+    async function saveSettings(body, okMsg) {
+      try {
+        const resp = await fetch('/api/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(body) });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '保存失败', 'err'); return; }
+        toast(okMsg, 'ok');
+        loadConfigs();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    // 管理密码解锁
+    $('unlockBtn').addEventListener('click', async () => {
+      const pwd = $('adminPwd').value;
+      setAdminPwd(pwd);
+      try {
+        const resp = await fetch('/api/auth', { method: 'POST', headers: adminHeaders() });
+        const data = await resp.json();
+        if (data.ok) { toast('解锁成功', 'ok'); loadConfigs(); }
+        else { setAdminPwd(''); toast('密码错误', 'err'); }
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    });
+    $('lockBtn').addEventListener('click', () => { setAdminPwd(''); loadConfigs(); toast('已锁定', 'ok'); });
+
+    // ===== 历史 =====
+    async function loadHistory() {
+      try {
+        const resp = await fetch('/api/history');
+        const data = await resp.json();
+        const list = $('histList'), empty = $('histEmpty');
+        if (!data.ok || !data.history.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+        empty.style.display = 'none';
+        list.innerHTML = data.history.map(h => {
+          const s = h.summary;
+          const trig = h.trigger === 'scheduled' ? '定时' : (h.trigger === 'manual-single' ? '单签' : '手动');
+          const trigCls = h.trigger === 'scheduled' ? 'scheduled' : '';
+          let stats = '';
+          if (h.error) stats = `<span class="pill red">错误</span> ${escapeHtml(h.error)}`;
+          else if (s) stats = `<span class="pill green">成功 ${s.signed}</span><span class="pill cyan">跳过 ${s.skipped}</span><span class="pill red">失败 ${s.failed}</span> · 本次额度 ${s.quota_total}`;
+          return `<div class="hist-item">
+            <div class="hist-head">
+              <span class="hist-time">${escapeHtml(h.time)}</span>
+              <span class="hist-trigger ${trigCls}">${trig}</span>
+            </div>
+            <div class="hist-stats">${stats}</div>
+          </div>`;
+        }).join('');
+      } catch (e) { toast('加载历史失败：' + e.message, 'err'); }
+    }
+    $('refreshHist').addEventListener('click', loadHistory);
+
+    // ===== 兑换 =====
+    let rdPolling = false;
+
+    // 账号/兑换码/次数仅缓存在本机浏览器，便于刷新后复用，不写入后端。
+    function rdLoadCache() {
+      try {
+        $('rd_accounts').value = localStorage.getItem('rd_accounts') || '';
+        $('rd_codes').value = localStorage.getItem('rd_codes') || '';
+        $('rd_limit').value = localStorage.getItem('rd_limit') || '2';
+      } catch (e) { /* localStorage 不可用时忽略 */ }
+    }
+    function rdSaveCache() {
+      try {
+        localStorage.setItem('rd_accounts', $('rd_accounts').value);
+        localStorage.setItem('rd_codes', $('rd_codes').value);
+        localStorage.setItem('rd_limit', $('rd_limit').value);
+      } catch (e) { /* 忽略 */ }
+    }
+    ['rd_accounts', 'rd_codes', 'rd_limit'].forEach(id => $(id).addEventListener('input', rdSaveCache));
+
+    // 实时统计有效账号/兑换码数量提示。
+    function rdUpdateStat() {
+      const accs = $('rd_accounts').value.split(/\n/).filter(l => l.trim()).length;
+      const codes = new Set($('rd_codes').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)).size;
+      $('rd_stat').textContent = (accs || codes) ? `${accs} 个账号 · ${codes} 个兑换码` : '';
+    }
+    ['rd_accounts', 'rd_codes'].forEach(id => $(id).addEventListener('input', rdUpdateStat));
+
+    function rdLogLineHtml(e) {
+      if (e.type === 'login') {
+        const cls = e.ok === true ? 'ok' : (e.ok === false ? 'err' : 'info');
+        const ic = e.ok === true ? '🔑' : (e.ok === false ? '⛔' : '⏳');
+        return `<div class="rd-line ${cls}"><span class="rd-ic">${ic}</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)}</span></div>`;
+      }
+      if (e.type === 'redeem') {
+        const cls = e.ok ? 'ok' : 'err';
+        const ic = e.ok ? '✅' : '❌';
+        const prog = e.account_success != null ? ` <span class="pill cyan">${e.account_success}/${e.limit}</span>` : '';
+        return `<div class="rd-line ${cls}"><span class="rd-ic">${ic}</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-code">${escapeHtml(e.code)}</span><span class="rd-msg">${escapeHtml(e.message)}${prog}</span></div>`;
+      }
+      if (e.type === 'account_done') {
+        return `<div class="rd-line info"><span class="rd-ic">🔄</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)} → 切换下一个账号</span></div>`;
+      }
+      return '';
+    }
+
+    function rdRenderLogs(logs) {
+      $('rd_log').innerHTML = logs.map(rdLogLineHtml).join('');
+    }
+
+    function rdRenderSummary(s) {
+      if (!s) { $('rd_summary').style.display = 'none'; return; }
+      const leftover = (s.leftover_codes && s.leftover_codes.length)
+        ? `<div style="margin-top:6px; color:var(--muted)">未使用兑换码 ${s.leftover_codes.length} 个</div>` : '';
+      $('rd_summary').innerHTML = `<div class="rd-sum-box">
+        <div>
+          <span class="pill green">成功 ${s.success}</span>
+          <span class="pill red">失败 ${s.fail}</span>
+          <span class="pill cyan">消费兑换码 ${s.codes_consumed}/${s.codes_total}</span>
+        </div>
+        <div style="margin-top:6px; color:var(--muted)">使用账号 ${s.accounts_used}/${s.accounts_total} · 每账号上限 ${s.per_account_limit} 次</div>
+        ${leftover}
+      </div>`;
+      $('rd_summary').style.display = 'block';
+    }
+
+    async function rdPoll(jobId) {
+      try {
+        const resp = await fetch('/api/redeem/status/' + jobId);
+        const data = await resp.json();
+        if (!data.ok) { $('rd_error').textContent = data.error || '任务查询失败'; $('rd_error').style.display = 'block'; rdFinish(false); return; }
+        rdRenderLogs(data.logs);
+        const done = data.logs.filter(l => l.type === 'redeem').length;
+        $('rd_progress').textContent = `已处理 ${done}/${data.total_codes} 个兑换码`;
+        if (data.status === 'running') {
+          setTimeout(() => rdPoll(jobId), 1000);
+          return;
+        }
+        if (data.status === 'error') {
+          $('rd_error').textContent = data.error || '兑换失败'; $('rd_error').style.display = 'block';
+        } else {
+          rdRenderSummary(data.summary);
+          toast('兑换完成', 'ok');
+        }
+        rdFinish(true);
+      } catch (e) {
+        $('rd_error').textContent = '网络错误：' + e.message; $('rd_error').style.display = 'block';
+        rdFinish(false);
+      }
+    }
+
+    function rdFinish() {
+      rdPolling = false;
+      const btn = $('rd_run');
+      btn.disabled = false;
+      btn.innerHTML = '🚀 开始兑换';
+    }
+
+    $('rd_run').addEventListener('click', async () => {
+      if (rdPolling) return;
+      $('rd_error').style.display = 'none';
+      const accounts = $('rd_accounts').value.split(/\n/).map(s => s.trim()).filter(Boolean);
+      const codes = $('rd_codes').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      const limit = parseInt($('rd_limit').value, 10) || 1;
+      if (!accounts.length) { $('rd_error').textContent = '请填写至少一个账号'; $('rd_error').style.display = 'block'; return; }
+      if (!codes.length) { $('rd_error').textContent = '请填写至少一个兑换码'; $('rd_error').style.display = 'block'; return; }
+
+      rdPolling = true;
+      const btn = $('rd_run');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>兑换中';
+      $('rd_resultPanel').style.display = 'block';
+      $('rd_summary').style.display = 'none';
+      $('rd_log').innerHTML = '';
+      $('rd_progress').textContent = '正在启动…';
+
+      try {
+        const resp = await fetch('/api/redeem/start', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accounts, codes, limit }),
+        });
+        const data = await resp.json();
+        if (!data.ok) { $('rd_error').textContent = data.error || '启动失败'; $('rd_error').style.display = 'block'; rdFinish(false); return; }
+        rdPoll(data.job_id);
+      } catch (e) {
+        $('rd_error').textContent = '网络错误：' + e.message; $('rd_error').style.display = 'block'; rdFinish(false);
+      }
+    });
+
+    $('rd_clear').addEventListener('click', () => {
+      $('rd_log').innerHTML = '';
+      $('rd_summary').style.display = 'none';
+      $('rd_resultPanel').style.display = 'none';
+      $('rd_progress').textContent = '';
+    });
+
+    rdLoadCache();
+    rdUpdateStat();
+
+    // 弹窗点击遮罩关闭
+    document.querySelectorAll('.modal-mask').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
+
+    // ===== 初始化 =====
+    loadConfigs();
+  </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+services:
+  aicheckin:
+    build:
+      # 上下文设为仓库根目录，才能 COPY 根目录的 gyqd.py。
+      context: .
+      dockerfile: Dockerfile
+    image: aicheckin:latest
+    container_name: aicheckin
+    # 公网部署建议改为 "127.0.0.1:5525:5525" 或内网 IP，仅本机/内网可访问。
+    ports:
+      - "5525:5525"
+    environment:
+      # 定时签到按服务器本地时间触发，设置时区以匹配北京时间。
+      TZ: "Asia/Shanghai"
+      # 配置文件路径（位于可写数据目录内）。
+      GYQD_CONFIG_FILE: "/app/data/config.json"
+      # 管理密码：保护配置增删改 / 查看真实 token / 定时设置。签到本身不需要密码。
+      # 公网暴露强烈建议设置；留空则任何人都能编辑配置。
+      GYQD_ADMIN_PASSWORD: "Zzz13579.."
+      # 后台定时调度开关，1 启用 0 关闭。
+      GYQD_SCHEDULER: "1"
+    volumes:
+      # 挂载可写数据目录：存放 config.json 与 history.json，支持页面在线增删改。
+      # 首次使用：mkdir -p data && cp config.example.json data/config.json
+      # 容器以 uid 1000(appuser) 运行，需保证宿主目录可写：chown -R 1000:1000 data
+      - ./data:/app/data
+    restart: unless-stopped
