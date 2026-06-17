@@ -92,6 +92,7 @@ def read_store():
                 "proxy_url": str(raw.get("proxy_url") or "").strip(),
                 "schedule": dict(raw.get("schedule") or {}),
                 "bookmarks": list(raw.get("bookmarks") or []),
+                "redeem": dict(raw.get("redeem") or {}),
             }
         else:
             raise RuntimeError("config.json 格式应为数组或对象")
@@ -101,6 +102,14 @@ def read_store():
     store.setdefault("proxy_url", "")
     store.setdefault("schedule", {})
     store.setdefault("bookmarks", [])  # 仅收藏不签到的站点：[{name, url}]
+    # 兑换配置：账号（含密码、余额快照）与每账号成功/失败次数上限。
+    redeem_cfg = dict(store.get("redeem") or {})
+    redeem_cfg.setdefault("accounts", [])
+    try:
+        redeem_cfg["limit"] = max(1, int(redeem_cfg.get("limit") or 2))
+    except (TypeError, ValueError):
+        redeem_cfg["limit"] = 2
+    store["redeem"] = redeem_cfg
     return store
 
 
@@ -174,6 +183,45 @@ def clean_bookmark(payload):
     if errors:
         raise ValueError("；".join(errors))
     return {"name": name, "url": url}
+
+
+def clean_redeem_account(payload, existing=None):
+    """校验并规整单个兑换账号；保留 email/password/enabled，沿用旧余额快照。
+
+    password 留空且有 existing 时沿用旧密码（编辑时不必重填）。
+    """
+    email = str(payload.get("email") or "").strip()
+    password = str(payload.get("password") or "").strip()
+    if not password and existing:
+        password = str(existing.get("password") or "")
+    enabled = bool(payload.get("enabled", True))
+
+    errors = []
+    if not email:
+        errors.append("email 必填")
+    if not password:
+        errors.append("password 必填")
+    if errors:
+        raise ValueError("；".join(errors))
+
+    item = {"email": email, "password": password, "enabled": enabled}
+    if existing:  # 保留余额快照，避免编辑账号时丢失上次获取的余额。
+        if existing.get("balance") is not None:
+            item["balance"] = existing.get("balance")
+        if existing.get("balance_updated_at"):
+            item["balance_updated_at"] = existing.get("balance_updated_at")
+    return item
+
+
+def public_redeem_account(item):
+    """对外暴露的兑换账号视图（不含密码明文）。"""
+    return {
+        "email": item.get("email", ""),
+        "enabled": bool(item.get("enabled", True)),
+        "has_password": bool(item.get("password")),
+        "balance": item.get("balance"),
+        "balance_updated_at": item.get("balance_updated_at"),
+    }
 
 
 def mask_token(token):
@@ -706,13 +754,38 @@ def api_bookmark_reorder():
 # 路由：批量兑换（claude-zhongzhuan.cloud 登录 + 兑换，账号轮换）
 # =========================
 
+def _persist_redeem_balance(email, balance):
+    """把某账号最新余额写回 config.json，刷新页面后仍可见。"""
+    email_key = str(email or "").strip().lower()
+    if not email_key:
+        return
+    try:
+        store = read_store()
+    except RuntimeError:
+        return
+    changed = False
+    for acc in store["redeem"]["accounts"]:
+        if str(acc.get("email") or "").strip().lower() == email_key:
+            acc["balance"] = balance
+            acc["balance_updated_at"] = _now_str()
+            changed = True
+    if changed:
+        try:
+            write_store(store)
+        except RuntimeError:
+            pass  # 余额持久化失败不影响兑换主流程。
+
+
 def _redeem_worker(job_id, accounts, codes, limit, proxy_url):
-    """后台线程：执行批量兑换，进度实时写入 job。"""
+    """后台线程：执行批量兑换，进度实时写入 job；余额事件落盘持久化。"""
     def progress(event):
         with _redeem_lock:
             job = _redeem_jobs.get(job_id)
             if job is not None:
                 job["logs"].append(event)
+        # 余额事件落库（在锁外执行，避免文件 IO 占用任务锁）。
+        if event.get("type") == "balance" and event.get("ok") and event.get("balance"):
+            _persist_redeem_balance(event.get("account"), event.get("balance"))
 
     try:
         result = redeem.run_redeem(accounts, codes, limit, proxy_url, progress=progress)
@@ -752,25 +825,143 @@ def _evict_old_redeem_jobs():
         _redeem_jobs.pop(jid, None)
 
 
+@app.get("/api/redeem/config")
+def api_redeem_config():
+    """兑换账号（脱敏，不含密码）+ 次数上限 + 管理态。开放访问。"""
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    rc = store["redeem"]
+    return jsonify({
+        "ok": True,
+        "accounts": [public_redeem_account(a) for a in rc["accounts"]],
+        "limit": rc["limit"],
+        "admin_required": bool(ADMIN_PASSWORD),
+        "admin_unlocked": admin_ok(),
+    })
+
+
+@app.post("/api/redeem/accounts")
+def api_redeem_account_create():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    try:
+        cleaned = clean_redeem_account(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        store = read_store()
+        store["redeem"]["accounts"].append(cleaned)
+        write_store(store)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "index": len(store["redeem"]["accounts"]) - 1})
+
+
+@app.put("/api/redeem/accounts/<int:idx>")
+def api_redeem_account_update(idx):
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    accounts = store["redeem"]["accounts"]
+    if idx < 0 or idx >= len(accounts):
+        return jsonify({"ok": False, "error": "账号不存在"}), 404
+    try:
+        accounts[idx] = clean_redeem_account(payload, existing=accounts[idx])
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        write_store(store)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/redeem/accounts/<int:idx>")
+def api_redeem_account_delete(idx):
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    accounts = store["redeem"]["accounts"]
+    if idx < 0 or idx >= len(accounts):
+        return jsonify({"ok": False, "error": "账号不存在"}), 404
+    accounts.pop(idx)
+    try:
+        write_store(store)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True})
+
+
+@app.put("/api/redeem/settings")
+def api_redeem_settings():
+    """设置每账号成功/失败次数上限（管理）。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    try:
+        limit = int(payload.get("limit"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "limit 需为整数"}), 400
+    if limit < 1:
+        return jsonify({"ok": False, "error": "limit 至少为 1"}), 400
+    try:
+        store = read_store()
+        store["redeem"]["limit"] = limit
+        write_store(store)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True})
+
+
 @app.post("/api/redeem/start")
 def api_redeem_start():
+    """启动批量兑换（开放，无需管理密码）。
+
+    账号取自服务端持久化配置，客户端仅传选中的账号下标 indices 与兑换码 codes；
+    次数上限同样取自服务端配置（修改它需管理密码）。
+    """
     payload = request.get_json(silent=True) or {}
-    accounts = redeem.parse_accounts(payload.get("accounts"))
     codes = redeem.parse_codes(payload.get("codes"))
-    try:
-        limit = max(1, int(payload.get("limit") or 1))
-    except (TypeError, ValueError):
-        limit = 1
-    if not accounts:
-        return jsonify({"ok": False, "error": "请填写至少一个有效账号（每行：邮箱 密码）"}), 400
     if not codes:
         return jsonify({"ok": False, "error": "请填写至少一个兑换码"}), 400
 
-    # 兑换默认走签到页配置的全局代理（中转站常需代理直连）。
     try:
-        proxy_url = read_store().get("proxy_url", "")
-    except RuntimeError:
-        proxy_url = ""
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    all_accounts = store["redeem"]["accounts"]
+    if not all_accounts:
+        return jsonify({"ok": False, "error": "尚未配置兑换账号，请先在「兑换账号」中添加（需管理密码）"}), 400
+
+    indices = payload.get("indices")
+    if isinstance(indices, list) and indices:
+        try:
+            picked = [all_accounts[int(i)] for i in indices if 0 <= int(i) < len(all_accounts)]
+        except (TypeError, ValueError):
+            picked = []
+    else:
+        picked = list(all_accounts)
+    accounts = [{"email": a.get("email"), "password": a.get("password")} for a in picked]
+    if not accounts:
+        return jsonify({"ok": False, "error": "请至少选择一个账号"}), 400
+
+    limit = store["redeem"]["limit"]
+    proxy_url = store.get("proxy_url", "")
 
     global _redeem_seq
     with _redeem_lock:

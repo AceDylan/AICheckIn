@@ -263,6 +263,10 @@
     .pill.red { background: rgba(248,113,113,.16); color: var(--red); }
     .pill.cyan { background: rgba(34,211,238,.16); color: var(--cyan); }
 
+    /* 兑换：账号选择复选框 */
+    .switch-cb { display: inline-flex; align-items: center; flex-shrink: 0; }
+    .switch-cb input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+
     /* 兑换日志 */
     .rd-log { display: flex; flex-direction: column; gap: 7px; max-height: 460px; overflow-y: auto; }
     .rd-line {
@@ -330,33 +334,39 @@
 
     <!-- ===== 兑换（claude-zhongzhuan.cloud 批量兑换，账号轮换） ===== -->
     <div class="view" id="view-redeem">
+      <!-- 账号管理（增删改 + 次数需管理员；勾选哪些账号参与本次兑换为自由选择） -->
       <div class="panel">
-        <div class="panel-title">🎁 批量兑换 <span class="sub">自动登录 → 兑换 → 账号轮换</span></div>
+        <div class="panel-title">
+          👥 兑换账号 <span class="sub" id="rd_accCount"></span>
+          <span style="flex:1"></span>
+          <span class="meta" style="display:flex; align-items:center; gap:6px">每账号次数
+            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2" style="width:64px; padding:7px 9px">
+          </span>
+          <button class="btn sm" id="rd_saveLimit">保存次数</button>
+          <button class="btn sm" id="rd_addAcc">＋ 新增账号</button>
+        </div>
         <div class="note" style="margin-top:0">
-          每个账号成功兑换达到设定次数后自动切换下一个账号；兑换码按顺序分配，每个码只用一次。
-          账号仅存于本机浏览器，不会上传保存（运行时才发送给后端）。
+          勾选参与本次兑换的账号（可自由选择）。每个账号成功兑换达到次数后自动切换下一个；失败不切换，会继续用后面的兑换码，直到兑换码用完。
+          <b>新增 / 编辑 / 删除账号、修改次数需管理员解锁</b>（在「🔧 设置」中输入管理密码）；兑换本身无需密码。
         </div>
-
-        <div class="row-2" style="margin-top:16px; align-items:start">
-          <div class="field">
-            <label>账号（每行一个，格式：邮箱 密码，也支持 邮箱----密码 / 邮箱,密码）</label>
-            <textarea class="input" id="rd_accounts" rows="6"
-              style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
-              placeholder="user1@example.com  password1&#10;user2@example.com  password2"></textarea>
-          </div>
-          <div class="field">
-            <label>兑换码（每行一个，或用空格/逗号分隔，自动去重）</label>
-            <textarea class="input" id="rd_codes" rows="6"
-              style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
-              placeholder="08c79289cd6189fb836221baf9cf2d55&#10;88d6dd799d7d01c393a4cd859bf9432e"></textarea>
-          </div>
+        <div style="margin:12px 0 8px; display:flex; gap:10px; align-items:center">
+          <button class="btn sm ghost" id="rd_selAll">全选</button>
+          <button class="btn sm ghost" id="rd_selNone">全不选</button>
         </div>
+        <div id="rd_accList" class="cfg-list"></div>
+        <div id="rd_accEmpty" class="empty">暂无账号，点击「新增账号」添加（需管理密码）</div>
+      </div>
 
-        <div class="controls" style="margin-top:14px; align-items:flex-end">
-          <div class="field" style="max-width:200px">
-            <label>每个账号成功兑换次数</label>
-            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2">
-          </div>
+      <!-- 兑换码 + 运行（开放） -->
+      <div class="panel">
+        <div class="panel-title">🎁 批量兑换 <span class="sub">勾选账号 · 粘贴兑换码 · 一键运行</span></div>
+        <div class="field">
+          <label>兑换码（每行一个，或用空格/逗号分隔，自动去重）</label>
+          <textarea class="input" id="rd_codes" rows="6"
+            style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
+            placeholder="08c79289cd6189fb836221baf9cf2d55&#10;88d6dd799d7d01c393a4cd859bf9432e"></textarea>
+        </div>
+        <div class="controls" style="margin-top:14px; align-items:center">
           <span class="meta" id="rd_stat"></span>
           <span style="flex:1"></span>
           <button class="btn" id="rd_run">🚀 开始兑换</button>
@@ -517,6 +527,27 @@
     </div>
   </div>
 
+  <!-- 兑换账号编辑弹窗 -->
+  <div class="modal-mask" id="rdAccModal">
+    <div class="modal">
+      <h3 id="rdAccModalTitle">新增账号</h3>
+      <div class="field"><label>邮箱 *</label><input class="input" id="rda_email" placeholder="user@example.com" autocomplete="off"></div>
+      <div class="field" style="margin-top:14px">
+        <label>密码 * <span id="rda_pwdHint" style="color:var(--muted)"></span></label>
+        <input class="input" id="rda_pwd" type="password" placeholder="登录密码" autocomplete="new-password">
+      </div>
+      <div class="controls" style="margin-top:14px">
+        <label class="switch"><input type="checkbox" id="rda_enabled" checked><span class="slider"></span></label>
+        <span class="note" style="margin:0">默认勾选参与兑换（仅作为默认选中状态）</span>
+      </div>
+      <div id="rda_error" class="error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="rdaCancel">取消</button>
+        <button class="btn sm" id="rdaSave">保存</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ===== 全局状态 =====
     let STATE = { configs: [], bookmarks: [], proxy_url: '', schedule: {}, admin_required: false, admin_unlocked: true };
@@ -566,6 +597,7 @@
         tab.classList.add('active');
         $('view-' + tab.dataset.view).classList.add('active');
         if (tab.dataset.view === 'history') loadHistory();
+        if (tab.dataset.view === 'redeem') loadRedeem();
       });
     });
 
@@ -1047,11 +1079,11 @@
       try {
         const resp = await fetch('/api/auth', { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
-        if (data.ok) { toast('解锁成功', 'ok'); loadConfigs(); }
+        if (data.ok) { toast('解锁成功', 'ok'); loadConfigs(); loadRedeem(); }
         else { setAdminPwd(''); toast('密码错误', 'err'); }
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     });
-    $('lockBtn').addEventListener('click', () => { setAdminPwd(''); loadConfigs(); toast('已锁定', 'ok'); });
+    $('lockBtn').addEventListener('click', () => { setAdminPwd(''); loadConfigs(); loadRedeem(); toast('已锁定', 'ok'); });
 
     // ===== 历史 =====
     async function loadHistory() {
@@ -1082,31 +1114,131 @@
 
     // ===== 兑换 =====
     let rdPolling = false;
+    let RD = { accounts: [], limit: 2, admin_required: false, admin_unlocked: true };
 
-    // 账号/兑换码/次数仅缓存在本机浏览器，便于刷新后复用，不写入后端。
+    function rdCanEdit() { return !RD.admin_required || RD.admin_unlocked; }
+    function guardRdAdmin() {
+      if (rdCanEdit()) return true;
+      toast('请先在「设置」中输入管理密码解锁', 'err');
+      return false;
+    }
+
+    // 兑换码仅缓存在本机浏览器（账号已改为服务端持久化，不再本地存）。
     function rdLoadCache() {
-      try {
-        $('rd_accounts').value = localStorage.getItem('rd_accounts') || '';
-        $('rd_codes').value = localStorage.getItem('rd_codes') || '';
-        $('rd_limit').value = localStorage.getItem('rd_limit') || '2';
-      } catch (e) { /* localStorage 不可用时忽略 */ }
+      try { $('rd_codes').value = localStorage.getItem('rd_codes') || ''; } catch (e) { /* 忽略 */ }
     }
-    function rdSaveCache() {
-      try {
-        localStorage.setItem('rd_accounts', $('rd_accounts').value);
-        localStorage.setItem('rd_codes', $('rd_codes').value);
-        localStorage.setItem('rd_limit', $('rd_limit').value);
-      } catch (e) { /* 忽略 */ }
-    }
-    ['rd_accounts', 'rd_codes', 'rd_limit'].forEach(id => $(id).addEventListener('input', rdSaveCache));
+    $('rd_codes').addEventListener('input', () => {
+      try { localStorage.setItem('rd_codes', $('rd_codes').value); } catch (e) { /* 忽略 */ }
+      rdUpdateStat();
+    });
 
-    // 实时统计有效账号/兑换码数量提示。
+    // 实时统计选中账号 / 有效兑换码数量提示。
     function rdUpdateStat() {
-      const accs = $('rd_accounts').value.split(/\n/).filter(l => l.trim()).length;
+      const sel = document.querySelectorAll('#rd_accList .rd-sel:checked').length;
       const codes = new Set($('rd_codes').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)).size;
-      $('rd_stat').textContent = (accs || codes) ? `${accs} 个账号 · ${codes} 个兑换码` : '';
+      $('rd_stat').textContent = (RD.accounts.length || codes) ? `已选 ${sel} 个账号 · ${codes} 个兑换码` : '';
     }
-    ['rd_accounts', 'rd_codes'].forEach(id => $(id).addEventListener('input', rdUpdateStat));
+
+    // 拉取服务端兑换配置（账号脱敏 + 余额 + 次数 + 管理态）。开放访问。
+    async function loadRedeem() {
+      try {
+        const resp = await fetch('/api/redeem/config', { headers: adminHeaders() });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '加载兑换配置失败', 'err'); return; }
+        RD = data;
+        renderRedeem();
+      } catch (e) { toast('加载兑换配置失败：' + e.message, 'err'); }
+    }
+
+    function renderRedeem() {
+      const list = $('rd_accList'), empty = $('rd_accEmpty');
+      $('rd_accCount').textContent = `共 ${RD.accounts.length} 个`;
+      // 次数输入与保存仅管理员可改。
+      $('rd_limit').value = RD.limit;
+      $('rd_limit').disabled = !rdCanEdit();
+      $('rd_saveLimit').style.display = rdCanEdit() ? 'inline-flex' : 'none';
+
+      if (!RD.accounts.length) { list.innerHTML = ''; empty.style.display = 'block'; rdUpdateStat(); return; }
+      empty.style.display = 'none';
+      const adminBtns = (i) => rdCanEdit()
+        ? `<button class="btn sm ghost" onclick="rdEditAcc(${i})">编辑</button>
+           <button class="btn sm danger" onclick="rdDeleteAcc(${i})">删除</button>`
+        : '';
+      list.innerHTML = RD.accounts.map((a, i) => {
+        const bal = (a.balance != null && a.balance !== '') ? a.balance : '—';
+        const stamp = a.balance_updated_at ? ` · ↻ ${escapeHtml(a.balance_updated_at)}` : '';
+        return `<div class="cfg-row">
+          <label class="switch-cb" title="选择参与本次兑换">
+            <input type="checkbox" class="rd-sel" data-idx="${i}" ${a.enabled !== false ? 'checked' : ''} onchange="rdUpdateStat()">
+          </label>
+          <div class="cfg-main">
+            <div class="cfg-name">${escapeHtml(a.email)}</div>
+            <div class="cfg-sub">余额 <b style="color:var(--green)">${escapeHtml(String(bal))}</b><span>${stamp}</span></div>
+          </div>
+          <div class="cfg-actions">${adminBtns(i)}</div>
+        </div>`;
+      }).join('');
+      rdUpdateStat();
+    }
+
+    $('rd_selAll').addEventListener('click', () => { document.querySelectorAll('#rd_accList .rd-sel').forEach(c => c.checked = true); rdUpdateStat(); });
+    $('rd_selNone').addEventListener('click', () => { document.querySelectorAll('#rd_accList .rd-sel').forEach(c => c.checked = false); rdUpdateStat(); });
+
+    // ----- 账号新增/编辑/删除（管理） -----
+    let rdEditIdx = -1;
+    function rdOpenAccModal(idx) {
+      rdEditIdx = idx;
+      $('rda_error').style.display = 'none';
+      const isEdit = idx >= 0;
+      $('rdAccModalTitle').textContent = isEdit ? '编辑账号' : '新增账号';
+      const a = isEdit ? RD.accounts[idx] : { email: '', enabled: true };
+      $('rda_email').value = a.email || '';
+      $('rda_pwd').value = '';
+      $('rda_enabled').checked = a.enabled !== false;
+      $('rda_pwdHint').textContent = isEdit ? '（留空 = 不修改原密码）' : '';
+      $('rdAccModal').classList.add('show');
+    }
+    function rdEditAcc(i) { if (guardRdAdmin()) rdOpenAccModal(i); }
+    $('rd_addAcc').addEventListener('click', () => { if (guardRdAdmin()) rdOpenAccModal(-1); });
+    $('rdaCancel').addEventListener('click', () => $('rdAccModal').classList.remove('show'));
+
+    $('rdaSave').addEventListener('click', async () => {
+      const body = { email: $('rda_email').value.trim(), password: $('rda_pwd').value, enabled: $('rda_enabled').checked };
+      const url = rdEditIdx >= 0 ? '/api/redeem/accounts/' + rdEditIdx : '/api/redeem/accounts';
+      const method = rdEditIdx >= 0 ? 'PUT' : 'POST';
+      try {
+        const resp = await fetch(url, { method, headers: adminHeaders(), body: JSON.stringify(body) });
+        const data = await resp.json();
+        if (!data.ok) { $('rda_error').textContent = data.error || '保存失败'; $('rda_error').style.display = 'block'; return; }
+        $('rdAccModal').classList.remove('show');
+        toast('已保存', 'ok');
+        loadRedeem();
+      } catch (e) { $('rda_error').textContent = '网络错误：' + e.message; $('rda_error').style.display = 'block'; }
+    });
+
+    async function rdDeleteAcc(i) {
+      if (!guardRdAdmin()) return;
+      if (!confirm(`确认删除账号「${RD.accounts[i].email}」？`)) return;
+      try {
+        const resp = await fetch('/api/redeem/accounts/' + i, { method: 'DELETE', headers: adminHeaders() });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
+        toast('已删除', 'ok');
+        loadRedeem();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
+
+    $('rd_saveLimit').addEventListener('click', async () => {
+      if (!guardRdAdmin()) return;
+      const limit = parseInt($('rd_limit').value, 10) || 1;
+      try {
+        const resp = await fetch('/api/redeem/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ limit }) });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '保存失败', 'err'); return; }
+        toast('次数已保存', 'ok');
+        loadRedeem();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    });
 
     function rdLogLineHtml(e) {
       if (e.type === 'login') {
@@ -1119,6 +1251,10 @@
         const ic = e.ok ? '✅' : '❌';
         const prog = e.account_success != null ? ` <span class="pill cyan">${e.account_success}/${e.limit}</span>` : '';
         return `<div class="rd-line ${cls}"><span class="rd-ic">${ic}</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-code">${escapeHtml(e.code)}</span><span class="rd-msg">${escapeHtml(e.message)}${prog}</span></div>`;
+      }
+      if (e.type === 'balance') {
+        const cls = e.ok ? 'info' : 'err';
+        return `<div class="rd-line ${cls}"><span class="rd-ic">💰</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)}</span></div>`;
       }
       if (e.type === 'account_done') {
         return `<div class="rd-line info"><span class="rd-ic">🔄</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)} → 切换下一个账号</span></div>`;
@@ -1181,10 +1317,10 @@
     $('rd_run').addEventListener('click', async () => {
       if (rdPolling) return;
       $('rd_error').style.display = 'none';
-      const accounts = $('rd_accounts').value.split(/\n/).map(s => s.trim()).filter(Boolean);
+      const indices = Array.from(document.querySelectorAll('#rd_accList .rd-sel:checked')).map(c => parseInt(c.dataset.idx, 10));
       const codes = $('rd_codes').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
-      const limit = parseInt($('rd_limit').value, 10) || 1;
-      if (!accounts.length) { $('rd_error').textContent = '请填写至少一个账号'; $('rd_error').style.display = 'block'; return; }
+      if (!RD.accounts.length) { $('rd_error').textContent = '尚未配置账号，请先新增账号（需管理密码）'; $('rd_error').style.display = 'block'; return; }
+      if (!indices.length) { $('rd_error').textContent = '请至少勾选一个账号'; $('rd_error').style.display = 'block'; return; }
       if (!codes.length) { $('rd_error').textContent = '请填写至少一个兑换码'; $('rd_error').style.display = 'block'; return; }
 
       rdPolling = true;
@@ -1199,7 +1335,7 @@
       try {
         const resp = await fetch('/api/redeem/start', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accounts, codes, limit }),
+          body: JSON.stringify({ indices, codes }),
         });
         const data = await resp.json();
         if (!data.ok) { $('rd_error').textContent = data.error || '启动失败'; $('rd_error').style.display = 'block'; rdFinish(false); return; }
@@ -1217,7 +1353,7 @@
     });
 
     rdLoadCache();
-    rdUpdateStat();
+    loadRedeem();
 
     // 弹窗点击遮罩关闭
     document.querySelectorAll('.modal-mask').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));

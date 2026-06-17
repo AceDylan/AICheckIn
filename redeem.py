@@ -21,6 +21,7 @@ import gyqd
 BASE_URL = "https://claude-zhongzhuan.cloud"
 LOGIN_URL = BASE_URL + "/api/v1/auth/login"
 REDEEM_URL = BASE_URL + "/api/v1/redeem"
+ME_URL = BASE_URL + "/api/v1/auth/me?timezone=Asia%2FShanghai"
 
 # 与浏览器一致的请求超时（秒）。
 TIMEOUT_SECONDS = 25
@@ -159,6 +160,52 @@ def login(fetch, email, password):
     raise RedeemError("登录失败（HTTP {0}）：{1}".format(status, msg))
 
 
+def _to_number(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _find_balance(obj, depth=0):
+    """递归查找 balance 数值字段。"""
+    if depth > 6:
+        return None
+    if isinstance(obj, dict):
+        if "balance" in obj:
+            n = _to_number(obj["balance"])
+            if n is not None:
+                return n
+        for val in obj.values():
+            found = _find_balance(val, depth + 1)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for val in obj:
+            found = _find_balance(val, depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
+def get_balance(fetch, token):
+    """调用 /auth/me 取余额，返回 (balance_str_or_None, message)；保留两位小数。"""
+    headers = _base_headers("/dashboard")
+    headers.pop("content-type", None)  # GET 无请求体。
+    headers["authorization"] = "Bearer " + token
+    status, parsed, raw = fetch("GET", ME_URL, headers, None)
+    bal = _find_balance(parsed)
+    if bal is None:
+        return None, (_extract_message(parsed, raw) or "HTTP {0}".format(status))
+    return "{0:.2f}".format(bal), ""
+
+
 def redeem_code(fetch, token, code):
     """用一个 token 兑换一个码，返回 (success, message)。"""
     headers = _base_headers("/redeem")
@@ -230,9 +277,12 @@ def parse_codes(raw_codes):
 def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
     """按账号轮换批量兑换。
 
-    - 每个账号成功兑换达到 per_account_limit 次后切换下一个账号。
+    - 每个账号成功兑换达到 per_account_limit 次后切换下一个账号；失败不切换，
+      仅消费该兑换码，账号会继续尝试后续兑换码，直到攒够 limit 次成功或兑换码用完。
     - codes 为共享队列，按顺序消费，每个码只尝试一次（无论成功失败都消费）。
     - 登录失败的账号跳过且不消费兑换码。
+    - 余额刷新：每次兑换成功后调用 /auth/me 取余额，以 type='balance' 事件上报
+      （含 balance 字段，供上层持久化）。
     - progress(event) 回调用于实时上报（可选）：event 为单条日志字典。
 
     返回 {logs, summary}。
@@ -264,6 +314,18 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
 
     fetch = build_fetcher(proxy_url)
 
+    def refresh_balance(token, email):
+        try:
+            bal, msg = get_balance(fetch, token)
+        except RedeemError as exc:
+            bal, msg = None, str(exc)
+        if bal is not None:
+            log({"type": "balance", "account": email, "ok": True,
+                 "balance": bal, "message": "余额 " + bal})
+        else:
+            log({"type": "balance", "account": email, "ok": False,
+                 "message": "余额获取失败：" + (msg or "")})
+
     code_idx = 0
     total_success = 0
     total_fail = 0
@@ -283,6 +345,8 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         log({"type": "login", "account": email, "ok": True, "message": "登录成功"})
 
         acc_success = 0
+        acc_fail = 0
+        # 成功达 limit 次才切换账号；失败不切换，继续消费后续兑换码，直到兑换码用完。
         while acc_success < limit and code_idx < len(codes):
             code = codes[code_idx]
             code_idx += 1
@@ -294,16 +358,19 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
                 acc_success += 1
                 total_success += 1
             else:
+                acc_fail += 1
                 total_fail += 1
             log({
                 "type": "redeem", "account": email, "code": code,
                 "ok": ok, "message": message,
-                "account_success": acc_success, "limit": limit,
+                "account_success": acc_success, "account_fail": acc_fail, "limit": limit,
             })
+            if ok:
+                refresh_balance(token, email)  # 每次兑换成功后取余额。
 
         log({
             "type": "account_done", "account": email, "ok": True,
-            "message": "本账号成功 {0}/{1} 次".format(acc_success, limit),
+            "message": "本账号成功 {0} 次 · 失败 {1} 次".format(acc_success, acc_fail),
         })
 
     leftover = codes[code_idx:]
