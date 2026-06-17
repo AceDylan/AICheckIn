@@ -22,6 +22,7 @@ services:
     volumes:
       # 挂载可写数据目录：存放 config.json 与 history.json，支持页面在线增删改。
       # 首次使用：mkdir -p data && cp config.example.json data/config.json
-      # 容器以 uid 1000(appuser) 运行，需保证宿主目录可写：chown -R 1000:1000 data
+      # 权限：容器入口（entrypoint.sh）会以 root 自动 chown 此目录给 appuser，无需手动处理；
+      # 若宿主启用了 user namespace 重映射导致仍不可写，可手动：chown -R 1000:1000 data
       - ./data:/app/data
     restart: unless-stopped
