@@ -260,18 +260,43 @@ def parse_accounts(raw_accounts):
     return out
 
 
+_CODE_ENUM_RE = re.compile(r"^\d{1,4}\s*[.)、:：]\s*")
+
+
 def parse_codes(raw_codes):
-    """规整兑换码：去空白、去重（保序）。兼容数组或多行字符串。"""
+    """规整兑换码：去空白、去重（保序）。
+
+    兼容：数组 / 多行字符串 / 形如「1. <code>」「2) <code>」「3、<code>」的编号列表
+    （先按行拆分，去掉行首编号，再按空白/逗号拆分），避免编号被当成兑换码。
+    """
+    lines = []
     if isinstance(raw_codes, str):
-        raw_codes = re.split(r"[\s,]+", raw_codes)
+        lines = raw_codes.splitlines()
+    elif isinstance(raw_codes, (list, tuple)):
+        for item in raw_codes:
+            lines.extend(str(item or "").splitlines())
     seen = set()
     out = []
-    for c in raw_codes or []:
-        code = str(c or "").strip()
-        if code and code not in seen:
-            seen.add(code)
-            out.append(code)
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        line = _CODE_ENUM_RE.sub("", line).strip()  # 去掉行首「1.」「2)」等编号。
+        for tok in re.split(r"[\s,]+", line):
+            code = tok.strip()
+            if code and code not in seen:
+                seen.add(code)
+                out.append(code)
     return out
+
+
+_RATE_LIMIT_HINTS = ("too many", "try again later", "rate limit", "频繁", "稍后", "later", "too many attempts")
+
+
+def _looks_rate_limited(message):
+    """判断兑换失败是否为服务端频率限制（而非兑换码本身无效）。"""
+    m = (message or "").lower()
+    return any(h in m for h in _RATE_LIMIT_HINTS)
 
 
 def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
@@ -279,10 +304,12 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
 
     - 每个账号成功兑换达到 per_account_limit 次后切换下一个账号；失败不切换，
       仅消费该兑换码，账号会继续尝试后续兑换码，直到攒够 limit 次成功或兑换码用完。
-    - codes 为共享队列，按顺序消费，每个码只尝试一次（无论成功失败都消费）。
-    - 登录失败的账号跳过且不消费兑换码。
-    - 余额刷新：每次兑换成功后调用 /auth/me 取余额，以 type='balance' 事件上报
-      （含 balance 字段，供上层持久化）。
+    - 频率限制保护：若兑换失败信息形似「too many failed attempts / try again later」，
+      视为服务端限流——**不消费该兑换码**，并停止整个流程（不再切换下一个账号）。
+    - 全部失败保护：若某账号实际兑换且 0 次成功，停止整个流程（不再切换下一个账号）。
+    - codes 为共享队列，按顺序消费；登录失败的账号跳过且不消费兑换码。
+    - 余额刷新：每次兑换成功后取一次；流程结束后对**所有选中账号**补取一次余额
+      （未参与兑换的账号也会登录取余额），以 type='balance' 事件上报供上层持久化。
     - progress(event) 回调用于实时上报（可选）：event 为单条日志字典。
 
     返回 {logs, summary}。
@@ -313,6 +340,8 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         raise RedeemError("未提供有效兑换码")
 
     fetch = build_fetcher(proxy_url)
+    tokens = {}            # email -> token，供结束后补取余额复用，避免重复登录。
+    balance_done = set()   # 已取过余额的 email，避免重复取。
 
     def refresh_balance(token, email):
         try:
@@ -325,15 +354,19 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         else:
             log({"type": "balance", "account": email, "ok": False,
                  "message": "余额获取失败：" + (msg or "")})
+        balance_done.add(email)
 
     code_idx = 0
     total_success = 0
     total_fail = 0
     accounts_used = 0
+    stop = False
+    stop_reason = ""
 
+    # ---- 阶段一：兑换轮换 ----
     for acc in accounts:
-        if code_idx >= len(codes):
-            break  # 兑换码已用尽，剩余账号无需登录。
+        if stop or code_idx >= len(codes):
+            break  # 已触发停止，或兑换码用尽。
         accounts_used += 1
         email = acc["email"]
         log({"type": "login", "account": email, "ok": None, "message": "正在登录…"})
@@ -342,18 +375,30 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         except RedeemError as exc:
             log({"type": "login", "account": email, "ok": False, "message": str(exc)})
             continue
+        tokens[email] = token
         log({"type": "login", "account": email, "ok": True, "message": "登录成功"})
 
         acc_success = 0
         acc_fail = 0
-        # 成功达 limit 次才切换账号；失败不切换，继续消费后续兑换码，直到兑换码用完。
+        rate_limited = False
         while acc_success < limit and code_idx < len(codes):
             code = codes[code_idx]
-            code_idx += 1
             try:
                 ok, message = redeem_code(fetch, token, code)
             except RedeemError as exc:
                 ok, message = False, str(exc)
+
+            if (not ok) and _looks_rate_limited(message):
+                # 限流：不消费该码（code_idx 不前进），停止整个流程。
+                log({"type": "redeem", "account": email, "code": code, "ok": False,
+                     "message": message + "（触发频率限制，已暂停，未消耗此兑换码）",
+                     "account_success": acc_success, "account_fail": acc_fail, "limit": limit})
+                rate_limited = True
+                stop = True
+                stop_reason = "rate_limited"
+                break
+
+            code_idx += 1  # 非限流失败/成功才真正消费该码。
             if ok:
                 acc_success += 1
                 total_success += 1
@@ -368,10 +413,40 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
             if ok:
                 refresh_balance(token, email)  # 每次兑换成功后取余额。
 
+        # 账号收尾：失败场景补取余额 + 判断是否停止后续账号。
+        if rate_limited:
+            if email not in balance_done:
+                refresh_balance(token, email)
+            tail = "（触发频率限制，已停止后续账号）"
+        elif acc_success == 0 and acc_fail > 0:
+            # 全部失败（非限流）：取余额并停止，不切换下一个账号。
+            refresh_balance(token, email)
+            stop = True
+            stop_reason = stop_reason or "all_failed"
+            tail = "（全部失败，已停止后续账号）"
+        else:
+            tail = ""
         log({
             "type": "account_done", "account": email, "ok": True,
-            "message": "本账号成功 {0} 次 · 失败 {1} 次".format(acc_success, acc_fail),
+            "message": "本账号成功 {0} 次 · 失败 {1} 次{2}".format(acc_success, acc_fail, tail),
         })
+
+    # ---- 阶段二：对所有选中账号补取余额（含未参与兑换的账号）----
+    for acc in accounts:
+        email = acc["email"]
+        if email in balance_done:
+            continue
+        token = tokens.get(email)
+        if token is None:
+            try:
+                token = login(fetch, email, acc["password"])
+                tokens[email] = token
+            except RedeemError as exc:
+                log({"type": "balance", "account": email, "ok": False,
+                     "message": "余额获取失败（登录失败）：" + str(exc)})
+                balance_done.add(email)
+                continue
+        refresh_balance(token, email)
 
     leftover = codes[code_idx:]
     summary = {
@@ -383,5 +458,7 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         "fail": total_fail,
         "leftover_codes": leftover,
         "per_account_limit": limit,
+        "stopped": stop,
+        "stop_reason": stop_reason,
     }
     return {"logs": logs, "summary": summary}

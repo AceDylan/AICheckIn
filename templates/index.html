@@ -1132,10 +1132,26 @@
       rdUpdateStat();
     });
 
+    // 解析兑换码：支持「1. code」「2) code」「3、code」编号列表 + 空格/逗号分隔，去重保序。
+    // 与后端 parse_codes 保持一致，避免行首编号被当成兑换码（之前 10 个码被拆成 20 个的根因）。
+    function rdParseCodes(text) {
+      const seen = new Set(), out = [];
+      String(text || '').split(/\r?\n/).forEach(line => {
+        line = line.trim();
+        if (!line) return;
+        line = line.replace(/^\d{1,4}\s*[.)、:：]\s*/, '');  // 去掉行首编号标记
+        line.split(/[\s,]+/).forEach(tok => {
+          tok = tok.trim();
+          if (tok && !seen.has(tok)) { seen.add(tok); out.push(tok); }
+        });
+      });
+      return out;
+    }
+
     // 实时统计选中账号 / 有效兑换码数量提示。
     function rdUpdateStat() {
       const sel = document.querySelectorAll('#rd_accList .rd-sel:checked').length;
-      const codes = new Set($('rd_codes').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)).size;
+      const codes = rdParseCodes($('rd_codes').value).length;
       $('rd_stat').textContent = (RD.accounts.length || codes) ? `已选 ${sel} 个账号 · ${codes} 个兑换码` : '';
     }
 
@@ -1269,7 +1285,14 @@
     function rdRenderSummary(s) {
       if (!s) { $('rd_summary').style.display = 'none'; return; }
       const leftover = (s.leftover_codes && s.leftover_codes.length)
-        ? `<div style="margin-top:6px; color:var(--muted)">未使用兑换码 ${s.leftover_codes.length} 个</div>` : '';
+        ? `<div style="margin-top:6px; color:var(--muted)">未使用兑换码 ${s.leftover_codes.length} 个（已保留，未消耗）</div>` : '';
+      let stopNote = '';
+      if (s.stopped) {
+        const reason = s.stop_reason === 'rate_limited'
+          ? '⚠️ 触发服务端频率限制，已停止（未消耗当前兑换码，稍后再试）'
+          : '⚠️ 某账号全部兑换失败，已停止后续账号';
+        stopNote = `<div style="margin-top:6px; color:var(--yellow)">${reason}</div>`;
+      }
       $('rd_summary').innerHTML = `<div class="rd-sum-box">
         <div>
           <span class="pill green">成功 ${s.success}</span>
@@ -1277,6 +1300,7 @@
           <span class="pill cyan">消费兑换码 ${s.codes_consumed}/${s.codes_total}</span>
         </div>
         <div style="margin-top:6px; color:var(--muted)">使用账号 ${s.accounts_used}/${s.accounts_total} · 每账号上限 ${s.per_account_limit} 次</div>
+        ${stopNote}
         ${leftover}
       </div>`;
       $('rd_summary').style.display = 'block';
@@ -1318,7 +1342,7 @@
       if (rdPolling) return;
       $('rd_error').style.display = 'none';
       const indices = Array.from(document.querySelectorAll('#rd_accList .rd-sel:checked')).map(c => parseInt(c.dataset.idx, 10));
-      const codes = $('rd_codes').value.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      const codes = rdParseCodes($('rd_codes').value);
       if (!RD.accounts.length) { $('rd_error').textContent = '尚未配置账号，请先新增账号（需管理密码）'; $('rd_error').style.display = 'block'; return; }
       if (!indices.length) { $('rd_error').textContent = '请至少勾选一个账号'; $('rd_error').style.display = 'block'; return; }
       if (!codes.length) { $('rd_error').textContent = '请填写至少一个兑换码'; $('rd_error').style.display = 'block'; return; }
