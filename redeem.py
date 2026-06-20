@@ -8,7 +8,9 @@
 Chrome 的 TLS 指纹（中转站多在 Cloudflare 之后），不可用时回退标准库 urllib。
 
 对外主入口 run_redeem：按账号轮换批量兑换——每个账号成功兑换达到
-per_account_limit 次后切换下一个账号；兑换码为共享队列，每个码只尝试一次。
+per_account_limit 次后切换下一个账号；兑换码为共享队列，已成功/已被使用的码
+不再重试，仅因限流而未实际兑换的码会留给下一个账号重试。账号触发频率限制时
+不终止整个流程，而是切换到下一个账号继续。
 由于无法本地验证中转站真实响应结构，登录取 token 与兑换成功判定均采用
 「尽力解析 + 透出原始信息」的防御式策略，便于按真实返回再行调整。
 """
@@ -324,12 +326,15 @@ def _looks_rate_limited(message):
 def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
     """按账号轮换批量兑换。
 
-    - 每个账号成功兑换达到 per_account_limit 次后切换下一个账号；失败不切换，
-      仅消费该兑换码，账号会继续尝试后续兑换码，直到攒够 limit 次成功或兑换码用完。
-    - 频率限制保护：若兑换失败信息形似「too many failed attempts / try again later」，
-      视为服务端限流——**不消费该兑换码**，并停止整个流程（不再切换下一个账号）。
-    - 全部失败保护：若某账号实际兑换且 0 次成功，停止整个流程（不再切换下一个账号）。
-    - codes 为共享队列，按顺序消费；登录失败的账号跳过且不消费兑换码。
+    - 每个账号成功兑换达到 per_account_limit 次后切换下一个账号；失败（含兑换码
+      已被使用）不切换，仅消费该兑换码，账号继续尝试后续兑换码，直到攒够 limit 次
+      成功或兑换码用完。
+    - 频率限制切换：若兑换失败信息形似「too many failed attempts / try again later」，
+      视为服务端限流——**不消费该兑换码**，结束当前账号并切换到下一个账号继续；
+      被限流的兑换码留给下一个账号重试。
+    - codes 为共享队列，按顺序消费：已成功或已被使用（已消费）的兑换码不会被后续
+      账号重试，下一个账号自动从未消费处继续、跳过已尝试的码；登录失败的账号跳过
+      且不消费兑换码。
     - 余额刷新：每次兑换成功后取一次；流程结束后对**所有选中账号**补取一次余额
       （未参与兑换的账号也会登录取余额），以 type='balance' 事件上报供上层持久化。
     - progress(event) 回调用于实时上报（可选）：event 为单条日志字典。
@@ -382,13 +387,12 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
     total_success = 0
     total_fail = 0
     accounts_used = 0
-    stop = False
-    stop_reason = ""
+    rate_limited_accounts = 0  # 触发频率限制并因此切换的账号数。
 
     # ---- 阶段一：兑换轮换 ----
     for acc in accounts:
-        if stop or code_idx >= len(codes):
-            break  # 已触发停止，或兑换码用尽。
+        if code_idx >= len(codes):
+            break  # 兑换码已用尽。
         accounts_used += 1
         email = acc["email"]
         log({"type": "login", "account": email, "ok": None, "message": "正在登录…"})
@@ -411,13 +415,12 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
                 ok, message = False, str(exc)
 
             if (not ok) and _looks_rate_limited(message):
-                # 限流：不消费该码（code_idx 不前进），停止整个流程。
+                # 限流：不消费该码（code_idx 不前进），结束本账号并切换下一个账号继续。
+                # 该兑换码留给下一个账号重试；已成功/已被使用的码已消费、不会被重试。
                 log({"type": "redeem", "account": email, "code": code, "ok": False,
-                     "message": message + "（触发频率限制，已暂停，未消耗此兑换码）",
+                     "message": message + "（触发频率限制，切换下一个账号继续，未消耗此兑换码）",
                      "account_success": acc_success, "account_fail": acc_fail, "limit": limit})
                 rate_limited = True
-                stop = True
-                stop_reason = "rate_limited"
                 break
 
             code_idx += 1  # 非限流失败/成功才真正消费该码。
@@ -435,17 +438,17 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
             if ok:
                 refresh_balance(token, email)  # 每次兑换成功后取余额。
 
-        # 账号收尾：失败场景补取余额 + 判断是否停止后续账号。
+        # 账号收尾：失败/限流场景补取余额 + 标注原因；始终切换到下一个账号。
         if rate_limited:
+            rate_limited_accounts += 1
             if email not in balance_done:
                 refresh_balance(token, email)
-            tail = "（触发频率限制，已停止后续账号）"
+            tail = "（触发频率限制）"
         elif acc_success == 0 and acc_fail > 0:
-            # 全部失败（非限流）：取余额并停止，不切换下一个账号。
-            refresh_balance(token, email)
-            stop = True
-            stop_reason = stop_reason or "all_failed"
-            tail = "（全部失败，已停止后续账号）"
+            # 全部失败（非限流，多为兑换码已被使用）：补取余额后继续下一个账号。
+            if email not in balance_done:
+                refresh_balance(token, email)
+            tail = "（本账号未兑换成功）"
         else:
             tail = ""
         log({
@@ -471,6 +474,8 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         refresh_balance(token, email)
 
     leftover = codes[code_idx:]
+    # 仍有未处理兑换码且发生过限流时，提示用户稍后重试（区别于账号容量富余的正常剩余）。
+    incomplete = bool(leftover) and rate_limited_accounts > 0
     summary = {
         "accounts_total": len(accounts),
         "accounts_used": accounts_used,
@@ -480,7 +485,8 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         "fail": total_fail,
         "leftover_codes": leftover,
         "per_account_limit": limit,
-        "stopped": stop,
-        "stop_reason": stop_reason,
+        "rate_limited_accounts": rate_limited_accounts,
+        "stopped": incomplete,
+        "stop_reason": "rate_limited" if incomplete else "",
     }
     return {"logs": logs, "summary": summary}

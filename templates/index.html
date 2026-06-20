@@ -1305,10 +1305,8 @@
         ? `<div style="margin-top:6px; color:var(--muted)">未使用兑换码 ${s.leftover_codes.length} 个（已保留，未消耗）</div>` : '';
       let stopNote = '';
       if (s.stopped) {
-        const reason = s.stop_reason === 'rate_limited'
-          ? '⚠️ 触发服务端频率限制，已停止（未消耗当前兑换码，稍后再试）'
-          : '⚠️ 某账号全部兑换失败，已停止后续账号';
-        stopNote = `<div style="margin-top:6px; color:var(--yellow)">${reason}</div>`;
+        const note = '⚠️ 部分账号触发服务端频率限制，已自动切换账号继续；仍有未使用兑换码（已保留），可稍后重试';
+        stopNote = `<div style="margin-top:6px; color:var(--yellow)">${note}</div>`;
       }
       $('rd_summary').innerHTML = `<div class="rd-sum-box">
         <div>
