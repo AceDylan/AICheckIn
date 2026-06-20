@@ -261,33 +261,55 @@ def parse_accounts(raw_accounts):
 
 
 _CODE_ENUM_RE = re.compile(r"^\d{1,4}\s*[.)、:：]\s*")
+# 兑换码形态：32 位十六进制（MD5 式）。claude-zhongzhuan.cloud 当前所有兑换码均为此形态，
+# 用「极大十六进制串 + 长度恰为 32」定位，等价于带前后边界，避免从更长的十六进制串里截取子串。
+_HEX_RUN_RE = re.compile(r"[0-9a-fA-F]+")
+_CODE_LEN = 32
+
+
+def _dedup_keep_order(items):
+    """去重并保持首次出现顺序。"""
+    seen = set()
+    out = []
+    for it in items:
+        it = (it or "").strip()
+        if it and it not in seen:
+            seen.add(it)
+            out.append(it)
+    return out
 
 
 def parse_codes(raw_codes):
-    """规整兑换码：去空白、去重（保序）。
+    """从任意粘贴格式中提取真正的兑换码，去重保序。
 
-    兼容：数组 / 多行字符串 / 形如「1. <code>」「2) <code>」「3、<code>」的编号列表
-    （先按行拆分，去掉行首编号，再按空白/逗号拆分），避免编号被当成兑换码。
+    主路径：直接抓取所有「长度恰为 32 的十六进制串」。这样无论粘贴的是
+    「1. <code>」编号列表、带空行的列表、单行多码（1. a 2. b 3. c），还是夹带
+    标题文案（「今日份 $5 兑换码（共20个，先到先得）：」）与使用说明
+    （「使用方式：登录 claude-zhongzhuan.cloud → …」），都只留下真正的兑换码，
+    不会把编号、标题或说明文字误当成码。
+    兜底：若文本里没有任何 32 位十六进制串（兑换码形态可能变化），回退到
+    「去行首编号 + 按空白/逗号拆分」的逐行解析，保持向后兼容。
     """
-    lines = []
     if isinstance(raw_codes, str):
-        lines = raw_codes.splitlines()
+        text = raw_codes
     elif isinstance(raw_codes, (list, tuple)):
-        for item in raw_codes:
-            lines.extend(str(item or "").splitlines())
-    seen = set()
+        text = "\n".join(str(item or "") for item in raw_codes)
+    else:
+        text = str(raw_codes or "")
+
+    hex_codes = [m for m in _HEX_RUN_RE.findall(text) if len(m) == _CODE_LEN]
+    if hex_codes:
+        return _dedup_keep_order(hex_codes)
+
+    # 兜底：逐行解析（去行首编号 + 空白/逗号拆分）。
     out = []
-    for line in lines:
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
         line = _CODE_ENUM_RE.sub("", line).strip()  # 去掉行首「1.」「2)」等编号。
-        for tok in re.split(r"[\s,]+", line):
-            code = tok.strip()
-            if code and code not in seen:
-                seen.add(code)
-                out.append(code)
-    return out
+        out.extend(re.split(r"[\s,]+", line))
+    return _dedup_keep_order(out)
 
 
 _RATE_LIMIT_HINTS = ("too many", "try again later", "rate limit", "频繁", "稍后", "later", "too many attempts")

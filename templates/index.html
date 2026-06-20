@@ -361,7 +361,7 @@
       <div class="panel">
         <div class="panel-title">🎁 批量兑换 <span class="sub">勾选账号 · 粘贴兑换码 · 一键运行</span></div>
         <div class="field">
-          <label>兑换码（每行一个，或用空格/逗号分隔，自动去重）</label>
+          <label>兑换码（可直接粘贴整段：带编号、标题或说明文字都行，自动提取去重）</label>
           <textarea class="input" id="rd_codes" rows="6"
             style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
             placeholder="08c79289cd6189fb836221baf9cf2d55&#10;88d6dd799d7d01c393a4cd859bf9432e"></textarea>
@@ -1126,20 +1126,32 @@
     // 兑换码不持久化：每次刷新页面输入框为空，避免误用上次残留的码。
     $('rd_codes').addEventListener('input', rdUpdateStat);
 
-    // 解析兑换码：支持「1. code」「2) code」「3、code」编号列表 + 空格/逗号分隔，去重保序。
-    // 与后端 parse_codes 保持一致，避免行首编号被当成兑换码（之前 10 个码被拆成 20 个的根因）。
-    function rdParseCodes(text) {
+    // 解析兑换码：与后端 parse_codes 完全一致。
+    // 主路径直接抓取「长度恰为 32 的十六进制串」，可无视编号「1. 」「2)」、空行、
+    // 单行多码（1. a 2. b 3. c）以及夹带的标题文案 / 使用说明，只留真正的兑换码。
+    // 兜底：无任何 32-hex 串时回退到「去行首编号 + 空白/逗号拆分」逐行解析。
+    function rdDedup(items) {
       const seen = new Set(), out = [];
-      String(text || '').split(/\r?\n/).forEach(line => {
+      items.forEach(it => {
+        it = String(it || '').trim();
+        if (it && !seen.has(it)) { seen.add(it); out.push(it); }
+      });
+      return out;
+    }
+    function rdParseCodes(text) {
+      const src = String(text || '');
+      // 极大十六进制串中长度恰为 32 的，即真正兑换码（等价于带前后边界，不截更长的串）。
+      const hex = (src.match(/[0-9a-fA-F]+/g) || []).filter(s => s.length === 32);
+      if (hex.length) return rdDedup(hex);
+      // 兜底：逐行去行首编号 + 空白/逗号拆分。
+      const out = [];
+      src.split(/\r?\n/).forEach(line => {
         line = line.trim();
         if (!line) return;
         line = line.replace(/^\d{1,4}\s*[.)、:：]\s*/, '');  // 去掉行首编号标记
-        line.split(/[\s,]+/).forEach(tok => {
-          tok = tok.trim();
-          if (tok && !seen.has(tok)) { seen.add(tok); out.push(tok); }
-        });
+        line.split(/[\s,]+/).forEach(tok => out.push(tok));
       });
-      return out;
+      return rdDedup(out);
     }
 
     // 实时统计选中账号 / 有效兑换码数量提示。
