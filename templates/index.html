@@ -340,13 +340,19 @@
           👥 兑换账号 <span class="sub" id="rd_accCount"></span>
           <span style="flex:1"></span>
           <span class="meta" style="display:flex; align-items:center; gap:6px">每账号次数
-            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2" style="width:64px; padding:7px 9px">
+            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2" style="width:56px; padding:7px 9px">
           </span>
-          <button class="btn sm" id="rd_saveLimit">保存次数</button>
+          <span class="meta" style="display:flex; align-items:center; gap:6px" title="相邻两次兑换请求之间的随机间隔（秒）。兑换靠抢，间隔越短越快；多账号交叉轮换已能拉低单账号频率，故默认取亚秒级">间隔
+            <input class="input" id="rd_delayMin" type="number" min="0" step="0.1" value="0.3" style="width:54px; padding:7px 9px">
+            <span style="color:var(--muted)">~</span>
+            <input class="input" id="rd_delayMax" type="number" min="0" step="0.1" value="0.8" style="width:54px; padding:7px 9px">
+            <span style="color:var(--muted)">秒</span>
+          </span>
+          <button class="btn sm" id="rd_saveLimit">保存设置</button>
           <button class="btn sm" id="rd_addAcc">＋ 新增账号</button>
         </div>
         <div class="note" style="margin-top:0">
-          勾选参与本次兑换的账号（可自由选择）。每个账号成功兑换达到次数后自动切换下一个；失败不切换，会继续用后面的兑换码，直到兑换码用完。
+          勾选参与本次兑换的账号（可自由选择）。多账号交叉轮换：账号依次轮流、每轮各兑一个码，单账号达到次数上限后退出；某账号触发限流时自动冷却并转交其他账号继续，被限流的兑换码立即留给其他账号去抢。
           <b>新增 / 编辑 / 删除账号、修改次数需管理员解锁</b>（在「🔧 设置」中输入管理密码）；兑换本身无需密码。
         </div>
         <div style="margin:12px 0 8px; display:flex; gap:10px; align-items:center">
@@ -1114,7 +1120,7 @@
 
     // ===== 兑换 =====
     let rdPolling = false;
-    let RD = { accounts: [], limit: 2, admin_required: false, admin_unlocked: true };
+    let RD = { accounts: [], limit: 2, delay_min: 0.3, delay_max: 0.8, admin_required: false, admin_unlocked: true };
 
     function rdCanEdit() { return !RD.admin_required || RD.admin_unlocked; }
     function guardRdAdmin() {
@@ -1175,9 +1181,11 @@
     function renderRedeem() {
       const list = $('rd_accList'), empty = $('rd_accEmpty');
       $('rd_accCount').textContent = `共 ${RD.accounts.length} 个`;
-      // 次数输入与保存仅管理员可改。
+      // 次数 / 间隔输入与保存仅管理员可改。
       $('rd_limit').value = RD.limit;
-      $('rd_limit').disabled = !rdCanEdit();
+      $('rd_delayMin').value = RD.delay_min;
+      $('rd_delayMax').value = RD.delay_max;
+      $('rd_limit').disabled = $('rd_delayMin').disabled = $('rd_delayMax').disabled = !rdCanEdit();
       $('rd_saveLimit').style.display = rdCanEdit() ? 'inline-flex' : 'none';
 
       if (!RD.accounts.length) { list.innerHTML = ''; empty.style.display = 'block'; rdUpdateStat(); return; }
@@ -1264,11 +1272,17 @@
     $('rd_saveLimit').addEventListener('click', async () => {
       if (!guardRdAdmin()) return;
       const limit = parseInt($('rd_limit').value, 10) || 1;
+      const delay_min = parseFloat($('rd_delayMin').value);
+      const delay_max = parseFloat($('rd_delayMax').value);
+      if (isNaN(delay_min) || isNaN(delay_max) || delay_min < 0 || delay_max < 0) {
+        toast('请求间隔需为非负数字（秒）', 'err'); return;
+      }
+      if (delay_max < delay_min) { toast('间隔上限不能小于下限', 'err'); return; }
       try {
-        const resp = await fetch('/api/redeem/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ limit }) });
+        const resp = await fetch('/api/redeem/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ limit, delay_min, delay_max }) });
         const data = await resp.json();
         if (!data.ok) { toast(data.error || '保存失败', 'err'); return; }
-        toast('次数已保存', 'ok');
+        toast('设置已保存', 'ok');
         loadRedeem();
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     });
@@ -1290,7 +1304,7 @@
         return `<div class="rd-line ${cls}"><span class="rd-ic">💰</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)}</span></div>`;
       }
       if (e.type === 'account_done') {
-        return `<div class="rd-line info"><span class="rd-ic">🔄</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)} → 切换下一个账号</span></div>`;
+        return `<div class="rd-line info"><span class="rd-ic">🔄</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)}</span></div>`;
       }
       return '';
     }
