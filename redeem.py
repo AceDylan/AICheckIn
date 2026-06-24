@@ -8,13 +8,17 @@
 Chrome 的 TLS 指纹（中转站多在 Cloudflare 之后），不可用时回退标准库 urllib。
 
 对外主入口 run_redeem：按账号轮换批量兑换——每个账号成功兑换达到
-per_account_limit 次后切换下一个账号；兑换码为共享队列，每个码只尝试一次。
+per_account_limit 次后切换下一个账号；兑换码为共享队列，已成功/已被使用的码
+不再重试，仅因限流而未实际兑换的码会留给下一个账号重试。账号触发频率限制时
+不终止整个流程，而是切换到下一个账号继续。
 由于无法本地验证中转站真实响应结构，登录取 token 与兑换成功判定均采用
 「尽力解析 + 透出原始信息」的防御式策略，便于按真实返回再行调整。
 """
 
 import json
+import random
 import re
+import time
 
 import gyqd
 
@@ -25,6 +29,16 @@ ME_URL = BASE_URL + "/api/v1/auth/me?timezone=Asia%2FShanghai"
 
 # 与浏览器一致的请求超时（秒）。
 TIMEOUT_SECONDS = 25
+
+# ---- 请求节流默认参数（秒）----
+# 兑换是「抢」——码放出后很快被用掉，等待越久越抢不到，故默认间隔取亚秒级、只做轻微抖动。
+# 多账号交叉轮换已天然拉低单账号请求频率（避免一个账号连续高频请求触发限流），
+# 因此无需对「码已被使用」这类正常失败做退避；仅在收到服务端限流信号时让该账号冷却。
+# 以下为默认值，可由 run_redeem(throttle=...) 覆盖。
+DEFAULT_DELAY_MIN = 0.3              # 相邻两次兑换请求（任意账号之间）的随机间隔下界。
+DEFAULT_DELAY_MAX = 0.8              # 上界（实际间隔在 [min, max] 间均匀取值，制造抖动）。
+DEFAULT_RATE_LIMIT_COOLDOWN = 15.0  # 账号触发限流后的冷却秒数；冷却期间转交其他账号，到期自动重入。
+MAX_RATE_LIMIT_PER_ACCOUNT = 3      # 单账号累计限流达到此数则停用（成功一次即清零），防止反复无效重试。
 
 # JWT 形态：三段 base64url 以点分隔。用于从登录响应里兜底识别 token。
 _JWT_RE = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
@@ -261,33 +275,55 @@ def parse_accounts(raw_accounts):
 
 
 _CODE_ENUM_RE = re.compile(r"^\d{1,4}\s*[.)、:：]\s*")
+# 兑换码形态：32 位十六进制（MD5 式）。claude-zhongzhuan.cloud 当前所有兑换码均为此形态，
+# 用「极大十六进制串 + 长度恰为 32」定位，等价于带前后边界，避免从更长的十六进制串里截取子串。
+_HEX_RUN_RE = re.compile(r"[0-9a-fA-F]+")
+_CODE_LEN = 32
+
+
+def _dedup_keep_order(items):
+    """去重并保持首次出现顺序。"""
+    seen = set()
+    out = []
+    for it in items:
+        it = (it or "").strip()
+        if it and it not in seen:
+            seen.add(it)
+            out.append(it)
+    return out
 
 
 def parse_codes(raw_codes):
-    """规整兑换码：去空白、去重（保序）。
+    """从任意粘贴格式中提取真正的兑换码，去重保序。
 
-    兼容：数组 / 多行字符串 / 形如「1. <code>」「2) <code>」「3、<code>」的编号列表
-    （先按行拆分，去掉行首编号，再按空白/逗号拆分），避免编号被当成兑换码。
+    主路径：直接抓取所有「长度恰为 32 的十六进制串」。这样无论粘贴的是
+    「1. <code>」编号列表、带空行的列表、单行多码（1. a 2. b 3. c），还是夹带
+    标题文案（「今日份 $5 兑换码（共20个，先到先得）：」）与使用说明
+    （「使用方式：登录 claude-zhongzhuan.cloud → …」），都只留下真正的兑换码，
+    不会把编号、标题或说明文字误当成码。
+    兜底：若文本里没有任何 32 位十六进制串（兑换码形态可能变化），回退到
+    「去行首编号 + 按空白/逗号拆分」的逐行解析，保持向后兼容。
     """
-    lines = []
     if isinstance(raw_codes, str):
-        lines = raw_codes.splitlines()
+        text = raw_codes
     elif isinstance(raw_codes, (list, tuple)):
-        for item in raw_codes:
-            lines.extend(str(item or "").splitlines())
-    seen = set()
+        text = "\n".join(str(item or "") for item in raw_codes)
+    else:
+        text = str(raw_codes or "")
+
+    hex_codes = [m for m in _HEX_RUN_RE.findall(text) if len(m) == _CODE_LEN]
+    if hex_codes:
+        return _dedup_keep_order(hex_codes)
+
+    # 兜底：逐行解析（去行首编号 + 空白/逗号拆分）。
     out = []
-    for line in lines:
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
         line = _CODE_ENUM_RE.sub("", line).strip()  # 去掉行首「1.」「2)」等编号。
-        for tok in re.split(r"[\s,]+", line):
-            code = tok.strip()
-            if code and code not in seen:
-                seen.add(code)
-                out.append(code)
-    return out
+        out.extend(re.split(r"[\s,]+", line))
+    return _dedup_keep_order(out)
 
 
 _RATE_LIMIT_HINTS = ("too many", "try again later", "rate limit", "频繁", "稍后", "later", "too many attempts")
@@ -299,17 +335,41 @@ def _looks_rate_limited(message):
     return any(h in m for h in _RATE_LIMIT_HINTS)
 
 
-def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
-    """按账号轮换批量兑换。
+def _normalize_throttle(throttle):
+    """归一化节流参数，缺失/非法回落默认值。返回 (delay_min, delay_max, cooldown)，单位秒。"""
+    src = throttle if isinstance(throttle, dict) else {}
 
-    - 每个账号成功兑换达到 per_account_limit 次后切换下一个账号；失败不切换，
-      仅消费该兑换码，账号会继续尝试后续兑换码，直到攒够 limit 次成功或兑换码用完。
-    - 频率限制保护：若兑换失败信息形似「too many failed attempts / try again later」，
-      视为服务端限流——**不消费该兑换码**，并停止整个流程（不再切换下一个账号）。
-    - 全部失败保护：若某账号实际兑换且 0 次成功，停止整个流程（不再切换下一个账号）。
-    - codes 为共享队列，按顺序消费；登录失败的账号跳过且不消费兑换码。
-    - 余额刷新：每次兑换成功后取一次；流程结束后对**所有选中账号**补取一次余额
-      （未参与兑换的账号也会登录取余额），以 type='balance' 事件上报供上层持久化。
+    def num(key, default):
+        try:
+            v = float(src.get(key))
+        except (TypeError, ValueError):
+            return default
+        return v if v >= 0 else default
+
+    delay_min = num("delay_min", DEFAULT_DELAY_MIN)
+    delay_max = num("delay_max", DEFAULT_DELAY_MAX)
+    if delay_max < delay_min:
+        delay_max = delay_min  # 上界不得小于下界。
+    return delay_min, delay_max, num("cooldown", DEFAULT_RATE_LIMIT_COOLDOWN)
+
+
+def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None, throttle=None):
+    """多账号交叉轮换批量兑换。
+
+    - 交叉轮换：所有账号依次轮流，每轮各兑换一个兑换码（而非一个账号连续抢光再换），
+      以拉低单账号请求频率、更好地规避服务端限流；每个账号累计成功达到 per_account_limit
+      次后退出轮换。
+    - codes 为共享队列，按顺序消费：成功或「已被使用/无效」的码立即消费、不再重试，
+      下一个被轮到的账号自动从未消费处继续；登录失败的账号停用且不消费兑换码。
+    - 限流处理：兑换失败信息形似「too many attempts / try again later」时视为服务端限流，
+      **不消费该兑换码**（立即留给其他账号去抢）；触发限流的账号进入冷却（cooldown 秒）
+      并转交其他账号继续，冷却到期自动重回轮换；单账号累计限流达 MAX_RATE_LIMIT_PER_ACCOUNT
+      次则停用该账号（成功一次即清零计数）。
+    - 请求节流（throttle，单位秒）：相邻两次兑换请求间插入 [delay_min, delay_max] 随机间隔
+      （亚秒级默认值，兼顾「抢」的时效与限流规避）；冷却时长由 cooldown 控制。throttle 为
+      可选 dict，缺失字段回落 DEFAULT_* 默认值。
+    - 余额刷新：每次兑换成功后取一次；账号退出轮换时补取一次；流程结束后对所有未取过余额的
+      账号（含未参与兑换的）补取，以 type='balance' 事件上报供上层持久化。
     - progress(event) 回调用于实时上报（可选）：event 为单条日志字典。
 
     返回 {logs, summary}。
@@ -320,6 +380,11 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         limit = max(1, int(per_account_limit))
     except (TypeError, ValueError):
         limit = 1
+    delay_min, delay_max, cooldown = _normalize_throttle(throttle)
+
+    def throttle_sleep(seconds):
+        if seconds > 0:
+            time.sleep(seconds)
 
     def emit(event):
         if progress:
@@ -359,77 +424,123 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
     code_idx = 0
     total_success = 0
     total_fail = 0
-    accounts_used = 0
-    stop = False
-    stop_reason = ""
+    rate_limited_accounts = 0  # 曾触发限流的不同账号数。
+    rl_emails = set()
+    first_request = True       # 全局首个兑换请求不等待，其余请求前按间隔等待。
 
-    # ---- 阶段一：兑换轮换 ----
-    for acc in accounts:
-        if stop or code_idx >= len(codes):
-            break  # 已触发停止，或兑换码用尽。
-        accounts_used += 1
-        email = acc["email"]
-        log({"type": "login", "account": email, "ok": None, "message": "正在登录…"})
-        try:
-            token = login(fetch, email, acc["password"])
-        except RedeemError as exc:
-            log({"type": "login", "account": email, "ok": False, "message": str(exc)})
+    # 每个账号的运行态（懒登录：首次被轮到时才登录）。
+    states = [{
+        "email": acc["email"], "password": acc["password"],
+        "token": None, "logged_in": False, "participated": False,
+        "success": 0, "fail": 0, "rl_count": 0,
+        "active": True, "done_logged": False, "cooldown_until": 0.0,
+    } for acc in accounts]
+    n = len(states)
+    turn = 0
+
+    def finish_account(s, note):
+        """账号退出轮换：补取余额（若未取）并发出汇总日志。"""
+        s["active"] = False
+        s["done_logged"] = True
+        if s["email"] not in balance_done and s["token"]:
+            refresh_balance(s["token"], s["email"])
+        log({"type": "account_done", "account": s["email"], "ok": True,
+             "message": "本账号成功 {0} 次 · 失败 {1} 次{2}".format(s["success"], s["fail"], note)})
+
+    # ---- 阶段一：多账号交叉轮换兑换 ----
+    # 账号依次轮流、每轮各兑一个码；限流账号进入冷却并转交其他账号，到期自动重入。
+    while code_idx < len(codes):
+        # round-robin 选下一个「立即可用」账号（active 且不在冷却中）。
+        picked = None
+        soonest = None
+        for _ in range(n):
+            s = states[turn % n]
+            turn += 1
+            if not s["active"]:
+                continue
+            if s["cooldown_until"] > time.monotonic():
+                soonest = s["cooldown_until"] if soonest is None else min(soonest, s["cooldown_until"])
+                continue
+            picked = s
+            break
+
+        if picked is None:
+            if soonest is None:
+                break  # 无可用账号（全部完成/停用），结束轮换。
+            # 所有活跃账号都在冷却：等到最早到期（不超过一个 cooldown）再重试。
+            throttle_sleep(min(max(0.0, soonest - time.monotonic()), cooldown))
             continue
-        tokens[email] = token
-        log({"type": "login", "account": email, "ok": True, "message": "登录成功"})
 
-        acc_success = 0
-        acc_fail = 0
-        rate_limited = False
-        while acc_success < limit and code_idx < len(codes):
-            code = codes[code_idx]
+        s = picked
+        email = s["email"]
+
+        # 懒登录：账号首次被选中时才登录；登录失败则停用该账号。
+        if not s["logged_in"]:
+            log({"type": "login", "account": email, "ok": None, "message": "正在登录…"})
             try:
-                ok, message = redeem_code(fetch, token, code)
+                s["token"] = login(fetch, email, s["password"])
             except RedeemError as exc:
-                ok, message = False, str(exc)
+                log({"type": "login", "account": email, "ok": False, "message": str(exc)})
+                s["active"] = False
+                continue
+            s["logged_in"] = True
+            s["participated"] = True
+            tokens[email] = s["token"]
+            log({"type": "login", "account": email, "ok": True, "message": "登录成功"})
 
-            if (not ok) and _looks_rate_limited(message):
-                # 限流：不消费该码（code_idx 不前进），停止整个流程。
+        # 节流：全局首个请求不等待，其余请求前等待 [delay_min, delay_max] 随机间隔。
+        if not first_request:
+            throttle_sleep(random.uniform(delay_min, delay_max))
+        first_request = False
+
+        code = codes[code_idx]
+        try:
+            ok, message = redeem_code(fetch, s["token"], code)
+        except RedeemError as exc:
+            ok, message = False, str(exc)
+
+        if (not ok) and _looks_rate_limited(message):
+            # 限流：不消费该码（立即留给其他账号去抢）；该账号冷却，多次后停用。
+            s["rl_count"] += 1
+            if email not in rl_emails:
+                rl_emails.add(email)
+                rate_limited_accounts += 1
+            if s["rl_count"] >= MAX_RATE_LIMIT_PER_ACCOUNT:
                 log({"type": "redeem", "account": email, "code": code, "ok": False,
-                     "message": message + "（触发频率限制，已暂停，未消耗此兑换码）",
-                     "account_success": acc_success, "account_fail": acc_fail, "limit": limit})
-                rate_limited = True
-                stop = True
-                stop_reason = "rate_limited"
-                break
-
-            code_idx += 1  # 非限流失败/成功才真正消费该码。
-            if ok:
-                acc_success += 1
-                total_success += 1
+                     "message": message + "（多次触发频率限制，已停用本账号，未消耗此兑换码）",
+                     "account_success": s["success"], "account_fail": s["fail"], "limit": limit})
+                finish_account(s, "（多次限流，已停用）")
             else:
-                acc_fail += 1
-                total_fail += 1
-            log({
-                "type": "redeem", "account": email, "code": code,
-                "ok": ok, "message": message,
-                "account_success": acc_success, "account_fail": acc_fail, "limit": limit,
-            })
-            if ok:
-                refresh_balance(token, email)  # 每次兑换成功后取余额。
+                s["cooldown_until"] = time.monotonic() + cooldown
+                log({"type": "redeem", "account": email, "code": code, "ok": False,
+                     "message": message + "（触发频率限制，本账号冷却 {0:.0f}s 后重试，转交其他账号，未消耗此兑换码）".format(cooldown),
+                     "account_success": s["success"], "account_fail": s["fail"], "limit": limit})
+            continue
 
-        # 账号收尾：失败场景补取余额 + 判断是否停止后续账号。
-        if rate_limited:
-            if email not in balance_done:
-                refresh_balance(token, email)
-            tail = "（触发频率限制，已停止后续账号）"
-        elif acc_success == 0 and acc_fail > 0:
-            # 全部失败（非限流）：取余额并停止，不切换下一个账号。
-            refresh_balance(token, email)
-            stop = True
-            stop_reason = stop_reason or "all_failed"
-            tail = "（全部失败，已停止后续账号）"
+        code_idx += 1  # 非限流（成功或已被使用/无效）才真正消费该码。
+        if ok:
+            s["success"] += 1
+            total_success += 1
+            s["rl_count"] = 0  # 成功：清零限流计数。
         else:
-            tail = ""
+            s["fail"] += 1
+            total_fail += 1
         log({
-            "type": "account_done", "account": email, "ok": True,
-            "message": "本账号成功 {0} 次 · 失败 {1} 次{2}".format(acc_success, acc_fail, tail),
+            "type": "redeem", "account": email, "code": code,
+            "ok": ok, "message": message,
+            "account_success": s["success"], "account_fail": s["fail"], "limit": limit,
         })
+        if ok:
+            refresh_balance(s["token"], email)  # 兑换成功后取余额。
+            if s["success"] >= limit:
+                finish_account(s, "（已达上限）")
+
+    # 阶段一收尾：参与过但仍在轮换（未达上限/未停用）的账号补发汇总 + 补取余额。
+    for s in states:
+        if s["participated"] and not s["done_logged"]:
+            finish_account(s, "")
+
+    accounts_used = sum(1 for s in states if s["participated"])
 
     # ---- 阶段二：对所有选中账号补取余额（含未参与兑换的账号）----
     for acc in accounts:
@@ -449,6 +560,8 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         refresh_balance(token, email)
 
     leftover = codes[code_idx:]
+    # 仍有未处理兑换码且发生过限流时，提示用户稍后重试（区别于账号容量富余的正常剩余）。
+    incomplete = bool(leftover) and rate_limited_accounts > 0
     summary = {
         "accounts_total": len(accounts),
         "accounts_used": accounts_used,
@@ -458,7 +571,8 @@ def run_redeem(accounts, codes, per_account_limit, proxy_url="", progress=None):
         "fail": total_fail,
         "leftover_codes": leftover,
         "per_account_limit": limit,
-        "stopped": stop,
-        "stop_reason": stop_reason,
+        "rate_limited_accounts": rate_limited_accounts,
+        "stopped": incomplete,
+        "stop_reason": "rate_limited" if incomplete else "",
     }
     return {"logs": logs, "summary": summary}

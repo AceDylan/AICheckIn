@@ -340,13 +340,19 @@
           👥 兑换账号 <span class="sub" id="rd_accCount"></span>
           <span style="flex:1"></span>
           <span class="meta" style="display:flex; align-items:center; gap:6px">每账号次数
-            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2" style="width:64px; padding:7px 9px">
+            <input class="input" id="rd_limit" type="number" min="1" step="1" value="2" style="width:56px; padding:7px 9px">
           </span>
-          <button class="btn sm" id="rd_saveLimit">保存次数</button>
+          <span class="meta" style="display:flex; align-items:center; gap:6px" title="相邻两次兑换请求之间的随机间隔（秒）。兑换靠抢，间隔越短越快；多账号交叉轮换已能拉低单账号频率，故默认取亚秒级">间隔
+            <input class="input" id="rd_delayMin" type="number" min="0" step="0.1" value="0.3" style="width:54px; padding:7px 9px">
+            <span style="color:var(--muted)">~</span>
+            <input class="input" id="rd_delayMax" type="number" min="0" step="0.1" value="0.8" style="width:54px; padding:7px 9px">
+            <span style="color:var(--muted)">秒</span>
+          </span>
+          <button class="btn sm" id="rd_saveLimit">保存设置</button>
           <button class="btn sm" id="rd_addAcc">＋ 新增账号</button>
         </div>
         <div class="note" style="margin-top:0">
-          勾选参与本次兑换的账号（可自由选择）。每个账号成功兑换达到次数后自动切换下一个；失败不切换，会继续用后面的兑换码，直到兑换码用完。
+          勾选参与本次兑换的账号（可自由选择）。多账号交叉轮换：账号依次轮流、每轮各兑一个码，单账号达到次数上限后退出；某账号触发限流时自动冷却并转交其他账号继续，被限流的兑换码立即留给其他账号去抢。
           <b>新增 / 编辑 / 删除账号、修改次数需管理员解锁</b>（在「🔧 设置」中输入管理密码）；兑换本身无需密码。
         </div>
         <div style="margin:12px 0 8px; display:flex; gap:10px; align-items:center">
@@ -361,7 +367,7 @@
       <div class="panel">
         <div class="panel-title">🎁 批量兑换 <span class="sub">勾选账号 · 粘贴兑换码 · 一键运行</span></div>
         <div class="field">
-          <label>兑换码（每行一个，或用空格/逗号分隔，自动去重）</label>
+          <label>兑换码（可直接粘贴整段：带编号、标题或说明文字都行，自动提取去重）</label>
           <textarea class="input" id="rd_codes" rows="6"
             style="resize:vertical; font-family:ui-monospace,monospace; font-size:13px"
             placeholder="08c79289cd6189fb836221baf9cf2d55&#10;88d6dd799d7d01c393a4cd859bf9432e"></textarea>
@@ -1114,7 +1120,7 @@
 
     // ===== 兑换 =====
     let rdPolling = false;
-    let RD = { accounts: [], limit: 2, admin_required: false, admin_unlocked: true };
+    let RD = { accounts: [], limit: 2, delay_min: 0.3, delay_max: 0.8, admin_required: false, admin_unlocked: true };
 
     function rdCanEdit() { return !RD.admin_required || RD.admin_unlocked; }
     function guardRdAdmin() {
@@ -1126,20 +1132,32 @@
     // 兑换码不持久化：每次刷新页面输入框为空，避免误用上次残留的码。
     $('rd_codes').addEventListener('input', rdUpdateStat);
 
-    // 解析兑换码：支持「1. code」「2) code」「3、code」编号列表 + 空格/逗号分隔，去重保序。
-    // 与后端 parse_codes 保持一致，避免行首编号被当成兑换码（之前 10 个码被拆成 20 个的根因）。
-    function rdParseCodes(text) {
+    // 解析兑换码：与后端 parse_codes 完全一致。
+    // 主路径直接抓取「长度恰为 32 的十六进制串」，可无视编号「1. 」「2)」、空行、
+    // 单行多码（1. a 2. b 3. c）以及夹带的标题文案 / 使用说明，只留真正的兑换码。
+    // 兜底：无任何 32-hex 串时回退到「去行首编号 + 空白/逗号拆分」逐行解析。
+    function rdDedup(items) {
       const seen = new Set(), out = [];
-      String(text || '').split(/\r?\n/).forEach(line => {
+      items.forEach(it => {
+        it = String(it || '').trim();
+        if (it && !seen.has(it)) { seen.add(it); out.push(it); }
+      });
+      return out;
+    }
+    function rdParseCodes(text) {
+      const src = String(text || '');
+      // 极大十六进制串中长度恰为 32 的，即真正兑换码（等价于带前后边界，不截更长的串）。
+      const hex = (src.match(/[0-9a-fA-F]+/g) || []).filter(s => s.length === 32);
+      if (hex.length) return rdDedup(hex);
+      // 兜底：逐行去行首编号 + 空白/逗号拆分。
+      const out = [];
+      src.split(/\r?\n/).forEach(line => {
         line = line.trim();
         if (!line) return;
         line = line.replace(/^\d{1,4}\s*[.)、:：]\s*/, '');  // 去掉行首编号标记
-        line.split(/[\s,]+/).forEach(tok => {
-          tok = tok.trim();
-          if (tok && !seen.has(tok)) { seen.add(tok); out.push(tok); }
-        });
+        line.split(/[\s,]+/).forEach(tok => out.push(tok));
       });
-      return out;
+      return rdDedup(out);
     }
 
     // 实时统计选中账号 / 有效兑换码数量提示。
@@ -1163,9 +1181,11 @@
     function renderRedeem() {
       const list = $('rd_accList'), empty = $('rd_accEmpty');
       $('rd_accCount').textContent = `共 ${RD.accounts.length} 个`;
-      // 次数输入与保存仅管理员可改。
+      // 次数 / 间隔输入与保存仅管理员可改。
       $('rd_limit').value = RD.limit;
-      $('rd_limit').disabled = !rdCanEdit();
+      $('rd_delayMin').value = RD.delay_min;
+      $('rd_delayMax').value = RD.delay_max;
+      $('rd_limit').disabled = $('rd_delayMin').disabled = $('rd_delayMax').disabled = !rdCanEdit();
       $('rd_saveLimit').style.display = rdCanEdit() ? 'inline-flex' : 'none';
 
       if (!RD.accounts.length) { list.innerHTML = ''; empty.style.display = 'block'; rdUpdateStat(); return; }
@@ -1252,11 +1272,17 @@
     $('rd_saveLimit').addEventListener('click', async () => {
       if (!guardRdAdmin()) return;
       const limit = parseInt($('rd_limit').value, 10) || 1;
+      const delay_min = parseFloat($('rd_delayMin').value);
+      const delay_max = parseFloat($('rd_delayMax').value);
+      if (isNaN(delay_min) || isNaN(delay_max) || delay_min < 0 || delay_max < 0) {
+        toast('请求间隔需为非负数字（秒）', 'err'); return;
+      }
+      if (delay_max < delay_min) { toast('间隔上限不能小于下限', 'err'); return; }
       try {
-        const resp = await fetch('/api/redeem/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ limit }) });
+        const resp = await fetch('/api/redeem/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ limit, delay_min, delay_max }) });
         const data = await resp.json();
         if (!data.ok) { toast(data.error || '保存失败', 'err'); return; }
-        toast('次数已保存', 'ok');
+        toast('设置已保存', 'ok');
         loadRedeem();
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     });
@@ -1278,7 +1304,7 @@
         return `<div class="rd-line ${cls}"><span class="rd-ic">💰</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)}</span></div>`;
       }
       if (e.type === 'account_done') {
-        return `<div class="rd-line info"><span class="rd-ic">🔄</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)} → 切换下一个账号</span></div>`;
+        return `<div class="rd-line info"><span class="rd-ic">🔄</span><span class="rd-acc">${escapeHtml(e.account)}</span><span class="rd-msg">${escapeHtml(e.message)}</span></div>`;
       }
       return '';
     }
@@ -1293,10 +1319,8 @@
         ? `<div style="margin-top:6px; color:var(--muted)">未使用兑换码 ${s.leftover_codes.length} 个（已保留，未消耗）</div>` : '';
       let stopNote = '';
       if (s.stopped) {
-        const reason = s.stop_reason === 'rate_limited'
-          ? '⚠️ 触发服务端频率限制，已停止（未消耗当前兑换码，稍后再试）'
-          : '⚠️ 某账号全部兑换失败，已停止后续账号';
-        stopNote = `<div style="margin-top:6px; color:var(--yellow)">${reason}</div>`;
+        const note = '⚠️ 部分账号触发服务端频率限制，已自动切换账号继续；仍有未使用兑换码（已保留），可稍后重试';
+        stopNote = `<div style="margin-top:6px; color:var(--yellow)">${note}</div>`;
       }
       $('rd_summary').innerHTML = `<div class="rd-sum-box">
         <div>

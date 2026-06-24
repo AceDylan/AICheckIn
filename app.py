@@ -109,6 +109,19 @@ def read_store():
         redeem_cfg["limit"] = max(1, int(redeem_cfg.get("limit") or 2))
     except (TypeError, ValueError):
         redeem_cfg["limit"] = 2
+    # 兑换请求间隔（秒）：缓解服务端「too many attempts」限流，回落 redeem 模块默认值。
+    def _norm_delay(key, default):
+        try:
+            v = float(redeem_cfg.get(key))
+        except (TypeError, ValueError):
+            return default
+        return v if v >= 0 else default
+    dmin = _norm_delay("delay_min", redeem.DEFAULT_DELAY_MIN)
+    dmax = _norm_delay("delay_max", redeem.DEFAULT_DELAY_MAX)
+    if dmax < dmin:
+        dmax = dmin  # 上界不得小于下界。
+    redeem_cfg["delay_min"] = round(dmin, 1)
+    redeem_cfg["delay_max"] = round(dmax, 1)
     store["redeem"] = redeem_cfg
     return store
 
@@ -776,7 +789,7 @@ def _persist_redeem_balance(email, balance):
             pass  # 余额持久化失败不影响兑换主流程。
 
 
-def _redeem_worker(job_id, accounts, codes, limit, proxy_url):
+def _redeem_worker(job_id, accounts, codes, limit, proxy_url, throttle=None):
     """后台线程：执行批量兑换，进度实时写入 job；余额事件落盘持久化。"""
     def progress(event):
         with _redeem_lock:
@@ -788,7 +801,8 @@ def _redeem_worker(job_id, accounts, codes, limit, proxy_url):
             _persist_redeem_balance(event.get("account"), event.get("balance"))
 
     try:
-        result = redeem.run_redeem(accounts, codes, limit, proxy_url, progress=progress)
+        result = redeem.run_redeem(accounts, codes, limit, proxy_url,
+                                   progress=progress, throttle=throttle)
         with _redeem_lock:
             job = _redeem_jobs.get(job_id)
             if job is not None:
@@ -837,6 +851,8 @@ def api_redeem_config():
         "ok": True,
         "accounts": [public_redeem_account(a) for a in rc["accounts"]],
         "limit": rc["limit"],
+        "delay_min": rc["delay_min"],
+        "delay_max": rc["delay_max"],
         "admin_required": bool(ADMIN_PASSWORD),
         "admin_unlocked": admin_ok(),
     })
@@ -907,7 +923,7 @@ def api_redeem_account_delete(idx):
 
 @app.put("/api/redeem/settings")
 def api_redeem_settings():
-    """设置每账号成功/失败次数上限（管理）。"""
+    """设置每账号成功/失败次数上限 + 兑换请求间隔（管理）。"""
     guard = _guard_admin()
     if guard:
         return guard
@@ -918,9 +934,26 @@ def api_redeem_settings():
         return jsonify({"ok": False, "error": "limit 需为整数"}), 400
     if limit < 1:
         return jsonify({"ok": False, "error": "limit 至少为 1"}), 400
+
+    # 请求间隔（秒，可选）：缓解服务端限流。提供则校验，否则保留原值。
+    delay_min = delay_max = None
+    if payload.get("delay_min") is not None or payload.get("delay_max") is not None:
+        try:
+            delay_min = float(payload.get("delay_min"))
+            delay_max = float(payload.get("delay_max"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "请求间隔需为数字（秒）"}), 400
+        if delay_min < 0 or delay_max < 0:
+            return jsonify({"ok": False, "error": "请求间隔不能为负"}), 400
+        if delay_max < delay_min:
+            return jsonify({"ok": False, "error": "间隔上限不能小于下限"}), 400
+
     try:
         store = read_store()
         store["redeem"]["limit"] = limit
+        if delay_min is not None:
+            store["redeem"]["delay_min"] = round(delay_min, 1)
+            store["redeem"]["delay_max"] = round(delay_max, 1)
         write_store(store)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -962,6 +995,10 @@ def api_redeem_start():
 
     limit = store["redeem"]["limit"]
     proxy_url = store.get("proxy_url", "")
+    throttle = {
+        "delay_min": store["redeem"]["delay_min"],
+        "delay_max": store["redeem"]["delay_max"],
+    }
 
     global _redeem_seq
     with _redeem_lock:
@@ -983,7 +1020,7 @@ def api_redeem_start():
 
     thread = threading.Thread(
         target=_redeem_worker,
-        args=(job_id, accounts, codes, limit, proxy_url),
+        args=(job_id, accounts, codes, limit, proxy_url, throttle),
         name="redeem-" + job_id,
         daemon=True,
     )
