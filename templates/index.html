@@ -332,7 +332,7 @@
       <div id="empty" class="empty">尚未配置任何平台，请到「配置管理」添加</div>
     </div>
 
-    <!-- ===== 兑换（claude-zhongzhuan.cloud 批量兑换，账号轮换） ===== -->
+    <!-- ===== 兑换（claude-zhongzhuan.cloud 批量兑换，多账号并行抢码 + 预热） ===== -->
     <div class="view" id="view-redeem">
       <!-- 账号管理（增删改 + 次数需管理员；勾选哪些账号参与本次兑换为自由选择） -->
       <div class="panel">
@@ -342,7 +342,7 @@
           <span class="meta" style="display:flex; align-items:center; gap:6px">每账号次数
             <input class="input" id="rd_limit" type="number" min="1" step="1" value="2" style="width:56px; padding:7px 9px">
           </span>
-          <span class="meta" style="display:flex; align-items:center; gap:6px" title="相邻两次兑换请求之间的随机间隔（秒）。兑换靠抢，间隔越短越快；多账号交叉轮换已能拉低单账号频率，故默认取亚秒级">间隔
+          <span class="meta" style="display:flex; align-items:center; gap:6px" title="同一账号相邻两次兑换请求的随机间隔（秒）。兑换靠抢、间隔越短越快；多账号并行（每账号独立连接同时抢码）已拉低单账号频率，故默认取亚秒级，可再调小">间隔
             <input class="input" id="rd_delayMin" type="number" min="0" step="0.1" value="0.3" style="width:54px; padding:7px 9px">
             <span style="color:var(--muted)">~</span>
             <input class="input" id="rd_delayMax" type="number" min="0" step="0.1" value="0.8" style="width:54px; padding:7px 9px">
@@ -352,8 +352,8 @@
           <button class="btn sm" id="rd_addAcc">＋ 新增账号</button>
         </div>
         <div class="note" style="margin-top:0">
-          勾选参与本次兑换的账号（可自由选择）。多账号交叉轮换：账号依次轮流、每轮各兑一个码，单账号达到次数上限后退出；某账号触发限流时自动冷却并转交其他账号继续，被限流的兑换码立即留给其他账号去抢。
-          <b>新增 / 编辑 / 删除账号、修改次数需管理员解锁</b>（在「🔧 设置」中输入管理密码）；兑换本身无需密码。
+          勾选参与本次兑换的账号（可自由选择）。<b>多账号并行抢码</b>：每个账号一条独立 keep-alive 连接、同时从共享兑换码队列里抢不同的码，单账号达到次数上限后退出；某账号触发限流时自动冷却并转交其他账号继续，被限流的兑换码立即放回队列留给其他账号去抢。
+          <b>固定时点放码可先点「🔥 预热」</b>：提前登录并焐热连接（有效约 5 分钟），到点粘贴兑换码点「开始兑换」即零登录延迟开抢。预热与兑换均无需密码；<b>新增 / 编辑 / 删除账号、修改次数需管理员解锁</b>（在「🔧 设置」中输入管理密码）。
         </div>
         <div style="margin:12px 0 8px; display:flex; gap:10px; align-items:center">
           <button class="btn sm ghost" id="rd_selAll">全选</button>
@@ -365,7 +365,7 @@
 
       <!-- 兑换码 + 运行（开放） -->
       <div class="panel">
-        <div class="panel-title">🎁 批量兑换 <span class="sub">勾选账号 · 粘贴兑换码 · 一键运行</span></div>
+        <div class="panel-title">🎁 批量兑换 <span class="sub">勾选账号 · （可选）先预热 · 粘贴兑换码 · 开抢</span></div>
         <div class="field">
           <label>兑换码（可直接粘贴整段：带编号、标题或说明文字都行，自动提取去重）</label>
           <textarea class="input" id="rd_codes" rows="6"
@@ -375,6 +375,8 @@
         <div class="controls" style="margin-top:14px; align-items:center">
           <span class="meta" id="rd_stat"></span>
           <span style="flex:1"></span>
+          <span class="meta" id="rd_armStat"></span>
+          <button class="btn ghost" id="rd_prewarm" title="放码前先点预热：提前登录账号并焐热连接（有效约 5 分钟），开抢时零登录延迟">🔥 预热</button>
           <button class="btn" id="rd_run">🚀 开始兑换</button>
         </div>
         <div id="rd_error" class="error" style="display:none"></div>
@@ -1319,7 +1321,9 @@
         ? `<div style="margin-top:6px; color:var(--muted)">未使用兑换码 ${s.leftover_codes.length} 个（已保留，未消耗）</div>` : '';
       let stopNote = '';
       if (s.stopped) {
-        const note = '⚠️ 部分账号触发服务端频率限制，已自动切换账号继续；仍有未使用兑换码（已保留），可稍后重试';
+        const note = s.stop_reason === 'network'
+          ? '⚠️ 部分账号多次网络异常已停用；仍有未使用兑换码（已保留、未消耗），请检查网络/代理后稍后重试'
+          : '⚠️ 部分账号触发服务端频率限制，已自动切换账号继续；仍有未使用兑换码（已保留），可稍后重试';
         stopNote = `<div style="margin-top:6px; color:var(--yellow)">${note}</div>`;
       }
       $('rd_summary').innerHTML = `<div class="rd-sum-box">
@@ -1367,6 +1371,7 @@
       const btn = $('rd_run');
       btn.disabled = false;
       btn.innerHTML = '🚀 开始兑换';
+      $('rd_prewarm').disabled = false;
     }
 
     $('rd_run').addEventListener('click', async () => {
@@ -1382,6 +1387,7 @@
       const btn = $('rd_run');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span>兑换中';
+      $('rd_prewarm').disabled = true;
       $('rd_resultPanel').style.display = 'block';
       $('rd_summary').style.display = 'none';
       $('rd_log').innerHTML = '';
@@ -1394,6 +1400,8 @@
         });
         const data = await resp.json();
         if (!data.ok) { $('rd_error').textContent = data.error || '启动失败'; $('rd_error').style.display = 'block'; rdFinish(false); return; }
+        if (data.prewarmed) toast('已命中预热，零登录延迟开抢', 'ok');
+        rdStopArm();
         rdPoll(data.job_id);
       } catch (e) {
         $('rd_error').textContent = '网络错误：' + e.message; $('rd_error').style.display = 'block'; rdFinish(false);
@@ -1407,7 +1415,97 @@
       $('rd_progress').textContent = '';
     });
 
+    // ----- 预热（预备-倒计时抢码）：放码前先登录并焐热连接，开抢零登录延迟 -----
+    let rdArmTimer = null;
+    let rdArmId = null;           // 当前预热 id：disarm 时带上，避免误清掉其它标签页/新建的预热。
+    let rdPrewarmPollFails = 0;   // 连续轮询失败计数，用于失败恢复，避免 UI 卡在「预热中」。
+    function rdSetArmText(t) { $('rd_armStat').textContent = t || ''; }
+    function rdStopArm() {
+      if (rdArmTimer) { clearInterval(rdArmTimer); rdArmTimer = null; }
+      rdSetArmText('');
+      const b = $('rd_prewarm');
+      if (!b.disabled) b.innerHTML = '🔥 预热';
+    }
+    function rdStartArmCountdown(count, remaining) {
+      if (rdArmTimer) { clearInterval(rdArmTimer); rdArmTimer = null; }
+      let rem = remaining != null ? remaining : 0;
+      const armId = rdArmId;     // 锁定本次倒计时对应的预热 id。
+      const tick = () => {
+        if (rem <= 0) {
+          rdSetArmText('');
+          if (!$('rd_prewarm').disabled) $('rd_prewarm').innerHTML = '🔥 预热';
+          if (rdArmTimer) { clearInterval(rdArmTimer); rdArmTimer = null; }
+          // 到期主动作废：仅作废本次倒计时对应的预热（带 id），与服务端 TTL 对齐释放连接。
+          fetch('/api/redeem/disarm', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: armId }),
+          }).catch(() => {});
+          return;
+        }
+        rdSetArmText(`✅ 已预热 ${count} 账号 · 有效 ${rem}s`);
+        rem -= 1;
+      };
+      tick();
+      rdArmTimer = setInterval(tick, 1000);
+    }
+    async function rdPrewarmPoll() {
+      try {
+        const resp = await fetch('/api/redeem/prewarm/status');
+        const data = await resp.json();
+        if (!data.ok) return;
+        rdPrewarmPollFails = 0;
+        if (data.id != null) rdArmId = data.id;
+        if (data.status === 'warming') {
+          const got = (data.logs || []).filter(l => l.type === 'login' && l.ok === true).length;
+          rdSetArmText(`🔥 预热中… ${got}/${data.total}`);
+          if (!rdPolling) $('rd_prewarm').disabled = true;
+          setTimeout(rdPrewarmPoll, 800);
+        } else if (data.status === 'ready') {
+          (data.logs || []).forEach(l => { if (l.type === 'balance' && l.ok && l.balance) rdApplyBalance(l.account, l.balance); });
+          if (!rdPolling) { $('rd_prewarm').disabled = false; $('rd_prewarm').innerHTML = '🔥 重新预热'; }
+          rdStartArmCountdown(data.ready_count, data.remaining);
+        } else if (data.status === 'error') {
+          rdStopArm();
+          if (!rdPolling) $('rd_prewarm').disabled = false;
+          toast(data.error || '预热失败', 'err');
+        } else { // idle
+          rdArmId = null;
+          rdStopArm();
+          if (!rdPolling) $('rd_prewarm').disabled = false;
+        }
+      } catch (e) {
+        // 轮询失败：重试至多 3 次，仍失败则恢复按钮（服务端可能已 ready，可手动重试）。
+        rdPrewarmPollFails += 1;
+        if (rdPrewarmPollFails <= 3) { setTimeout(rdPrewarmPoll, 1500); return; }
+        rdPrewarmPollFails = 0;
+        rdSetArmText('');
+        if (!rdPolling) { $('rd_prewarm').disabled = false; $('rd_prewarm').innerHTML = '🔥 预热'; }
+        toast('预热状态查询失败，请重试', 'err');
+      }
+    }
+    $('rd_prewarm').addEventListener('click', async () => {
+      if (rdPolling) { toast('兑换进行中，无法预热', 'err'); return; }
+      const indices = Array.from(document.querySelectorAll('#rd_accList .rd-sel:checked')).map(c => parseInt(c.dataset.idx, 10));
+      if (!RD.accounts.length) { toast('尚未配置账号（需管理密码新增）', 'err'); return; }
+      if (!indices.length) { toast('请至少勾选一个账号', 'err'); return; }
+      const btn = $('rd_prewarm');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>预热中';
+      rdSetArmText('🔥 正在发起预热…');
+      rdPrewarmPollFails = 0;
+      try {
+        const resp = await fetch('/api/redeem/prewarm', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ indices }),
+        });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '预热失败', 'err'); btn.disabled = false; rdStopArm(); return; }
+        if (data.armed_id != null) rdArmId = data.armed_id;
+        rdPrewarmPoll();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); btn.disabled = false; rdStopArm(); }
+    });
+
     loadRedeem();
+    rdPrewarmPoll();  // 进页面时同步一次预热状态（刷新后仍能看到「已预热」倒计时）。
 
     // 弹窗点击遮罩关闭
     document.querySelectorAll('.modal-mask').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));

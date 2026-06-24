@@ -67,6 +67,17 @@ _redeem_seq = 0
 # 已完成任务保留上限，超出按创建顺序淘汰最旧，避免内存无限增长。
 REDEEM_JOB_CAP = 20
 
+# 预热（预备-倒计时抢码）：放码前先登录选中账号、预热每账号 keep-alive 连接并挂在内存，
+# 开抢时把这些「热上下文」交给 run_redeem(warm=...) 复用，跳过登录直接兑换。
+# 单 gunicorn worker（见 Dockerfile：--workers 1）下模块级状态可跨请求存活。
+# 结构：{id, status:'warming'|'ready'|'error', accounts:{email:ctx}, emails:[...],
+#        logs:[...], error, proxy_url, started_at, ready_at, created_at(monotonic)}。
+_redeem_armed = None
+_redeem_armed_lock = threading.Lock()
+_redeem_armed_seq = 0
+# 预热保留时长（秒）：ready 后超过此时长自动作废并关连接。覆盖「2 分钟内可开抢」需求并留足余量。
+ARMED_TTL_SECONDS = 300
+
 
 # =========================
 # 配置存取（持久化层）
@@ -789,8 +800,11 @@ def _persist_redeem_balance(email, balance):
             pass  # 余额持久化失败不影响兑换主流程。
 
 
-def _redeem_worker(job_id, accounts, codes, limit, proxy_url, throttle=None):
-    """后台线程：执行批量兑换，进度实时写入 job；余额事件落盘持久化。"""
+def _redeem_worker(job_id, accounts, codes, limit, proxy_url, throttle=None, warm=None):
+    """后台线程：执行批量兑换，进度实时写入 job；余额事件落盘持久化。
+
+    warm：可选，由预热阶段（prewarm）得到的 {email: 热上下文}，命中账号跳过登录直接复用。
+    """
     def progress(event):
         with _redeem_lock:
             job = _redeem_jobs.get(job_id)
@@ -802,7 +816,7 @@ def _redeem_worker(job_id, accounts, codes, limit, proxy_url, throttle=None):
 
     try:
         result = redeem.run_redeem(accounts, codes, limit, proxy_url,
-                                   progress=progress, throttle=throttle)
+                                   progress=progress, throttle=throttle, warm=warm)
         with _redeem_lock:
             job = _redeem_jobs.get(job_id)
             if job is not None:
@@ -813,6 +827,74 @@ def _redeem_worker(job_id, accounts, codes, limit, proxy_url, throttle=None):
         _mark_redeem_error(job_id, str(exc))
     except Exception as exc:  # noqa: BLE001
         _mark_redeem_error(job_id, "兑换执行异常：{0}".format(exc))
+
+
+# =========================
+# 预热（预备-倒计时抢码）辅助
+# =========================
+
+def _close_armed(armed):
+    """关闭一份预热态里所有账号的连接，释放资源。"""
+    if not armed:
+        return
+    for ctx in (armed.get("accounts") or {}).values():
+        close = ctx.get("close")
+        if close:
+            try:
+                close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _expire_armed_if_stale():
+    """若已就绪的预热超过 TTL，则作废并关连接（懒清理，在各预热相关接口入口调用）。"""
+    global _redeem_armed
+    with _redeem_armed_lock:
+        armed = _redeem_armed
+        if armed and armed.get("status") == "ready":
+            if time.monotonic() - armed.get("created_at", 0.0) > ARMED_TTL_SECONDS:
+                _close_armed(armed)
+                _redeem_armed = None
+
+
+def _prewarm_worker(armed_id, accounts, proxy_url):
+    """后台线程：并行预登录并预热连接，完成后把热上下文挂到 _redeem_armed。"""
+    def progress(event):
+        with _redeem_armed_lock:
+            a = _redeem_armed
+            if a is not None and a.get("id") == armed_id:
+                a["logs"].append(event)
+
+    try:
+        warm = redeem.prewarm_accounts(accounts, proxy_url, progress=progress)
+        with _redeem_armed_lock:
+            a = _redeem_armed
+            if a is None or a.get("id") != armed_id:
+                # 本次预热已被新的预热替换/作废：关闭刚建立的连接，避免泄漏。
+                for ctx in warm.values():
+                    close = ctx.get("close")
+                    if close:
+                        try:
+                            close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                return
+            a["accounts"] = warm
+            a["status"] = "ready"
+            a["ready_at"] = _now_str()
+            a["created_at"] = time.monotonic()  # 有效期以「预热完成」为起点。
+    except redeem.RedeemError as exc:
+        with _redeem_armed_lock:
+            a = _redeem_armed
+            if a is not None and a.get("id") == armed_id:
+                a["status"] = "error"
+                a["error"] = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        with _redeem_armed_lock:
+            a = _redeem_armed
+            if a is not None and a.get("id") == armed_id:
+                a["status"] = "error"
+                a["error"] = "预热异常：{0}".format(exc)
 
 
 def _mark_redeem_error(job_id, message):
@@ -826,6 +908,21 @@ def _mark_redeem_error(job_id, message):
 
 def _redeem_has_running():
     return any(j.get("status") == "running" for j in _redeem_jobs.values())
+
+
+def _select_redeem_accounts(all_accounts, indices):
+    """按下标选取参与兑换/预热的账号，归一化为 [{email, password}]。
+
+    indices 为非空列表时按下标选（越界忽略）；否则选全部。供 start 与 prewarm 共用，保持选择口径一致。
+    """
+    if isinstance(indices, list) and indices:
+        try:
+            picked = [all_accounts[int(i)] for i in indices if 0 <= int(i) < len(all_accounts)]
+        except (TypeError, ValueError):
+            picked = []
+    else:
+        picked = list(all_accounts)
+    return [{"email": a.get("email"), "password": a.get("password")} for a in picked]
 
 
 def _evict_old_redeem_jobs():
@@ -982,14 +1079,7 @@ def api_redeem_start():
         return jsonify({"ok": False, "error": "尚未配置兑换账号，请先在「兑换账号」中添加（需管理密码）"}), 400
 
     indices = payload.get("indices")
-    if isinstance(indices, list) and indices:
-        try:
-            picked = [all_accounts[int(i)] for i in indices if 0 <= int(i) < len(all_accounts)]
-        except (TypeError, ValueError):
-            picked = []
-    else:
-        picked = list(all_accounts)
-    accounts = [{"email": a.get("email"), "password": a.get("password")} for a in picked]
+    accounts = _select_redeem_accounts(all_accounts, indices)
     if not accounts:
         return jsonify({"ok": False, "error": "请至少选择一个账号"}), 400
 
@@ -1000,10 +1090,34 @@ def api_redeem_start():
         "delay_max": store["redeem"]["delay_max"],
     }
 
-    global _redeem_seq
+    _expire_armed_if_stale()
+    global _redeem_seq, _redeem_armed
     with _redeem_lock:
         if _redeem_has_running():
+            # 注意：必须在确认可运行后才消费预热——否则一次失败的开抢会白白清掉预热。
             return jsonify({"ok": False, "error": "已有兑换任务进行中，请等待完成"}), 409
+
+        # 消费/接管预热：ready 取走命中的热上下文复用；warming/error 一并作废，避免遗留热连接池
+        # （warming 的预热线程完成时会检测 armed id 失配并自行关闭其连接，故此处无需再关）。
+        warm = None
+        with _redeem_armed_lock:
+            armed = _redeem_armed
+            if armed and armed.get("status") == "ready":
+                sel_emails = {a["email"] for a in accounts}
+                ctxs = armed.get("accounts") or {}
+                warm = {e: c for e, c in ctxs.items() if e in sel_emails} or None
+                # 关闭未被本次选择命中的热连接，避免泄漏。
+                for e, c in ctxs.items():
+                    if e not in sel_emails:
+                        close = c.get("close")
+                        if close:
+                            try:
+                                close()
+                            except Exception:  # noqa: BLE001
+                                pass
+            if armed is not None:
+                _redeem_armed = None  # 开抢即接管/作废当前预热（一次性消费）。
+
         _redeem_seq += 1
         job_id = "rj{0}".format(_redeem_seq)
         _redeem_jobs[job_id] = {
@@ -1020,12 +1134,13 @@ def api_redeem_start():
 
     thread = threading.Thread(
         target=_redeem_worker,
-        args=(job_id, accounts, codes, limit, proxy_url, throttle),
+        args=(job_id, accounts, codes, limit, proxy_url, throttle, warm),
         name="redeem-" + job_id,
         daemon=True,
     )
     thread.start()
-    return jsonify({"ok": True, "job_id": job_id, "total_codes": len(codes)})
+    return jsonify({"ok": True, "job_id": job_id, "total_codes": len(codes),
+                    "prewarmed": bool(warm)})
 
 
 @app.get("/api/redeem/status/<job_id>")
@@ -1045,6 +1160,108 @@ def api_redeem_status(job_id):
             "finished_at": job["finished_at"],
             "total_codes": job["total_codes"],
         })
+
+
+@app.post("/api/redeem/prewarm")
+def api_redeem_prewarm():
+    """预热（预备-倒计时抢码）：后台并行登录选中账号、预热连接并挂在内存待开抢复用。
+
+    开放访问，无需管理密码（与「开始兑换」一致）。客户端仅传 indices（选中账号下标）。
+    """
+    _expire_armed_if_stale()
+    payload = request.get_json(silent=True) or {}
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    all_accounts = store["redeem"]["accounts"]
+    if not all_accounts:
+        return jsonify({"ok": False, "error": "尚未配置兑换账号，请先在「兑换账号」中添加（需管理密码）"}), 400
+
+    accounts = _select_redeem_accounts(all_accounts, payload.get("indices"))
+    if not accounts:
+        return jsonify({"ok": False, "error": "请至少选择一个账号"}), 400
+    proxy_url = store.get("proxy_url", "")
+
+    global _redeem_armed, _redeem_armed_seq
+    with _redeem_armed_lock:
+        if _redeem_has_running():
+            return jsonify({"ok": False, "error": "有兑换任务进行中，暂无法预热"}), 409
+        _close_armed(_redeem_armed)  # 关闭旧预热，避免连接泄漏。
+        _redeem_armed_seq += 1
+        armed_id = _redeem_armed_seq
+        _redeem_armed = {
+            "id": armed_id,
+            "status": "warming",
+            "accounts": {},
+            "emails": [a["email"] for a in accounts],
+            "logs": [],
+            "error": None,
+            "proxy_url": proxy_url,
+            "started_at": _now_str(),
+            "ready_at": None,
+            "created_at": time.monotonic(),
+        }
+
+    thread = threading.Thread(
+        target=_prewarm_worker,
+        args=(armed_id, accounts, proxy_url),
+        name="prewarm-{0}".format(armed_id),
+        daemon=True,
+    )
+    thread.start()
+    return jsonify({"ok": True, "count": len(accounts), "armed_id": armed_id})
+
+
+@app.get("/api/redeem/prewarm/status")
+def api_redeem_prewarm_status():
+    """预热状态：idle / warming / ready / error。开放访问。"""
+    _expire_armed_if_stale()
+    with _redeem_armed_lock:
+        a = _redeem_armed
+        if a is None:
+            return jsonify({"ok": True, "status": "idle"})
+        remaining = None
+        if a["status"] == "ready":
+            remaining = max(0, int(ARMED_TTL_SECONDS - (time.monotonic() - a.get("created_at", 0.0))))
+        ready_emails = list((a.get("accounts") or {}).keys())
+        return jsonify({
+            "ok": True,
+            "status": a["status"],
+            "id": a.get("id"),
+            "emails": a.get("emails", []),
+            "ready_emails": ready_emails,
+            "ready_count": len(ready_emails),
+            "total": len(a.get("emails", [])),
+            "logs": list(a.get("logs", [])),
+            "error": a.get("error"),
+            "started_at": a.get("started_at"),
+            "ready_at": a.get("ready_at"),
+            "remaining": remaining,
+            "ttl": ARMED_TTL_SECONDS,
+        })
+
+
+@app.post("/api/redeem/disarm")
+def api_redeem_disarm():
+    """作废预热并关闭连接。开放访问。
+
+    带 id 时仅作废 id 匹配的那一份（防止旧标签页/过期倒计时误清掉后来新建的预热）；
+    不带 id 视为强制清理当前预热。
+    """
+    payload = request.get_json(silent=True) or {}
+    want = payload.get("id")
+    global _redeem_armed
+    with _redeem_armed_lock:
+        a = _redeem_armed
+        if a is None:
+            return jsonify({"ok": True})
+        if want is not None and a.get("id") != want:
+            return jsonify({"ok": True, "skipped": True})  # id 不匹配：不动当前预热。
+        _close_armed(a)
+        _redeem_armed = None
+    return jsonify({"ok": True})
 
 
 # =========================
