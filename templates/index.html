@@ -234,6 +234,7 @@
     .balance-amount { color: var(--accent); font-weight: 500; }
     .balance-time { color: var(--muted); margin-left: 6px; font-size: 12px; }
     .balance-empty { color: var(--muted); font-style: italic; }
+    .balance-error { color: #fca5a5; font-weight: 500; }
 
     /* 开关 */
     .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
@@ -536,7 +537,10 @@
       <details style="margin-top:14px">
         <summary style="cursor:pointer;color:var(--muted);user-select:none">🔧 余额接口配置（可选）</summary>
         <div class="note" style="margin-top:8px;margin-bottom:12px">配置后每行右侧显示「💰 刷新」按钮。凭证以明文存储于 config.json，与现有 access_token 一致。</div>
-        <div class="field"><label>JSON 取值路径 *</label><input class="input" id="bm_jsonpath" placeholder=".data.balance"></div>
+        <div class="row-2">
+          <div class="field"><label>JSON 取值路径 *</label><input class="input" id="bm_jsonpath" placeholder=".data.balance"></div>
+          <div class="field"><label>金额换算（除以，可选）</label><input class="input" id="bm_divisor" type="number" step="any" min="0" placeholder="留空=原值；分→元填 100"></div>
+        </div>
         <div class="field" style="margin-top:12px"><label>curl 命令 *</label>
           <textarea class="input" id="bm_curl" rows="6" placeholder="浏览器开发者工具 → Network → 右键目标请求 → Copy → Copy as cURL (bash)，整段粘贴到这里" style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
           <div class="note" style="margin-top:6px">粘贴后端自动解析请求方法、URL、请求头、Cookie 和请求体，无需手动拆分。</div>
@@ -948,8 +952,13 @@
         const hasBalance = !!b.balance_config;
         let balanceHtml = '';
         if (hasBalance) {
-          if (b.balance) {
-            balanceHtml = `<div class="cfg-balance"><span class="balance-amount">💰 ${escapeHtml(b.balance)}</span> <span class="balance-time">(${escapeHtml(b.balance_updated_at || '')})</span></div>`;
+          const time = b.balance_updated_at ? ` <span class="balance-time">(${escapeHtml(b.balance_updated_at)})</span>` : '';
+          if (b.balance_error) {
+            // 失败优先展示；若有上次成功余额则附带，便于判断是否长期失效。
+            const last = b.balance ? ` <span class="balance-time">上次 💰 ${escapeHtml(b.balance)}</span>` : '';
+            balanceHtml = `<div class="cfg-balance"><span class="balance-error">⚠️ ${escapeHtml(b.balance_error)}</span>${time}${last}</div>`;
+          } else if (b.balance) {
+            balanceHtml = `<div class="cfg-balance"><span class="balance-amount">💰 ${escapeHtml(b.balance)}</span>${time}</div>`;
           } else {
             balanceHtml = `<div class="cfg-balance"><span class="balance-empty">未刷新</span></div>`;
           }
@@ -1000,9 +1009,17 @@
           headers: adminHeaders()
         });
         const data = await resp.json();
-        if (!data.ok) { toast(data.error || '刷新失败', 'err'); return; }
+        if (!data.ok) {
+          // 失败状态已落盘，同步到本地并展示，让页面能看出来。
+          bms[i].balance_error = data.error || '刷新失败';
+          if (data.balance_updated_at) bms[i].balance_updated_at = data.balance_updated_at;
+          renderBookmarks();
+          toast(data.error || '刷新失败', 'err');
+          return;
+        }
         bms[i].balance = data.balance;
         bms[i].balance_updated_at = data.balance_updated_at;
+        delete bms[i].balance_error;
         renderBookmarks();
         toast(`💰 余额 ${data.balance}`, 'ok');
       } catch (e) {
@@ -1040,6 +1057,7 @@
       // 填充余额配置
       const cfg = b.balance_config || {};
       $('bm_jsonpath').value = cfg.json_path || '';
+      $('bm_divisor').value = cfg.divisor != null ? cfg.divisor : '';
       $('bm_curl').value = cfgToCurl(cfg);
 
       $('bmModal').classList.add('show');
@@ -1056,11 +1074,17 @@
       let balance_config = null;
       const curl_text = $('bm_curl').value.trim();
       const json_path = $('bm_jsonpath').value.trim();
+      const divisor_text = $('bm_divisor').value.trim();
 
       if (curl_text || json_path) {
         if (!curl_text) { showBmError('curl 命令必填'); return; }
         if (!json_path) { showBmError('JSON 取值路径必填'); return; }
         balance_config = { curl: curl_text, json_path };
+        if (divisor_text) {
+          const d = Number(divisor_text);
+          if (!isFinite(d) || d <= 0) { showBmError('金额换算需为大于 0 的数字'); return; }
+          balance_config.divisor = d;
+        }
       }
 
       const body = { name, url, balance_config };

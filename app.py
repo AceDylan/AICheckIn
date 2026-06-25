@@ -12,13 +12,17 @@ gyqd 签到逻辑的 Web 封装。
 """
 
 import datetime
+import hashlib
 import hmac
 import json
 import os
+import random
 import re
+import string
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -288,7 +292,8 @@ def parse_curl(curl_text):
             ci = line.find(":")
             if ci > 0:
                 key = line[:ci].strip()
-                if key:
+                # 丢弃 accept-encoding：客户端不解压，保留会导致响应为压缩乱码。
+                if key and key.lower() != "accept-encoding":
                     headers[key] = line[ci + 1:].strip()
             i += 2
         elif tok in ("-b", "--cookie") and i + 1 < n:
@@ -318,6 +323,43 @@ def parse_curl(curl_text):
     return {"method": method, "url": url, "headers": headers, "body": body}
 
 
+def _sign_nekocode(url, ts, nonce):
+    """nekocode.ai 的请求签名：SHA256(ts + nonce + path + 密钥) 取 hex 前 16 位。
+
+    path 为去掉 axios baseURL(/api)前缀、去 query 的相对路径，例如
+    https://nekocode.ai/api/user/self → /user/self。密钥常量见前端 bundle。
+    """
+    path = urlparse(url).path
+    if path.startswith("/api"):
+        path = path[len("/api"):] or "/"
+    raw = "{0}{1}{2}{3}".format(ts, nonce, path, "nekoneko")
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+# 需要动态请求签名的站点：host -> 签名函数。命中后每次请求实时重算，
+# 覆盖 curl 抓到的过期 X-Sign，解决“签名几分钟后失效”问题。
+_BALANCE_SIGNERS = {
+    "nekocode.ai": _sign_nekocode,
+}
+
+
+def _apply_dynamic_signature(url, headers):
+    """若 host 命中已知动态签名站点，就地刷新 X-Timestamp/X-Nonce/X-Sign。"""
+    host = (urlparse(url).hostname or "").lower()
+    signer = _BALANCE_SIGNERS.get(host)
+    if not signer:
+        return
+    ts = str(int(time.time()))
+    nonce = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(8))
+    sign = signer(url, ts, nonce)
+    # 删掉原有同名头(大小写不敏感)再写入新值，避免重复头。
+    for hk in [k for k in headers if k.lower() in ("x-timestamp", "x-nonce", "x-sign")]:
+        headers.pop(hk)
+    headers["X-Timestamp"] = ts
+    headers["X-Nonce"] = nonce
+    headers["X-Sign"] = sign
+
+
 def _fetch_balance(balance_cfg, proxy_url):
     """根据 balance_config 获取余额，返回 (balance_str_or_None, error_msg)。"""
     method = balance_cfg["method"]
@@ -325,6 +367,14 @@ def _fetch_balance(balance_cfg, proxy_url):
     headers = dict(balance_cfg.get("headers") or {})
     body = balance_cfg.get("body")
     json_path = balance_cfg["json_path"]
+
+    # 剥掉 accept-encoding：两条取数路径都不解压，若保留此头服务器会返回
+    # gzip/br/zstd 压缩字节，解码成乱码后 json.loads 必然失败（“不是合法 JSON”）。
+    for hk in [k for k in headers if k.lower() == "accept-encoding"]:
+        headers.pop(hk)
+
+    # 动态签名站点（如 nekocode）：实时重算签名头，覆盖 curl 里的过期值。
+    _apply_dynamic_signature(url, headers)
 
     if method == "POST":
         if body:
@@ -344,18 +394,59 @@ def _fetch_balance(balance_cfg, proxy_url):
         if int(status) >= 400:
             return None, "HTTP {0}".format(status)
 
+    # 去掉可能的 UTF-8 BOM 和首尾空白，避免合法 JSON 因 BOM 被判非法。
+    text = resp_body.lstrip("﻿").strip() if isinstance(resp_body, str) else resp_body
     try:
-        parsed = json.loads(resp_body)
+        parsed = json.loads(text)
     except (ValueError, TypeError) as exc:
-        return None, "响应不是合法 JSON：{0}".format(exc)
+        # 附带响应片段，便于区分压缩乱码 / HTML 错误页 / 真正的非 JSON。
+        snippet = str(resp_body)[:80].replace("\n", " ")
+        return None, "响应不是合法 JSON：{0}（响应开头：{1}）".format(exc, snippet)
 
     value = _extract_by_path(parsed, json_path)
     if value is None:
         return None, "未找到路径 {0}".format(json_path)
 
+    # 可选换算系数：如分→元填 100。未配置或非法时按 1（不换算）。
+    try:
+        divisor = float(balance_cfg.get("divisor"))
+        if divisor <= 0:
+            divisor = 1.0
+    except (TypeError, ValueError):
+        divisor = 1.0
+
     if isinstance(value, (int, float)):
-        return "{0:.2f}".format(float(value)), ""
+        return "{0:.2f}".format(float(value) / divisor), ""
+    # 字符串值：仅当配置了换算系数（≠1）时才数值化，否则保持原样精度。
+    if divisor != 1.0:
+        try:
+            return "{0:.2f}".format(float(str(value).strip()) / divisor), ""
+        except (TypeError, ValueError):
+            pass
     return str(value).strip(), ""
+
+
+def _apply_balance_to_bookmark(bookmark, proxy_url):
+    """拉取并就地写回单条收藏的余额/错误状态。返回 (ok, balance_or_errmsg)。
+
+    成功：写 balance + balance_updated_at，清除 balance_error。
+    失败：写 balance_error + balance_updated_at，保留上次 balance 不动。
+    """
+    cfg = bookmark.get("balance_config")
+    if not cfg:
+        return False, "未配置余额接口"
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        balance, error_msg = _fetch_balance(cfg, proxy_url)
+    except Exception as exc:  # noqa: BLE001 - 单条异常不应影响调用方批量流程。
+        balance, error_msg = None, "刷新余额失败：{0}".format(exc)
+    bookmark["balance_updated_at"] = now
+    if balance is None:
+        bookmark["balance_error"] = error_msg or "获取余额失败"
+        return False, bookmark["balance_error"]
+    bookmark["balance"] = balance
+    bookmark.pop("balance_error", None)
+    return True, balance
 
 
 def clean_bookmark(payload, existing=None):
@@ -420,6 +511,18 @@ def clean_bookmark(payload, existing=None):
                 if not json_path:
                     errors.append("balance_config.json_path 必填")
 
+                # 可选换算系数（如分→元填 100）；缺省/空表示不换算。
+                divisor = None
+                divisor_raw = balance_cfg_raw.get("divisor")
+                if divisor_raw is not None and str(divisor_raw).strip() != "":
+                    try:
+                        divisor = float(divisor_raw)
+                    except (TypeError, ValueError):
+                        errors.append("balance_config.divisor 需为数字")
+                    else:
+                        if divisor <= 0:
+                            errors.append("balance_config.divisor 需大于 0")
+
                 balance_cfg = {
                     "method": method,
                     "url": api_url,
@@ -430,6 +533,9 @@ def clean_bookmark(payload, existing=None):
                 # 保留原始 curl，便于编辑时回填文本框
                 if curl_text:
                     balance_cfg["curl"] = curl_text
+                # 仅在配置了有效且 ≠1 的系数时存储，避免污染旧配置
+                if divisor and divisor != 1:
+                    balance_cfg["divisor"] = divisor
             # balance_cfg_raw is None → 显式清除，balance_cfg 保持 None
     elif existing and existing.get("balance_config"):
         # 编辑时 payload 不含 balance_config 字段 → 沿用旧配置
@@ -448,6 +554,8 @@ def clean_bookmark(payload, existing=None):
             item["balance"] = existing.get("balance")
         if existing.get("balance_updated_at"):
             item["balance_updated_at"] = existing.get("balance_updated_at")
+        if existing.get("balance_error"):
+            item["balance_error"] = existing.get("balance_error")
 
     return item
 
@@ -1035,27 +1143,22 @@ def api_bookmark_refresh_balance(idx):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
 
     bookmark = bookmarks[idx]
-    balance_cfg = bookmark.get("balance_config")
-    if not balance_cfg:
+    if not bookmark.get("balance_config"):
         return jsonify({"ok": False, "error": "该收藏未配置余额接口"}), 400
 
+    ok, msg = _apply_balance_to_bookmark(bookmark, store.get("proxy_url", ""))
     try:
-        balance, error_msg = _fetch_balance(balance_cfg, store.get("proxy_url", ""))
-        if balance is None:
-            return jsonify({"ok": False, "error": error_msg or "获取余额失败"}), 500
-
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        bookmark["balance"] = balance
-        bookmark["balance_updated_at"] = now
         write_store(store)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
-        return jsonify({
-            "ok": True,
-            "balance": balance,
-            "balance_updated_at": now,
-        })
-    except Exception as exc:
-        return jsonify({"ok": False, "error": "刷新余额失败：{0}".format(exc)}), 500
+    # 请求本身成功（HTTP 200）；余额拉取成败由 ok 字段体现，失败信息已落盘。
+    resp = {"ok": ok, "balance_updated_at": bookmark.get("balance_updated_at")}
+    if ok:
+        resp["balance"] = bookmark.get("balance")
+    else:
+        resp["error"] = msg
+    return jsonify(resp)
 
 
 # =========================
@@ -1714,6 +1817,14 @@ def _scheduler_tick():
                     update_metric(cfg, serialize(r), mark_signed=True)
         except Exception as exc:  # noqa: BLE001
             record_history("scheduled", error="定时签到失败：{0}".format(exc))
+        # 定时签到联动刷新收藏余额：配置了接口的收藏顺带取一次，
+        # 成败状态写回 bookmark（失败写 balance_error），供前端展示。
+        for bm in store.get("bookmarks") or []:
+            if bm.get("balance_config"):
+                try:
+                    _apply_balance_to_bookmark(bm, store.get("proxy_url", ""))
+                except Exception:  # noqa: BLE001 - 单条余额失败不影响调度主流程。
+                    pass
         # 无论成功与否都标记当天已跑，避免循环重试。
         schedule["last_run_date"] = today
         schedule["last_run_time"] = _now_str()
