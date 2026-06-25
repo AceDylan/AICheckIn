@@ -246,6 +246,12 @@ def _fetch_url(method, url, headers, body, proxy_url="", timeout=15):
         return 0, "", "网络请求失败：{0}".format(exc)
 
 
+# 重放时会坏事、必须剥掉的请求头（小写）：
+#  - accept-encoding：客户端不解压，保留会拿到 gzip/br 乱码。
+#  - if-none-match / if-modified-since：条件请求，命中缓存时服务器回 304 空 body。
+_DROP_REQUEST_HEADERS = {"accept-encoding", "if-none-match", "if-modified-since"}
+
+
 def parse_curl(curl_text):
     """解析浏览器「Copy as cURL (bash)」命令为 {method, url, headers, body}。
 
@@ -292,8 +298,8 @@ def parse_curl(curl_text):
             ci = line.find(":")
             if ci > 0:
                 key = line[:ci].strip()
-                # 丢弃 accept-encoding：客户端不解压，保留会导致响应为压缩乱码。
-                if key and key.lower() != "accept-encoding":
+                # 丢弃重放有害头（压缩头 / 条件请求头），见 _DROP_REQUEST_HEADERS。
+                if key and key.lower() not in _DROP_REQUEST_HEADERS:
                     headers[key] = line[ci + 1:].strip()
             i += 2
         elif tok in ("-b", "--cookie") and i + 1 < n:
@@ -368,9 +374,9 @@ def _fetch_balance(balance_cfg, proxy_url):
     body = balance_cfg.get("body")
     json_path = balance_cfg["json_path"]
 
-    # 剥掉 accept-encoding：两条取数路径都不解压，若保留此头服务器会返回
-    # gzip/br/zstd 压缩字节，解码成乱码后 json.loads 必然失败（“不是合法 JSON”）。
-    for hk in [k for k in headers if k.lower() == "accept-encoding"]:
+    # 剥掉重放有害头：accept-encoding（拿到压缩乱码）、if-none-match /
+    # if-modified-since（命中缓存回 304 空 body）。覆盖 curl 抓来的旧配置。
+    for hk in [k for k in headers if k.lower() in _DROP_REQUEST_HEADERS]:
         headers.pop(hk)
 
     # 动态签名站点（如 nekocode）：实时重算签名头，覆盖 curl 里的过期值。
