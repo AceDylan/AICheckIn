@@ -193,10 +193,103 @@ def clean_config(payload, existing=None):
     }
 
 
-def clean_bookmark(payload):
-    """校验并规整单条收藏站点；仅保留 name / url 两个字段。"""
+def _extract_by_path(obj, path):
+    """按 .分割的路径从嵌套 dict 中提取值, 如 '.data.balance' → obj['data']['balance']。"""
+    keys = [k for k in path.split(".") if k]
+    for key in keys:
+        if isinstance(obj, dict):
+            obj = obj.get(key)
+            if obj is None:
+                return None
+        else:
+            return None
+    return obj
+
+
+def _fetch_url(method, url, headers, body, proxy_url="", timeout=15):
+    """单次 HTTP 请求，支持 GET/POST 带 body。proxy_url 显式传入，不依赖全局态。
+
+    返回 (status, body_str, error_msg)。注意：urllib 的 ProxyHandler 不支持 socks，
+    socks 代理需走 GET 分支的 gyqd 客户端（curl_cffi）。
+    """
+    import urllib.error
+    import urllib.request
+
+    data = body.encode("utf-8") if body else None
+    req = urllib.request.Request(url, data=data, headers=dict(headers), method=method)
+
+    proxy = (proxy_url or "").strip()
+    # urllib 的 ProxyHandler 不支持 socks，POST 走此路径时显式报错而非静默直连。
+    if proxy.lower().startswith("socks"):
+        return 0, "", "SOCKS 代理下暂不支持 POST 余额接口，请改用 http(s) 代理或留空"
+    if proxy:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+        )
+    else:
+        opener = urllib.request.build_opener()
+
+    # build_opener 已自带验证型 HTTPSHandler；OpenerDirector.open 不接受 context 参数。
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            status = getattr(resp, "status", resp.getcode())
+            resp_body = resp.read().decode("utf-8", errors="replace")
+            return int(status), resp_body, None
+    except urllib.error.HTTPError as exc:
+        resp_body = exc.read().decode("utf-8", errors="replace")
+        return exc.code, resp_body, "HTTP {0}".format(exc.code)
+    except Exception as exc:
+        return 0, "", "网络请求失败：{0}".format(exc)
+
+
+def _fetch_balance(balance_cfg, proxy_url):
+    """根据 balance_config 获取余额，返回 (balance_str_or_None, error_msg)。"""
+    method = balance_cfg["method"]
+    url = balance_cfg["url"]
+    headers = dict(balance_cfg.get("headers") or {})
+    body = balance_cfg.get("body")
+    json_path = balance_cfg["json_path"]
+
+    if method == "POST":
+        if body:
+            headers.setdefault("content-type", "application/json")
+        status, resp_body, err = _fetch_url(method, url, headers, body, proxy_url)
+        if err:
+            return None, err
+        if status >= 400:
+            return None, "HTTP {0}".format(status)
+    else:
+        client = _build_client(proxy_url)
+        headers.pop("content-type", None)
+        try:
+            status, resp_body, _ = client._fetch_raw(method, url, headers, 15)
+        except Exception as exc:
+            return None, "请求失败：{0}".format(exc)
+        if int(status) >= 400:
+            return None, "HTTP {0}".format(status)
+
+    try:
+        parsed = json.loads(resp_body)
+    except (ValueError, TypeError) as exc:
+        return None, "响应不是合法 JSON：{0}".format(exc)
+
+    value = _extract_by_path(parsed, json_path)
+    if value is None:
+        return None, "未找到路径 {0}".format(json_path)
+
+    if isinstance(value, (int, float)):
+        return "{0:.2f}".format(float(value)), ""
+    return str(value).strip(), ""
+
+
+def clean_bookmark(payload, existing=None):
+    """校验并规整单条收藏站点；保留 name/url/balance_config 及余额快照。
+
+    balance_config 可选；传入时为完整配置对象，不传又无 existing 时清除旧配置。
+    """
     name = str(payload.get("name") or "").strip()
     url = str(payload.get("url") or "").strip()
+
     errors = []
     if not name:
         errors.append("name 必填")
@@ -204,9 +297,66 @@ def clean_bookmark(payload):
         errors.append("url 必填")
     elif not url.startswith(("http://", "https://")):
         errors.append("url 需以 http:// 或 https:// 开头")
+
+    # balance_config 可选：三个分支
+    #  1. payload 不含 balance_config → 编辑时沿用旧值，新建时不设
+    #  2. payload.balance_config 为 null → 显式清除
+    #  3. payload.balance_config 为 dict → 校验并存储
+    has_balance_config = "balance_config" in payload
+    balance_cfg = None
+    if has_balance_config:
+        balance_cfg_raw = payload["balance_config"]
+        if balance_cfg_raw is not None:
+            if not isinstance(balance_cfg_raw, dict):
+                errors.append("balance_config 需为对象或 null")
+            else:
+                method = str(balance_cfg_raw.get("method") or "").strip().upper()
+                api_url = str(balance_cfg_raw.get("url") or "").strip()
+                headers = balance_cfg_raw.get("headers")
+                body = balance_cfg_raw.get("body")
+                json_path = str(balance_cfg_raw.get("json_path") or "").strip()
+
+                if method not in ("GET", "POST"):
+                    errors.append("balance_config.method 需为 GET 或 POST")
+                if not api_url:
+                    errors.append("balance_config.url 必填")
+                elif not api_url.startswith(("http://", "https://")):
+                    errors.append("balance_config.url 需以 http:// 或 https:// 开头")
+                if not isinstance(headers, dict):
+                    errors.append("balance_config.headers 需为对象")
+                if body is not None and not isinstance(body, str):
+                    errors.append("balance_config.body 需为字符串或 null")
+                if not json_path:
+                    errors.append("balance_config.json_path 必填")
+
+                balance_cfg = {
+                    "method": method,
+                    "url": api_url,
+                    "headers": dict(headers or {}),
+                    "body": body,
+                    "json_path": json_path,
+                }
+            # balance_cfg_raw is None → 显式清除，balance_cfg 保持 None
+    elif existing and existing.get("balance_config"):
+        # 编辑时 payload 不含 balance_config 字段 → 沿用旧配置
+        balance_cfg = existing["balance_config"]
+
     if errors:
         raise ValueError("；".join(errors))
-    return {"name": name, "url": url}
+
+    item = {"name": name, "url": url}
+    if balance_cfg:
+        item["balance_config"] = balance_cfg
+
+    # 保留余额快照（编辑时避免丢失上次查询结果）
+    if existing:
+        if existing.get("balance") is not None:
+            item["balance"] = existing.get("balance")
+        if existing.get("balance_updated_at"):
+            item["balance_updated_at"] = existing.get("balance_updated_at")
+
+    return item
+
 
 
 def clean_redeem_account(payload, existing=None):
@@ -720,7 +870,7 @@ def api_bookmark_update(idx):
     if idx < 0 or idx >= len(bookmarks):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
     try:
-        bookmarks[idx] = clean_bookmark(payload)
+        bookmarks[idx] = clean_bookmark(payload, existing=bookmarks[idx])
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     try:
@@ -772,6 +922,46 @@ def api_bookmark_reorder():
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify({"ok": True})
+
+
+@app.post("/api/bookmarks/<int:idx>/refresh_balance")
+def api_bookmark_refresh_balance(idx):
+    """刷新指定收藏的余额；需管理密码。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+    bookmarks = store["bookmarks"]
+    if idx < 0 or idx >= len(bookmarks):
+        return jsonify({"ok": False, "error": "收藏不存在"}), 404
+
+    bookmark = bookmarks[idx]
+    balance_cfg = bookmark.get("balance_config")
+    if not balance_cfg:
+        return jsonify({"ok": False, "error": "该收藏未配置余额接口"}), 400
+
+    try:
+        balance, error_msg = _fetch_balance(balance_cfg, store.get("proxy_url", ""))
+        if balance is None:
+            return jsonify({"ok": False, "error": error_msg or "获取余额失败"}), 500
+
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        bookmark["balance"] = balance
+        bookmark["balance_updated_at"] = now
+        write_store(store)
+
+        return jsonify({
+            "ok": True,
+            "balance": balance,
+            "balance_updated_at": now,
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "error": "刷新余额失败：{0}".format(exc)}), 500
 
 
 # =========================
