@@ -536,16 +536,10 @@
       <details style="margin-top:14px">
         <summary style="cursor:pointer;color:var(--muted);user-select:none">🔧 余额接口配置（可选）</summary>
         <div class="note" style="margin-top:8px;margin-bottom:12px">配置后每行右侧显示「💰 刷新」按钮。凭证以明文存储于 config.json，与现有 access_token 一致。</div>
-        <div class="row-2">
-          <div class="field"><label>请求方法</label><select class="input" id="bm_method"><option value="GET">GET</option><option value="POST">POST</option></select></div>
-          <div class="field"><label>JSON 取值路径 *</label><input class="input" id="bm_jsonpath" placeholder=".balance"></div>
-        </div>
-        <div class="field" style="margin-top:12px"><label>接口 URL *</label><input class="input" id="bm_api_url" placeholder="https://api.example.com/api/v1/me"></div>
-        <div class="field" style="margin-top:12px"><label>请求头（每行一个 key: value）</label>
-          <textarea class="input" id="bm_headers" rows="4" placeholder="authorization: Bearer eyJhbG..." style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
-        </div>
-        <div class="field" style="margin-top:12px;display:none" id="bm_body_field"><label>请求体（POST 时使用）</label>
-          <textarea class="input" id="bm_body" rows="4" placeholder='{"query":"query MyWallet { myWallet { availableBalance } }"}' style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
+        <div class="field"><label>JSON 取值路径 *</label><input class="input" id="bm_jsonpath" placeholder=".data.balance"></div>
+        <div class="field" style="margin-top:12px"><label>curl 命令 *</label>
+          <textarea class="input" id="bm_curl" rows="6" placeholder="浏览器开发者工具 → Network → 右键目标请求 → Copy → Copy as cURL (bash)，整段粘贴到这里" style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
+          <div class="note" style="margin-top:6px">粘贴后端自动解析请求方法、URL、请求头、Cookie 和请求体，无需手动拆分。</div>
         </div>
       </details>
 
@@ -1021,8 +1015,17 @@
     }
 
     let bmEditIdx = -1;
-    function updateBmBodyVisibility() {
-      $('bm_body_field').style.display = $('bm_method').value === 'POST' ? 'block' : 'none';
+    // 把已存的 balance_config 还原成 curl 文本：优先用保存的原始 curl，
+    // 旧数据（无 curl 字段）则按 method/url/headers/body 反向拼一条等价 curl。
+    function cfgToCurl(cfg) {
+      if (!cfg) return '';
+      if (cfg.curl) return cfg.curl;
+      if (!cfg.url) return '';
+      const parts = [`curl '${cfg.url}'`];
+      if ((cfg.method || 'GET').toUpperCase() !== 'GET') parts.push(`-X '${cfg.method}'`);
+      for (const [k, v] of Object.entries(cfg.headers || {})) parts.push(`-H '${k}: ${v}'`);
+      if (cfg.body) parts.push(`--data-raw '${cfg.body}'`);
+      return parts.join(' \\\n  ');
     }
     function openBmModal(idx) {
       bmEditIdx = idx;
@@ -1036,50 +1039,28 @@
 
       // 填充余额配置
       const cfg = b.balance_config || {};
-      $('bm_method').value = cfg.method || 'GET';
-      $('bm_api_url').value = cfg.url || '';
       $('bm_jsonpath').value = cfg.json_path || '';
-      const headers = cfg.headers || {};
-      $('bm_headers').value = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\n');
-      $('bm_body').value = cfg.body || '';
+      $('bm_curl').value = cfgToCurl(cfg);
 
-      updateBmBodyVisibility();
       $('bmModal').classList.add('show');
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
     $('addBm').addEventListener('click', () => { if (guardAdmin()) openBmModal(-1); });
     $('bmCancel').addEventListener('click', () => $('bmModal').classList.remove('show'));
 
-    $('bm_method').addEventListener('change', updateBmBodyVisibility);
-
     $('bmSave').addEventListener('click', async () => {
       const name = $('bm_name').value.trim();
       const url = $('bm_url').value.trim();
 
-      // 构造 balance_config（任意字段填写则启用，否则 null）
+      // 构造 balance_config（填了 curl 或路径则启用，否则 null）；method/url/headers/body 由后端解析 curl 得出
       let balance_config = null;
-      const api_url = $('bm_api_url').value.trim();
+      const curl_text = $('bm_curl').value.trim();
       const json_path = $('bm_jsonpath').value.trim();
-      const headers_text = $('bm_headers').value.trim();
-      const body_text = $('bm_body').value.trim();
 
-      if (api_url || json_path || headers_text || body_text) {
-        if (!api_url) { showBmError('接口 URL 必填'); return; }
+      if (curl_text || json_path) {
+        if (!curl_text) { showBmError('curl 命令必填'); return; }
         if (!json_path) { showBmError('JSON 取值路径必填'); return; }
-
-        const headers = {};
-        for (const line of headers_text.split('\n')) {
-          const ci = line.indexOf(':');
-          if (ci > 0) headers[line.slice(0, ci).trim()] = line.slice(ci + 1).trim();
-        }
-
-        balance_config = {
-          method: $('bm_method').value,
-          url: api_url,
-          headers,
-          body: $('bm_method').value === 'POST' && body_text ? body_text : null,
-          json_path,
-        };
+        balance_config = { curl: curl_text, json_path };
       }
 
       const body = { name, url, balance_config };

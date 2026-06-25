@@ -242,6 +242,82 @@ def _fetch_url(method, url, headers, body, proxy_url="", timeout=15):
         return 0, "", "网络请求失败：{0}".format(exc)
 
 
+def parse_curl(curl_text):
+    """解析浏览器「Copy as cURL (bash)」命令为 {method, url, headers, body}。
+
+    支持 -X/--request、-H/--header、-b/--cookie、-d/--data*（含 --data-raw）及反斜杠换行续行；
+    单/双引号由 shlex 处理。未识别的标志（--compressed/-L/-k 等无参数标志）一律忽略。
+    解析失败抛 ValueError。
+    """
+    import shlex
+
+    text = (curl_text or "").strip()
+    if not text:
+        raise ValueError("curl 命令为空")
+    # 去掉 shell 续行符（反斜杠+换行），否则 shlex 会把换行当字面量
+    text = re.sub(r"\\\r?\n", " ", text)
+    # Chrome 偶尔用 ANSI-C 引用 $'...' 包裹含特殊字符的值，shlex 不识别 $，先剥掉前缀 $
+    text = text.replace("$'", "'")
+
+    try:
+        tokens = shlex.split(text, posix=True)
+    except ValueError as exc:
+        raise ValueError("引号未闭合或语法错误：{0}".format(exc))
+    if not tokens:
+        raise ValueError("未解析出任何参数")
+    if tokens[0] == "curl":
+        tokens = tokens[1:]
+
+    method = ""
+    url = ""
+    headers = {}
+    body = None
+    data_flags = (
+        "-d", "--data", "--data-raw", "--data-binary",
+        "--data-ascii", "--data-urlencode",
+    )
+
+    i, n = 0, len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if tok in ("-X", "--request") and i + 1 < n:
+            method = tokens[i + 1].upper()
+            i += 2
+        elif tok in ("-H", "--header") and i + 1 < n:
+            line = tokens[i + 1]
+            ci = line.find(":")
+            if ci > 0:
+                key = line[:ci].strip()
+                if key:
+                    headers[key] = line[ci + 1:].strip()
+            i += 2
+        elif tok in ("-b", "--cookie") and i + 1 < n:
+            headers["cookie"] = tokens[i + 1].strip()
+            i += 2
+        elif tok in data_flags and i + 1 < n:
+            body = tokens[i + 1]
+            if not method:
+                method = "POST"
+            i += 2
+        elif tok.startswith(("http://", "https://")):
+            url = tok
+            i += 1
+        elif tok.startswith("-"):
+            # 未识别标志：当作无参开关跳过（Chrome 输出里常见 --compressed 等）
+            i += 1
+        else:
+            # 裸 token：可能是被引号包裹但未带协议头的 URL
+            if not url:
+                url = tok
+            i += 1
+
+    if not url:
+        raise ValueError("未找到 URL")
+    if not method:
+        method = "GET"
+    return {"method": method, "url": url, "headers": headers, "body": body}
+
+
 def _fetch_balance(balance_cfg, proxy_url):
     """根据 balance_config 获取余额，返回 (balance_str_or_None, error_msg)。"""
     method = balance_cfg["method"]
@@ -310,11 +386,26 @@ def clean_bookmark(payload, existing=None):
             if not isinstance(balance_cfg_raw, dict):
                 errors.append("balance_config 需为对象或 null")
             else:
-                method = str(balance_cfg_raw.get("method") or "").strip().upper()
-                api_url = str(balance_cfg_raw.get("url") or "").strip()
-                headers = balance_cfg_raw.get("headers")
-                body = balance_cfg_raw.get("body")
                 json_path = str(balance_cfg_raw.get("json_path") or "").strip()
+                curl_text = str(balance_cfg_raw.get("curl") or "").strip()
+
+                if curl_text:
+                    # 新式：用户粘贴 curl，后端解析出 method/url/headers/body
+                    try:
+                        parsed = parse_curl(curl_text)
+                        method = parsed["method"]
+                        api_url = parsed["url"]
+                        headers = parsed["headers"]
+                        body = parsed["body"]
+                    except ValueError as exc:
+                        errors.append("curl 解析失败：{0}".format(exc))
+                        method, api_url, headers, body = "", "", {}, None
+                else:
+                    # 兼容旧式：分字段提交
+                    method = str(balance_cfg_raw.get("method") or "").strip().upper()
+                    api_url = str(balance_cfg_raw.get("url") or "").strip()
+                    headers = balance_cfg_raw.get("headers")
+                    body = balance_cfg_raw.get("body")
 
                 if method not in ("GET", "POST"):
                     errors.append("balance_config.method 需为 GET 或 POST")
@@ -336,6 +427,9 @@ def clean_bookmark(payload, existing=None):
                     "body": body,
                     "json_path": json_path,
                 }
+                # 保留原始 curl，便于编辑时回填文本框
+                if curl_text:
+                    balance_cfg["curl"] = curl_text
             # balance_cfg_raw is None → 显式清除，balance_cfg 保持 None
     elif existing and existing.get("balance_config"):
         # 编辑时 payload 不含 balance_config 字段 → 沿用旧配置
