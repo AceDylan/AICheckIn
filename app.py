@@ -155,11 +155,20 @@ def clean_config(payload, existing=None):
 
 
 def _extract_by_path(obj, path):
-    """按 .分割的路径从嵌套 dict 中提取值, 如 '.data.balance' → obj['data']['balance']。"""
+    """按 . 分割的路径从嵌套 dict/list 中提取值，如 data.items.0.user.balance。"""
     keys = [k for k in path.split(".") if k]
     for key in keys:
         if isinstance(obj, dict):
             obj = obj.get(key)
+            if obj is None:
+                return None
+        elif isinstance(obj, list):
+            if not key.isdigit():
+                return None
+            idx = int(key)
+            if idx >= len(obj):
+                return None
+            obj = obj[idx]
             if obj is None:
                 return None
         else:
