@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>签到与AI站点</title>
+  <title>Bookmark Hub · AI 服务工作台</title>
   <!-- 内联 SVG favicon：紫色渐变圆角方块 + 白色对勾，匹配应用主题；# 需编码为 %23。 -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%236366f1'/><stop offset='1' stop-color='%238b5cf6'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M9 16.5l4.5 4.5L23 11' fill='none' stroke='%23ffffff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/></svg>">
   <style>
@@ -274,128 +274,100 @@
       .kpi-num { font-size: 23px; }
     }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app-v2.css') }}">
 </head>
 <body>
   <div class="toast-wrap" id="toasts"></div>
 
-  <div class="wrap">
-    <header>
-      <h1>✨ new-api 自动签到</h1>
-      <p>一键签到 · 在线管理配置 · 每日定时无人值守</p>
-    </header>
-
-    <div class="tabs">
-      <button class="tab active" data-view="checkin">🎯 签到</button>
-      <button class="tab" data-view="configs">⚙️ 配置管理</button>
-      <button class="tab" data-view="bookmarks">📌 收藏</button>
-      <button class="tab" data-view="history">📜 历史</button>
-      <button class="tab" data-view="settings">🔧 设置 <span class="dot" id="schedDot" style="display:none"></span></button>
-    </div>
-
-    <!-- ===== 签到 ===== -->
-    <div class="view active" id="view-checkin">
-      <div id="overview" class="overview" style="display:none"></div>
-
-      <div class="run-meta"><span class="meta" id="meta"></span></div>
-      <div id="error" class="error" style="display:none"></div>
-
-      <div id="disabledWrap" style="display:none">
-        <div class="section-label">🖐 需手动签到 <span class="count" id="disabledCount"></span></div>
-        <div class="disabled-group">
-          <div id="disabledCards" class="dlist"></div>
-        </div>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand">
+        <div class="brand-mark">BH</div>
+        <div><div class="brand-name">Bookmark Hub</div><div class="brand-sub">AI 服务工作台</div></div>
       </div>
+      <div class="nav-label">Workspace</div>
+      <nav class="tabs">
+        <button class="tab active" data-view="bookmarks" aria-label="收藏库">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.5L6 21z"/></svg>
+          <span class="tab-text">收藏库</span><span class="nav-count" id="bmNavCount">0</span>
+        </button>
+        <button class="tab" data-view="checkin" aria-label="签到中心">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg>
+          <span class="tab-text">签到中心</span>
+        </button>
+        <button class="tab" data-view="configs" aria-label="服务配置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>
+          <span class="tab-text">服务配置</span>
+        </button>
+        <button class="tab" data-view="history" aria-label="运行记录">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          <span class="tab-text">运行记录</span>
+        </button>
+        <button class="tab" data-view="settings" aria-label="系统设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7.7 7.7 0 0 0 14.8 6L14.5 3h-5l-.3 3a7.7 7.7 0 0 0-1.7 1L5.1 6.1l-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.7 7.7 0 0 0 1.7 1l.3 3h5l.3-3a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/></svg>
+          <span class="tab-text">系统设置</span><span class="dot" id="schedDot" style="display:none"></span>
+        </button>
+      </nav>
+      <div class="sidebar-foot">收藏优先 · 签到按需<br>所有数据保存在当前实例</div>
+    </aside>
 
-      <div class="section-label" id="enabledLabel" style="display:none">🎯 启用配置 <span class="count" id="enabledCount"></span></div>
-      <div id="cards" class="cards"></div>
-
-      <div id="empty" class="empty">尚未配置任何平台，请到「配置管理」添加</div>
-    </div>
-
-    <!-- ===== 配置管理 ===== -->
-    <div class="view" id="view-configs">
-      <div class="panel">
-        <div class="panel-title">
-          配置组 <span class="sub" id="cfgCount"></span>
-          <span style="flex:1"></span>
-          <button class="btn sm" id="addCfg">＋ 新增</button>
-          <button class="btn sm ghost" id="exportCfg">导出</button>
-          <button class="btn sm ghost" id="importCfg">导入</button>
-        </div>
-        <div id="cfgList" class="cfg-list"></div>
-        <div id="cfgEmpty" class="empty">暂无配置，点击「新增」添加第一组</div>
-      </div>
-    </div>
-
-    <!-- ===== 收藏（仅存储不签到的站点） ===== -->
-    <div class="view" id="view-bookmarks">
-      <div class="panel">
-        <div class="panel-title">
-          收藏站点 <span class="sub" id="bmCount"></span>
-          <span style="flex:1"></span>
-          <button class="btn sm" id="addBm">＋ 新增</button>
-        </div>
-        <div class="note" style="margin-top:0">仅收藏、不参与签到的站点。只需名称 + 网址，点击即可跳转。</div>
-        <div id="bmList" class="cfg-list" style="margin-top:16px"></div>
-        <div id="bmEmpty" class="empty">暂无收藏，点击「新增」添加站点</div>
-      </div>
-    </div>
-
-    <!-- ===== 历史 ===== -->
-    <div class="view" id="view-history">
-      <div class="panel">
-        <div class="panel-title">
-          运行历史 <span class="sub">最近 50 次（含定时任务）</span>
-          <span style="flex:1"></span>
-          <button class="btn sm ghost" id="refreshHist">刷新</button>
-        </div>
-        <div id="histList"></div>
-        <div id="histEmpty" class="empty">暂无历史记录</div>
-      </div>
-    </div>
-
-    <!-- ===== 设置 ===== -->
-    <div class="view" id="view-settings">
-      <div class="panel">
-        <div class="panel-title">⏰ 定时自动签到</div>
-        <div class="warn-banner" id="schedTzNote">
-          定时基于服务器本地时间。容器请在 docker-compose 中设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。
-        </div>
-        <div class="controls" style="align-items:flex-end">
-          <label class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></label>
-          <div class="field" style="max-width:140px">
-            <label>每天执行时间</label>
-            <input class="input" type="time" id="schedTime" value="08:30">
+    <main class="main">
+      <div class="content">
+        <!-- ===== 收藏：默认工作区 ===== -->
+        <section class="view active" id="view-bookmarks">
+          <div class="view-header">
+            <div><div class="eyebrow">Daily workspace</div><h1>你的站点，一目了然</h1><p>统一打开常用 AI 服务，并按需刷新余额；签到功能已收纳为辅助工具。</p></div>
+            <div class="header-actions"><button class="btn ghost" id="refreshAllBm">刷新全部余额</button><button class="btn" id="addBm">＋ 新增收藏</button></div>
           </div>
-          <button class="btn sm" id="saveSched">保存定时</button>
-        </div>
-        <div class="note" id="schedStatus"></div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">🌐 全局代理</div>
-        <div class="controls" style="align-items:flex-end">
-          <div class="field" style="flex:1; min-width:240px">
-            <label>代理地址（留空直连，支持 http/https/socks5）</label>
-            <input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890">
+          <div class="bookmark-surface">
+            <div class="bookmark-toolbar">
+              <label class="search-box" for="bmSearch">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                <input class="input" id="bmSearch" type="search" placeholder="搜索名称或域名（按 / 聚焦）" autocomplete="off">
+              </label>
+              <span class="bookmark-meta" id="bmVisibleCount"></span>
+            </div>
+            <div id="bmList" class="bookmark-grid"></div>
+            <div id="bmEmpty" class="empty">还没有收藏。添加第一个常用站点，开始构建你的工作台。</div>
           </div>
-          <button class="btn sm" id="saveProxy">保存代理</button>
-        </div>
-      </div>
+        </section>
 
-      <div class="panel" id="adminPanel" style="display:none">
-        <div class="panel-title">🔐 管理密码</div>
-        <div class="note" id="adminStatus"></div>
-        <div class="controls" style="margin-top:10px; align-items:flex-end">
-          <div class="field" style="flex:1; min-width:200px">
-            <label>输入管理密码以解锁配置编辑</label>
-            <input class="input" id="adminPwd" type="password" placeholder="管理密码" autocomplete="off">
+        <!-- ===== 签到 ===== -->
+        <section class="view" id="view-checkin">
+          <div class="view-header"><div><div class="eyebrow">Utility</div><h1>签到中心</h1><p>只在需要时运行；日常工作保持在收藏库。</p></div><div class="header-actions"><button class="btn" onclick="runCheckin()">运行全部签到</button></div></div>
+          <div id="overview" class="overview" style="display:none"></div>
+          <div class="run-meta"><span class="meta" id="meta"></span></div>
+          <div id="error" class="error" style="display:none"></div>
+          <div id="disabledWrap" style="display:none"><div class="section-label">需手动签到 <span class="count" id="disabledCount"></span></div><div class="disabled-group"><div id="disabledCards" class="dlist"></div></div></div>
+          <div class="section-label" id="enabledLabel" style="display:none">启用配置 <span class="count" id="enabledCount"></span></div>
+          <div id="cards" class="cards"></div>
+          <div id="empty" class="empty">尚未配置平台，请到「服务配置」添加。</div>
+        </section>
+
+        <!-- ===== 配置管理 ===== -->
+        <section class="view" id="view-configs">
+          <div class="view-header"><div><div class="eyebrow">Services</div><h1>服务配置</h1><p>管理签到账户、连接凭证与可用状态。</p></div></div>
+          <div class="panel">
+            <div class="panel-title">配置组 <span class="sub" id="cfgCount"></span><span style="flex:1"></span><button class="btn sm" id="addCfg">＋ 新增</button><button class="btn sm ghost" id="exportCfg">导出</button><button class="btn sm ghost" id="importCfg">导入</button></div>
+            <div id="cfgList" class="cfg-list"></div><div id="cfgEmpty" class="empty">暂无配置，点击「新增」添加第一组。</div>
           </div>
-          <button class="btn sm" id="unlockBtn">解锁</button>
-          <button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button>
-        </div>
+        </section>
+
+        <!-- ===== 历史 ===== -->
+        <section class="view" id="view-history">
+          <div class="view-header"><div><div class="eyebrow">Activity</div><h1>运行记录</h1><p>最近 50 次手动或定时任务执行结果。</p></div><div class="header-actions"><button class="btn ghost" id="refreshHist">刷新记录</button></div></div>
+          <div class="panel"><div id="histList"></div><div id="histEmpty" class="empty">暂无历史记录。</div></div>
+        </section>
+
+        <!-- ===== 设置 ===== -->
+        <section class="view" id="view-settings">
+          <div class="view-header"><div><div class="eyebrow">Preferences</div><h1>系统设置</h1><p>设置自动签到、全局代理与管理权限。</p></div></div>
+          <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote">定时基于服务器本地时间。容器应设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。</div><div class="controls" style="align-items:flex-end"><label class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></label><div class="field" style="max-width:140px"><label>每天执行时间</label><input class="input" type="time" id="schedTime" value="08:30"></div><button class="btn sm" id="saveSched">保存定时</button></div><div class="note" id="schedStatus"></div></div>
+          <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:240px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
+          <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" type="password" placeholder="管理密码" autocomplete="off"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
+        </section>
       </div>
-    </div>
+    </main>
   </div>
 
   <!-- 配置编辑弹窗 -->
@@ -498,6 +470,14 @@
       const e = escapeHtml(safe);
       return `<a class="url-link" href="${e}" target="_blank" rel="noopener noreferrer" title="${e}">${e}<span class="arrow">↗</span></a>`;
     }
+    function siteHost(u) {
+      try { return new URL(safeUrl(u)).hostname.replace(/^www\./, ''); }
+      catch (_) { return String(u || '').replace(/^https?:\/\//, '').split('/')[0]; }
+    }
+    function siteInitial(name, url) {
+      const source = String(name || siteHost(url) || '?').trim();
+      return source.slice(0, 2).toUpperCase();
+    }
     function parseNum(s) { const n = parseFloat(String(s == null ? '' : s).replace(/,/g, '')); return isFinite(n) ? n : 0; }
     function fmtNum(n) { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
 
@@ -510,16 +490,24 @@
       setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2800);
     }
 
-    // ===== 标签页切换 =====
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-        tab.classList.add('active');
-        $('view-' + tab.dataset.view).classList.add('active');
-        if (tab.dataset.view === 'history') loadHistory();
+    // ===== 工作区导航 =====
+    function switchView(name, updateHash = true) {
+      const tab = document.querySelector(`.tab[data-view="${name}"]`);
+      const view = $('view-' + name);
+      if (!tab || !view) return;
+      document.querySelectorAll('.tab').forEach(t => {
+        const active = t === tab;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-current', active ? 'page' : 'false');
       });
-    });
+      document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
+      if (updateHash) history.replaceState(null, '', '#' + name);
+      if (name === 'history') loadHistory();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => switchView(tab.dataset.view)));
+    const initialView = location.hash.slice(1);
+    switchView(document.querySelector(`.tab[data-view="${initialView}"]`) ? initialView : 'bookmarks', false);
 
     // ===== 签到视图渲染 =====
     // 取某配置的展示指标：优先本次签到结果，其次持久化快照，最后占位 “-”。
@@ -837,59 +825,99 @@
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
       const bms = STATE.bookmarks || [];
-      $('bmCount').textContent = `共 ${bms.length} 个`;
-      if (!bms.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+      const query = (($('bmSearch') && $('bmSearch').value) || '').trim().toLowerCase();
+      const visible = bms.map((b, i) => ({ b, i })).filter(({ b }) =>
+        !query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)}`.toLowerCase().includes(query));
+      $('bmNavCount').textContent = bms.length;
+      $('bmVisibleCount').textContent = query ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`;
+      if (!visible.length) {
+        list.innerHTML = '';
+        empty.textContent = bms.length ? '没有匹配的收藏，试试其他关键词。' : '还没有收藏。添加第一个常用站点，开始构建你的工作台。';
+        empty.style.display = 'block';
+        return;
+      }
       empty.style.display = 'none';
-      list.innerHTML = bms.map((b, i) => {
+      list.innerHTML = visible.map(({ b, i }) => {
         const hasBalance = !!b.balance_config;
-        let balanceHtml = '';
+        const safe = safeUrl(b.url);
+        const host = siteHost(b.url) || '未设置域名';
+        let balanceHtml = '<div class="balance-block"><div class="balance-label">Balance</div><div class="balance-empty">未配置余额接口</div></div>';
         if (hasBalance) {
-          const time = b.balance_updated_at ? ` <span class="balance-time">(${escapeHtml(b.balance_updated_at)})</span>` : '';
+          const time = b.balance_updated_at ? `<span class="balance-time">${escapeHtml(b.balance_updated_at)}</span>` : '';
           if (b.balance_error) {
-            // 失败优先展示；若有上次成功余额则附带，便于判断是否长期失效。
-            const last = b.balance ? ` <span class="balance-time">上次 💰 ${escapeHtml(b.balance)}</span>` : '';
-            balanceHtml = `<div class="cfg-balance"><span class="balance-error">⚠️ ${escapeHtml(b.balance_error)}</span>${time}${last}</div>`;
+            const last = b.balance ? `<span class="balance-last">上次成功：${escapeHtml(b.balance)}</span>` : '';
+            balanceHtml = `<div class="balance-block"><div class="balance-label">Balance ${time}</div><span class="balance-error">${escapeHtml(b.balance_error)}</span>${last}</div>`;
           } else if (b.balance) {
-            balanceHtml = `<div class="cfg-balance"><span class="balance-amount">💰 ${escapeHtml(b.balance)}</span>${time}</div>`;
+            balanceHtml = `<div class="balance-block"><div class="balance-label">Balance ${time}</div><div class="balance-value">${escapeHtml(b.balance)}</div></div>`;
           } else {
-            balanceHtml = `<div class="cfg-balance"><span class="balance-empty">未刷新</span></div>`;
+            balanceHtml = `<div class="balance-block"><div class="balance-label">Balance</div><div class="balance-empty">等待首次刷新</div></div>`;
           }
         }
         return `
-        <div class="cfg-row">
-          <div class="cfg-main">
-            <div class="cfg-name">${escapeHtml(b.name)}</div>
-            <div class="cfg-sub">${urlLink(b.url)}</div>
-            ${balanceHtml}
+        <article class="bookmark-card" data-bm-index="${i}">
+          <div class="bookmark-top">
+            <div class="site-avatar" aria-hidden="true">${escapeHtml(siteInitial(b.name, b.url))}</div>
+            <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
           </div>
-          <div class="cfg-actions">
-            ${hasBalance ? `<button class="btn sm" onclick="refreshBmBalance(${i})" title="刷新余额">💰 刷新</button>` : ''}
-            <button class="btn sm ghost" onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''} title="置顶">置顶</button>
-            <button class="btn sm ghost" onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''} title="上移">↑</button>
-            <button class="btn sm ghost" onclick="moveBm(${i},'down')" ${i === bms.length - 1 ? 'disabled' : ''} title="下移">↓</button>
-            <button class="btn sm ghost" onclick="editBm(${i})">编辑</button>
-            <button class="btn sm danger" onclick="deleteBm(${i})">删除</button>
+          ${balanceHtml}
+          <div class="bookmark-actions">
+            ${safe ? `<a class="btn sm open" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">打开站点 ↗</a>` : `<button class="btn sm open" disabled>网址不可用</button>`}
+            ${hasBalance ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新余额" aria-label="刷新 ${escapeHtml(b.name)} 的余额">刷新</button>` : ''}
+            <details class="action-menu">
+              <summary class="menu-trigger" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
+              <div class="menu-popover">
+                <button onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''}>置顶</button>
+                <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
+                <button onclick="moveBm(${i},'down')" ${i === bms.length - 1 ? 'disabled' : ''}>下移</button>
+                <button onclick="editBm(${i})">编辑</button>
+                <button class="danger-text" onclick="deleteBm(${i})">删除</button>
+              </div>
+            </details>
           </div>
-        </div>`;
+        </article>`;
       }).join('');
     }
 
-    async function refreshBmBalance(i) {
-      if (!guardAdmin()) return;
-      const bms = STATE.bookmarks || [];
-      if (i < 0 || i >= bms.length) return;
+    $('bmSearch').addEventListener('input', renderBookmarks);
+    document.addEventListener('keydown', (event) => {
+      if (event.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+        event.preventDefault();
+        switchView('bookmarks');
+        $('bmSearch').focus();
+      }
+      if (event.key === 'Escape' && document.activeElement === $('bmSearch') && $('bmSearch').value) {
+        $('bmSearch').value = '';
+        renderBookmarks();
+      }
+    });
 
-      // 找到对应行的刷新按钮（第一个 .cfg-actions 里的 button）
-      const rows = $('bmList').querySelectorAll('.cfg-row');
-      const btn = rows[i] && rows[i].querySelector('.cfg-actions button:first-child');
-      if (!btn) return;
-      const originalText = btn.innerHTML;
+    $('refreshAllBm').addEventListener('click', async () => {
+      if (!guardAdmin()) return;
+      const indexes = (STATE.bookmarks || []).map((b, i) => b.balance_config ? i : -1).filter(i => i >= 0);
+      if (!indexes.length) { toast('没有配置余额接口的收藏'); return; }
+      const btn = $('refreshAllBm');
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>';
+      btn.innerHTML = '<span class="spinner"></span>刷新中';
+      let succeeded = 0;
+      for (const i of indexes) if (await refreshBmBalance(i, true)) succeeded++;
+      btn.disabled = false;
+      btn.textContent = '刷新全部余额';
+      toast(`余额刷新完成：${succeeded}/${indexes.length}`, succeeded === indexes.length ? 'ok' : 'err');
+    });
+
+    async function refreshBmBalance(i, quiet = false) {
+      if (!guardAdmin()) return false;
+      const bms = STATE.bookmarks || [];
+      if (i < 0 || i >= bms.length) return false;
+
+      const card = $('bmList').querySelector(`[data-bm-index="${i}"]`);
+      const btn = card && card.querySelector('.bm-refresh');
+      const originalText = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
 
       // 30s 强制恢复
       const timeoutId = setTimeout(() => {
-        if (btn.disabled) {
+        if (btn && btn.disabled) {
           btn.disabled = false;
           btn.innerHTML = originalText;
         }
@@ -906,20 +934,21 @@
           bms[i].balance_error = data.error || '刷新失败';
           if (data.balance_updated_at) bms[i].balance_updated_at = data.balance_updated_at;
           renderBookmarks();
-          toast(data.error || '刷新失败', 'err');
-          return;
+          if (!quiet) toast(data.error || '刷新失败', 'err');
+          return false;
         }
         bms[i].balance = data.balance;
         bms[i].balance_updated_at = data.balance_updated_at;
         delete bms[i].balance_error;
         renderBookmarks();
-        toast(`💰 余额 ${data.balance}`, 'ok');
+        if (!quiet) toast(`余额 ${data.balance}`, 'ok');
+        return true;
       } catch (e) {
-        toast('网络错误：' + e.message, 'err');
+        if (!quiet) toast('网络错误：' + e.message, 'err');
+        return false;
       } finally {
         clearTimeout(timeoutId);
-        btn.disabled = false;
-        btn.innerHTML = originalText;
+        if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
       }
     }
 
