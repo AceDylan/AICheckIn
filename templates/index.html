@@ -317,7 +317,7 @@
         <section class="view active" id="view-bookmarks">
           <div class="view-header">
             <div><div class="eyebrow">Daily workspace</div><h1>你的站点，一目了然</h1><p>统一打开常用 AI 服务，并按需刷新余额；签到功能已收纳为辅助工具。</p></div>
-            <div class="header-actions"><button class="btn ghost" id="refreshAllBm">刷新全部余额</button><button class="btn" id="addBm">＋ 新增收藏</button></div>
+            <div class="header-actions"><button class="btn ghost" id="refreshAllBm">刷新所有数据</button><button class="btn" id="addBm">＋ 新增收藏</button></div>
           </div>
           <div class="bookmark-surface">
             <div class="bookmark-toolbar">
@@ -414,24 +414,20 @@
 
   <!-- 收藏编辑弹窗 -->
   <div class="modal-mask" id="bmModal">
-    <div class="modal">
+    <div class="modal modal-wide">
       <h3 id="bmModalTitle">新增收藏</h3>
       <div class="field"><label>名称 *</label><input class="input" id="bm_name" placeholder="站点名称"></div>
       <div class="field" style="margin-top:14px"><label>URL *</label><input class="input" id="bm_url" placeholder="https://example.com"></div>
 
-      <!-- 余额接口配置折叠区 -->
-      <details style="margin-top:14px">
-        <summary style="cursor:pointer;color:var(--muted);user-select:none">🔧 余额接口配置（可选）</summary>
-        <div class="note" style="margin-top:8px;margin-bottom:12px">配置后每行右侧显示「💰 刷新」按钮。凭证以明文存储于 config.json，与现有 access_token 一致。</div>
-        <div class="row-2">
-          <div class="field"><label>JSON 取值路径 *</label><input class="input" id="bm_jsonpath" placeholder=".data.balance"></div>
-          <div class="field"><label>金额换算（除以，可选）</label><input class="input" id="bm_divisor" type="number" step="any" min="0" placeholder="留空=原值；分→元填 100"></div>
+      <!-- 接口字段（多字段配置：金额 / 时间 / 原值） -->
+      <div class="fields-editor" id="bmFieldsEditor">
+        <div class="fields-editor-head">
+          <div><div class="fields-editor-title">接口字段</div><div class="note" style="margin-top:3px">每个字段 = 一条 curl 请求 + JSON 取值路径 + 转换类型。刷新时按启用字段逐个取值；凭证以明文存于 config.json。</div></div>
+          <button type="button" class="btn sm ghost" id="bmAddField">＋ 添加字段</button>
         </div>
-        <div class="field" style="margin-top:12px"><label>curl 命令 *</label>
-          <textarea class="input" id="bm_curl" rows="6" placeholder="浏览器开发者工具 → Network → 右键目标请求 → Copy → Copy as cURL (bash)，整段粘贴到这里" style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
-          <div class="note" style="margin-top:6px">粘贴后端自动解析请求方法、URL、请求头、Cookie 和请求体，无需手动拆分。</div>
-        </div>
-      </details>
+        <div id="bmFieldList" class="field-editor-list"></div>
+        <div id="bmFieldsEmpty" class="fields-empty">暂无接口字段，点击「添加字段」配置余额、到期时间等。</div>
+      </div>
 
       <div id="bm_error" class="error" style="display:none;margin-top:12px"></div>
       <div class="modal-actions" style="margin-top:14px">
@@ -821,13 +817,74 @@
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     }
 
-    // ===== 收藏站点（仅存储不签到的站点） =====
+    // ===== 收藏站点（多接口字段：金额 / 时间 / 原值） =====
+    const FIELD_TYPE_LABELS = { amount: '金额', time: '时间', raw: '原值' };
+    const TS_UNIT_LABELS = { auto: '自动识别（秒 / 毫秒）', s: '秒', ms: '毫秒' };
+    const LEGACY_FIELD_ID = 'balance';   // 由旧的单一余额配置迁移而来的字段 id
+    const CARD_FIELD_LIMIT = 4;          // 卡片默认展示的字段数，超出折叠
+
+    function enabledFields(b) { return ((b && b.fields) || []).filter(f => f && f.enabled !== false); }
+    // 更新时间紧凑显示：当天只显示时分，否则 月-日 时:分。
+    function shortStamp(s) {
+      const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(s || ''));
+      if (!m) return String(s || '');
+      const now = new Date();
+      const sameDay = Number(m[1]) === now.getFullYear() && Number(m[2]) === now.getMonth() + 1 && Number(m[3]) === now.getDate();
+      return sameDay ? `${m[4]}:${m[5]}` : `${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+    }
+    // 相对时间（raw 为 epoch 秒）：已过去标红，3 天内标黄。
+    function relativeTime(raw) {
+      const t = Number(raw);
+      if (!isFinite(t) || t <= 0) return { text: '', cls: '' };
+      const diff = t - Date.now() / 1000;
+      const abs = Math.abs(diff);
+      const units = [[31536000, '年'], [2592000, '个月'], [86400, '天'], [3600, '小时'], [60, '分钟']];
+      let text = diff < 0 ? '刚刚' : '即将';
+      for (const [sec, name] of units) {
+        if (abs >= sec) { text = `${Math.floor(abs / sec)} ${name}${diff < 0 ? '前' : '后'}`; break; }
+      }
+      return { text, cls: diff < 0 ? 'is-past' : (abs < 3 * 86400 ? 'is-soon' : '') };
+    }
+    function fieldItemHtml(f, primary) {
+      const type = f.type || 'amount';
+      let head = f.updated_at ? `<span class="field-time" title="上次更新 ${escapeHtml(f.updated_at)}">${escapeHtml(shortStamp(f.updated_at))}</span>` : '';
+      let value = '', valueCls = '', extra = '';
+      if (f.error) {
+        value = `<span class="field-error" title="${escapeHtml(f.error)}">${escapeHtml(f.error)}</span>`;
+        if (f.value != null && f.value !== '') extra = `<span class="field-last">上次成功：${escapeHtml(f.value)}</span>`;
+      } else if (f.value == null || f.value === '') {
+        value = '<span class="field-pending">等待首次刷新</span>';
+      } else if (type === 'time') {
+        const rel = relativeTime(f.raw);
+        value = escapeHtml(f.value);
+        valueCls = rel.cls;
+        if (rel.text) head = `<span class="field-badge ${rel.cls}" title="上次更新 ${escapeHtml(f.updated_at || '')}">${escapeHtml(rel.text)}</span>`;
+      } else if (type === 'amount') {
+        value = escapeHtml(f.value) + (f.unit ? `<span class="field-unit">${escapeHtml(f.unit)}</span>` : '');
+      } else {
+        value = `<span title="${escapeHtml(f.value)}">${escapeHtml(f.value)}</span>`;
+      }
+      return `<div class="field-item${primary ? ' is-primary' : ''} is-${type}">
+            <div class="field-head"><span class="field-label" title="${escapeHtml(f.label)}">${escapeHtml(f.label)}</span>${head}</div>
+            <div class="field-val ${valueCls}">${value}</div>${extra}
+          </div>`;
+    }
+    // 卡片字段区：仅展示启用字段；首个为主字段（通栏大字），其余双列；超过上限折叠为「+N 项」。
+    function fieldsBlockHtml(b) {
+      const fields = enabledFields(b);
+      if (!fields.length) return '<div class="bm-fields-block is-empty"><div class="fields-empty-text">暂无监控字段，在「···」→「编辑」中添加。</div></div>';
+      const head = fields.slice(0, CARD_FIELD_LIMIT), rest = fields.slice(CARD_FIELD_LIMIT);
+      let html = head.map((f, k) => fieldItemHtml(f, k === 0)).join('');
+      if (rest.length) html += `<details class="fields-more"><summary>+${rest.length} 项 ▾</summary><div class="fields-more-grid">${rest.map(f => fieldItemHtml(f, false)).join('')}</div></details>`;
+      return `<div class="bm-fields-block">${html}</div>`;
+    }
+
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
       const bms = STATE.bookmarks || [];
       const query = (($('bmSearch') && $('bmSearch').value) || '').trim().toLowerCase();
       const visible = bms.map((b, i) => ({ b, i })).filter(({ b }) =>
-        !query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)}`.toLowerCase().includes(query));
+        !query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)} ${(b.fields || []).map(f => f.label || '').join(' ')}`.toLowerCase().includes(query));
       $('bmNavCount').textContent = bms.length;
       $('bmVisibleCount').textContent = query ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`;
       if (!visible.length) {
@@ -838,31 +895,19 @@
       }
       empty.style.display = 'none';
       list.innerHTML = visible.map(({ b, i }) => {
-        const hasBalance = !!b.balance_config;
+        const hasFields = enabledFields(b).length > 0;
         const safe = safeUrl(b.url);
         const host = siteHost(b.url) || '未设置域名';
-        let balanceHtml = '<div class="balance-block"><div class="balance-label">Balance</div><div class="balance-empty">未配置余额接口</div></div>';
-        if (hasBalance) {
-          const time = b.balance_updated_at ? `<span class="balance-time">${escapeHtml(b.balance_updated_at)}</span>` : '';
-          if (b.balance_error) {
-            const last = b.balance ? `<span class="balance-last">上次成功：${escapeHtml(b.balance)}</span>` : '';
-            balanceHtml = `<div class="balance-block"><div class="balance-label">Balance ${time}</div><span class="balance-error">${escapeHtml(b.balance_error)}</span>${last}</div>`;
-          } else if (b.balance) {
-            balanceHtml = `<div class="balance-block"><div class="balance-label">Balance ${time}</div><div class="balance-value">${escapeHtml(b.balance)}</div></div>`;
-          } else {
-            balanceHtml = `<div class="balance-block"><div class="balance-label">Balance</div><div class="balance-empty">等待首次刷新</div></div>`;
-          }
-        }
         return `
         <article class="bookmark-card" data-bm-index="${i}">
           <div class="bookmark-top">
             <div class="site-avatar" aria-hidden="true">${escapeHtml(siteInitial(b.name, b.url))}</div>
             <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
           </div>
-          ${balanceHtml}
+          ${fieldsBlockHtml(b)}
           <div class="bookmark-actions">
             ${safe ? `<a class="btn sm open" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">打开站点 ↗</a>` : `<button class="btn sm open" disabled>网址不可用</button>`}
-            ${hasBalance ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新余额" aria-label="刷新 ${escapeHtml(b.name)} 的余额">刷新</button>` : ''}
+            ${hasFields ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新全部启用字段" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
             <details class="action-menu">
               <summary class="menu-trigger" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
               <div class="menu-popover">
@@ -893,67 +938,57 @@
 
     $('refreshAllBm').addEventListener('click', async () => {
       if (!guardAdmin()) return;
-      const indexes = (STATE.bookmarks || []).map((b, i) => b.balance_config ? i : -1).filter(i => i >= 0);
-      if (!indexes.length) { toast('没有配置余额接口的收藏'); return; }
+      const indexes = (STATE.bookmarks || []).map((b, i) => enabledFields(b).length ? i : -1).filter(i => i >= 0);
+      if (!indexes.length) { toast('没有配置接口字段的收藏'); return; }
       const btn = $('refreshAllBm');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span>刷新中';
       let succeeded = 0;
-      for (const i of indexes) if (await refreshBmBalance(i, true)) succeeded++;
+      for (const i of indexes) if (await refreshBmBalance(i, true)) succeeded++;  // 顺序执行，避免并发压力
       btn.disabled = false;
-      btn.textContent = '刷新全部余额';
-      toast(`余额刷新完成：${succeeded}/${indexes.length}`, succeeded === indexes.length ? 'ok' : 'err');
+      btn.textContent = '刷新所有数据';
+      toast(`刷新完成：${succeeded}/${indexes.length} 个站点全部字段成功`, succeeded === indexes.length ? 'ok' : 'err');
     });
 
+    // 刷新单个收藏的全部启用字段；后端返回最新 bookmark 对象，就地替换后重绘。
     async function refreshBmBalance(i, quiet = false) {
       if (!guardAdmin()) return false;
       const bms = STATE.bookmarks || [];
       if (i < 0 || i >= bms.length) return false;
-
-      const card = $('bmList').querySelector(`[data-bm-index="${i}"]`);
-      const btn = card && card.querySelector('.bm-refresh');
-      const originalText = btn ? btn.innerHTML : '';
-      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
-
-      // 30s 强制恢复
-      const timeoutId = setTimeout(() => {
-        if (btn && btn.disabled) {
-          btn.disabled = false;
-          btn.innerHTML = originalText;
-        }
-      }, 30000);
-
+      const setBusy = (busy) => {
+        const card = $('bmList').querySelector(`[data-bm-index="${i}"]`);
+        if (!card) return;
+        card.classList.toggle('is-busy', busy);
+        if (busy) card.setAttribute('aria-busy', 'true'); else card.removeAttribute('aria-busy');
+        const btn = card.querySelector('.bm-refresh');
+        if (btn) { btn.disabled = busy; btn.innerHTML = busy ? '<span class="spinner"></span>' : '刷新'; }
+      };
+      setBusy(true);
+      const timeoutId = setTimeout(() => setBusy(false), 30000);  // 30s 强制恢复
       try {
-        const resp = await fetch(`/api/bookmarks/${i}/refresh_balance`, {
-          method: 'POST',
-          headers: adminHeaders()
-        });
+        const resp = await fetch(`/api/bookmarks/${i}/refresh_balance`, { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
-        if (!data.ok) {
-          // 失败状态已落盘，同步到本地并展示，让页面能看出来。
-          bms[i].balance_error = data.error || '刷新失败';
-          if (data.balance_updated_at) bms[i].balance_updated_at = data.balance_updated_at;
-          renderBookmarks();
-          if (!quiet) toast(data.error || '刷新失败', 'err');
-          return false;
-        }
-        bms[i].balance = data.balance;
-        bms[i].balance_updated_at = data.balance_updated_at;
-        delete bms[i].balance_error;
+        if (data.bookmark) STATE.bookmarks[i] = data.bookmark;
         renderBookmarks();
-        if (!quiet) toast(`余额 ${data.balance}`, 'ok');
+        if (!data.ok) { if (!quiet) toast(data.error || '刷新失败', 'err'); return false; }
+        if (!quiet) {
+          const results = data.results || [];
+          const first = results[0];
+          toast(first ? `${first.label} ${first.value}${results.length > 1 ? ` 等 ${results.length} 个字段已更新` : ''}` : '已刷新', 'ok');
+        }
         return true;
       } catch (e) {
         if (!quiet) toast('网络错误：' + e.message, 'err');
         return false;
       } finally {
         clearTimeout(timeoutId);
-        if (btn) { btn.disabled = false; btn.innerHTML = originalText; }
+        setBusy(false);
       }
     }
 
     let bmEditIdx = -1;
-    // 把已存的 balance_config 还原成 curl 文本：优先用保存的原始 curl，
+    let bmDraftFields = [];  // 弹窗内的字段草稿（含 _key/_open/_curl_text 等本地状态），保存时整体提交
+    // 把已存的请求配置还原成 curl 文本：优先用保存的原始 curl，
     // 旧数据（无 curl 字段）则按 method/url/headers/body 反向拼一条等价 curl。
     function cfgToCurl(cfg) {
       if (!cfg) return '';
@@ -965,58 +1000,205 @@
       if (cfg.body) parts.push(`--data-raw '${cfg.body}'`);
       return parts.join(' \\\n  ');
     }
+    function newDraftField() {
+      return { _key: 'new_' + Math.random().toString(36).slice(2, 10), _new: true, _open: true, _curl_text: '',
+        label: '', type: 'amount', enabled: true, json_path: '', divisor: '', unit: '', ts_unit: 'auto', tz: 'Asia/Shanghai' };
+    }
+    function draftFromField(f) {
+      return Object.assign({}, f, { _key: f.id, _new: false, _open: false, _curl_text: cfgToCurl(f),
+        divisor: f.divisor != null ? String(f.divisor) : '', unit: f.unit || '', ts_unit: f.ts_unit || 'auto', tz: f.tz || 'Asia/Shanghai' });
+    }
+    // 草稿 → 提交给后端的字段对象。curl 文本未改动且原本没有 curl 的旧字段沿用分字段请求配置，避免反向拼接引入误差。
+    function draftToPayload(d) {
+      const p = { label: (d.label || '').trim(), type: d.type || 'amount', enabled: d.enabled !== false, json_path: (d.json_path || '').trim() };
+      if (!d._new) p.id = d.id;
+      const curlText = (d._curl_text || '').trim();
+      if (d.curl || d._new || curlText !== cfgToCurl(d).trim()) p.curl = curlText;
+      else { p.method = d.method; p.url = d.url; p.headers = d.headers || {}; p.body = d.body == null ? null : d.body; }
+      if (p.type === 'amount') {
+        if (String(d.divisor || '').trim()) p.divisor = Number(d.divisor);
+        if ((d.unit || '').trim()) p.unit = d.unit.trim();
+      }
+      if (p.type === 'time') { p.ts_unit = d.ts_unit || 'auto'; p.tz = (d.tz || '').trim() || 'Asia/Shanghai'; }
+      return p;
+    }
+    function validateDraft(d) {
+      if (!(d.label || '').trim()) return '字段标签必填';
+      if (!(d._curl_text || '').trim()) return 'curl 命令必填';
+      if (!(d.json_path || '').trim()) return 'JSON 取值路径必填';
+      if (d.type === 'amount' && String(d.divisor || '').trim()) {
+        const n = Number(d.divisor);
+        if (!isFinite(n) || n <= 0) return '换算除数需为大于 0 的数字';
+      }
+      return '';
+    }
+    // 单个字段的手风琴编辑项：折叠条 = 开关 + 标签 + 类型微标（+ 迁移标识）+ 排序/删除；展开 = 表单。
+    function fieldEditorItemHtml(d, idx, total) {
+      const type = d.type || 'amount';
+      const legacy = d.id === LEGACY_FIELD_ID;
+      const hide = (t) => (type === t ? '' : ' hidden');
+      return `<details class="field-editor-item${d.enabled === false ? ' is-disabled' : ''}" data-key="${escapeHtml(d._key)}"${d._open ? ' open' : ''}>
+          <summary class="field-editor-summary">
+            <label class="switch sm" title="启用 / 禁用"><input type="checkbox" data-act="toggle" aria-label="启用此字段"${d.enabled !== false ? ' checked' : ''}><span class="slider"></span></label>
+            <span class="field-editor-name">${escapeHtml(d.label || '未命名字段')}</span>
+            <span class="type-badge">${FIELD_TYPE_LABELS[type] || escapeHtml(type)}</span>
+            ${legacy ? '<span class="tag-migrated" title="由旧的余额接口配置自动迁移">原余额</span>' : ''}
+            <span class="field-editor-tools">
+              <button type="button" class="icon-btn" data-act="up" title="上移" aria-label="上移"${idx === 0 ? ' disabled' : ''}>↑</button>
+              <button type="button" class="icon-btn" data-act="down" title="下移" aria-label="下移"${idx === total - 1 ? ' disabled' : ''}>↓</button>
+              <button type="button" class="icon-btn danger" data-act="del" title="删除字段" aria-label="删除字段">✕</button>
+            </span>
+          </summary>
+          <div class="field-editor-body">
+            <div class="row-2" style="margin-top:12px">
+              <div class="field"><label>字段标签 *</label><input class="input" data-k="label" value="${escapeHtml(d.label || '')}" placeholder="如：账户余额、到期时间" maxlength="40"></div>
+              <div class="field"><label>转换类型</label>
+                <div class="segmented" role="radiogroup" aria-label="转换类型">
+                  ${['amount', 'time', 'raw'].map(t => `<button type="button" role="radio" aria-checked="${type === t}" data-act="type" data-v="${t}" class="${type === t ? 'active' : ''}">${FIELD_TYPE_LABELS[t]}</button>`).join('')}
+                </div>
+              </div>
+            </div>
+            <div class="field" style="margin-top:12px"><label>curl 命令 *</label>
+              <textarea class="input" data-k="_curl_text" rows="4" placeholder="浏览器开发者工具 → Network → 右键请求 → Copy → Copy as cURL (bash)，整段粘贴" style="font-family:ui-monospace,monospace;font-size:12px">${escapeHtml(d._curl_text || '')}</textarea>
+            </div>
+            <div class="row-2" style="margin-top:12px">
+              <div class="field"><label>JSON 取值路径 *</label><input class="input" data-k="json_path" value="${escapeHtml(d.json_path || '')}" placeholder="如：data.user.balance"></div>
+              <div class="field"${hide('amount')}><label>换算除数（可选）</label><input class="input" data-k="divisor" type="number" step="any" min="0" value="${escapeHtml(d.divisor || '')}" placeholder="留空=原值；分→元填 100"></div>
+              <div class="field"${hide('time')}><label>时间戳单位</label><select class="input" data-k="ts_unit">${['auto', 's', 'ms'].map(u => `<option value="${u}"${(d.ts_unit || 'auto') === u ? ' selected' : ''}>${TS_UNIT_LABELS[u]}</option>`).join('')}</select></div>
+            </div>
+            <div class="row-2" style="margin-top:12px"${hide('amount')}><div class="field"><label>单位后缀（可选）</label><input class="input" data-k="unit" value="${escapeHtml(d.unit || '')}" placeholder="如 USD、¥、积分" maxlength="12"></div></div>
+            <div class="row-2" style="margin-top:12px"${hide('time')}><div class="field"><label>显示时区</label><input class="input" data-k="tz" value="${escapeHtml(d.tz || 'Asia/Shanghai')}" placeholder="Asia/Shanghai"></div><div class="note" style="align-self:end;margin:0 0 12px">秒 / 毫秒时间戳自动识别；ISO 字符串无时区时按此时区解释。</div></div>
+            <div class="field-test-row">
+              <button type="button" class="btn sm ghost" data-act="test">测试取值</button>
+              <span class="test-result" aria-live="polite"></span>
+            </div>
+          </div>
+        </details>`;
+    }
+
+    function draftByKey(key) { return bmDraftFields.find(d => d._key === key); }
+    function draftIndex(key) { return bmDraftFields.findIndex(d => d._key === key); }
+    function renderFieldEditor() {
+      const list = $('bmFieldList'), empty = $('bmFieldsEmpty');
+      list.innerHTML = bmDraftFields.map((d, i) => fieldEditorItemHtml(d, i, bmDraftFields.length)).join('');
+      empty.style.display = bmDraftFields.length ? 'none' : 'block';
+      list.querySelectorAll('details.field-editor-item').forEach(det => det.addEventListener('toggle', () => {
+        const d = draftByKey(det.dataset.key);
+        if (d) d._open = det.open;
+        // 移动端展开时滚到顶部，避免软键盘遮挡 curl 输入框。
+        if (det.open && window.innerWidth <= 720) det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }));
+    }
+    // 输入即写回草稿；不重绘列表以免丢焦点，仅同步折叠条上的名称。
+    $('bmFieldList').addEventListener('input', (e) => {
+      const item = e.target.closest('[data-key]'), k = e.target.dataset.k;
+      if (!item || !k) return;
+      const d = draftByKey(item.dataset.key);
+      if (!d) return;
+      d[k] = e.target.value;
+      if (k === 'label') { const nameEl = item.querySelector('.field-editor-name'); if (nameEl) nameEl.textContent = d.label.trim() || '未命名字段'; }
+    });
+    $('bmFieldList').addEventListener('change', (e) => {
+      const item = e.target.closest('[data-key]');
+      if (!item) return;
+      const d = draftByKey(item.dataset.key);
+      if (!d) return;
+      if (e.target.dataset.act === 'toggle') { d.enabled = e.target.checked; item.classList.toggle('is-disabled', !d.enabled); }
+      else if (e.target.dataset.k) d[e.target.dataset.k] = e.target.value;
+    });
+    $('bmFieldList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const item = btn.closest('[data-key]');
+      if (!item) return;
+      e.preventDefault();  // 折叠条内的按钮不触发展开/收起
+      const idx = draftIndex(item.dataset.key), d = bmDraftFields[idx];
+      if (!d) return;
+      const act = btn.dataset.act;
+      if (act === 'up' || act === 'down') {
+        const j = act === 'up' ? idx - 1 : idx + 1;
+        if (j < 0 || j >= bmDraftFields.length) return;
+        [bmDraftFields[idx], bmDraftFields[j]] = [bmDraftFields[j], bmDraftFields[idx]];
+        renderFieldEditor();
+      } else if (act === 'del') {
+        // 原地二次确认：按钮变为「确认删除？」，3 秒无操作自动复原。
+        if (btn.dataset.confirm !== '1') {
+          btn.dataset.confirm = '1'; btn.classList.add('confirming'); btn.textContent = '确认删除？';
+          setTimeout(() => { if (btn.isConnected) { btn.dataset.confirm = ''; btn.classList.remove('confirming'); btn.textContent = '✕'; } }, 3000);
+          return;
+        }
+        bmDraftFields.splice(idx, 1);
+        renderFieldEditor();
+      } else if (act === 'type') {
+        d.type = btn.dataset.v; d._open = true;
+        renderFieldEditor();
+      } else if (act === 'test') {
+        await testDraftField(d, item);
+      }
+    });
+    // 保存前测试：走后端 field_preview（校验 + 请求 + 换算，不落盘），结果内联显示。
+    async function testDraftField(d, item) {
+      const btn = item.querySelector('button[data-act="test"]'), out = item.querySelector('.test-result');
+      const err = validateDraft(d);
+      if (err) { out.innerHTML = `<span class="tag-err">✕ ${escapeHtml(err)}</span>`; return; }
+      if (!guardAdmin()) return;
+      btn.classList.add('is-loading'); btn.setAttribute('aria-busy', 'true');
+      out.innerHTML = '<span class="test-result-loading">请求中…</span>';
+      try {
+        const resp = await fetch('/api/bookmarks/field_preview', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(draftToPayload(d)) });
+        const data = await resp.json();
+        if (data.ok) {
+          let shown = String(data.value);
+          if (data.type === 'time') { const rel = relativeTime(data.raw); if (rel.text) shown += `（${rel.text}）`; }
+          else if (data.type === 'amount' && (d.unit || '').trim()) shown += ' ' + d.unit.trim();
+          out.innerHTML = `<span class="tag-ok" title="${escapeHtml(shown)}">✓ ${escapeHtml(shown)}</span>`;
+        } else {
+          out.innerHTML = `<span class="tag-err" title="${escapeHtml(data.error || '')}">✕ ${escapeHtml(data.error || '测试失败')}</span>`;
+        }
+      } catch (e) {
+        out.innerHTML = `<span class="tag-err">✕ 网络错误：${escapeHtml(e.message)}</span>`;
+      } finally {
+        btn.classList.remove('is-loading'); btn.removeAttribute('aria-busy');
+      }
+    }
+
     function openBmModal(idx) {
       bmEditIdx = idx;
       $('bm_error').style.display = 'none';
       const isEdit = idx >= 0;
       $('bmModalTitle').textContent = isEdit ? '编辑收藏' : '新增收藏';
-      const b = isEdit ? STATE.bookmarks[idx] : { name: '', url: '' };
-
+      const b = isEdit ? STATE.bookmarks[idx] : { name: '', url: '', fields: [] };
       $('bm_name').value = b.name || '';
       $('bm_url').value = b.url || '';
-
-      // 填充余额配置
-      const cfg = b.balance_config || {};
-      $('bm_jsonpath').value = cfg.json_path || '';
-      $('bm_divisor').value = cfg.divisor != null ? cfg.divisor : '';
-      $('bm_curl').value = cfgToCurl(cfg);
-
+      bmDraftFields = (b.fields || []).map(draftFromField);
+      renderFieldEditor();
       $('bmModal').classList.add('show');
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
     $('addBm').addEventListener('click', () => { if (guardAdmin()) openBmModal(-1); });
     $('bmCancel').addEventListener('click', () => $('bmModal').classList.remove('show'));
+    $('bmAddField').addEventListener('click', () => {
+      if (bmDraftFields.length >= 20) { showBmError('每个收藏最多 20 个字段'); return; }
+      bmDraftFields.forEach(d => { d._open = false; });
+      bmDraftFields.push(newDraftField());
+      renderFieldEditor();
+      const last = $('bmFieldList').lastElementChild;
+      const input = last && last.querySelector('[data-k="label"]');
+      if (input) input.focus();
+    });
 
     $('bmSave').addEventListener('click', async () => {
       const name = $('bm_name').value.trim();
       const url = $('bm_url').value.trim();
-
-      // 构造 balance_config（填了 curl 或路径则启用，否则 null）；method/url/headers/body 由后端解析 curl 得出
-      let balance_config = null;
-      const curl_text = $('bm_curl').value.trim();
-      const json_path = $('bm_jsonpath').value.trim();
-      const divisor_text = $('bm_divisor').value.trim();
-
-      if (curl_text || json_path) {
-        if (!curl_text) { showBmError('curl 命令必填'); return; }
-        if (!json_path) { showBmError('JSON 取值路径必填'); return; }
-        balance_config = { curl: curl_text, json_path };
-        if (divisor_text) {
-          const d = Number(divisor_text);
-          if (!isFinite(d) || d <= 0) { showBmError('金额换算需为大于 0 的数字'); return; }
-          balance_config.divisor = d;
-        }
+      for (const d of bmDraftFields) {
+        const err = validateDraft(d);
+        if (err) { d._open = true; renderFieldEditor(); showBmError(`字段「${d.label || '未命名'}」：${err}`); return; }
       }
-
-      const body = { name, url, balance_config };
+      const body = { name, url, fields: bmDraftFields.map(draftToPayload) };
       const ep = bmEditIdx >= 0 ? `/api/bookmarks/${bmEditIdx}` : '/api/bookmarks';
       const method = bmEditIdx >= 0 ? 'PUT' : 'POST';
       try {
-        const resp = await fetch(ep, {
-          method,
-          headers: adminHeaders(),
-          body: JSON.stringify(body),
-        });
+        const resp = await fetch(ep, { method, headers: adminHeaders(), body: JSON.stringify(body) });
         const data = await resp.json();
         if (!data.ok) { showBmError(data.error || '保存失败'); return; }
         $('bmModal').classList.remove('show');

@@ -94,7 +94,9 @@ def read_store():
     store.setdefault("configs", [])
     store.setdefault("proxy_url", "")
     store.setdefault("schedule", {})
-    store.setdefault("bookmarks", [])  # 仅收藏不签到的站点：[{name, url}]
+    store.setdefault("bookmarks", [])  # 仅收藏不签到的站点：[{name, url, fields}]
+    # 统一为多字段结构：旧数据的单一 balance_config 合成为「余额」金额字段，并维持旧键镜像。
+    store["bookmarks"] = [normalize_bookmark(b) for b in store["bookmarks"] if isinstance(b, dict)]
     return store
 
 
@@ -332,13 +334,13 @@ def _apply_dynamic_signature(url, headers):
     headers["X-Sign"] = sign
 
 
-def _fetch_balance(balance_cfg, proxy_url):
-    """根据 balance_config 获取余额，返回 (balance_str_or_None, error_msg)。"""
-    method = balance_cfg["method"]
-    url = balance_cfg["url"]
-    headers = dict(balance_cfg.get("headers") or {})
-    body = balance_cfg.get("body")
-    json_path = balance_cfg["json_path"]
+def _fetch_json_value(cfg, proxy_url):
+    """按接口配置请求并按 json_path 取值。返回 (value, error_msg)；error_msg 非空表示失败。"""
+    method = str(cfg.get("method") or "GET").upper()
+    url = cfg["url"]
+    headers = dict(cfg.get("headers") or {})
+    body = cfg.get("body")
+    json_path = cfg.get("json_path") or ""
 
     # 剥掉重放有害头：accept-encoding（拿到压缩乱码）、if-none-match /
     # if-modified-since（命中缓存回 304 空 body）。覆盖 curl 抓来的旧配置。
@@ -379,52 +381,344 @@ def _fetch_balance(balance_cfg, proxy_url):
     if value is None:
         return None, "未找到路径 {0}".format(json_path)
 
-    # 可选换算系数：如分→元填 100。未配置或非法时按 1（不换算）。
+    return value, None
+
+
+# =========================
+# 收藏接口字段：多字段 + 类型换算（金额 / 时间 / 原值）
+# =========================
+
+FIELD_TYPES = ("amount", "time", "raw")
+TS_UNITS = ("auto", "s", "ms")
+DEFAULT_TZ = "Asia/Shanghai"
+# 旧数据单一 balance_config 迁移后的字段 id，前端据此标识「由旧余额配置迁移」。
+LEGACY_FIELD_ID = "balance"
+MAX_FIELDS_PER_BOOKMARK = 20
+_SNAPSHOT_KEYS = ("value", "raw", "updated_at", "error")
+_FIELD_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+
+def _gen_field_id(taken=()):
+    while True:
+        fid = "f_" + "".join(random.choice("0123456789abcdef") for _ in range(8))
+        if fid not in taken:
+            return fid
+
+
+def _resolve_tz(name):
+    """解析时区名为 tzinfo；镜像缺少 tzdata 时对中国常用时区回退为固定 +08:00。"""
+    name = str(name or DEFAULT_TZ).strip() or DEFAULT_TZ
     try:
-        divisor = float(balance_cfg.get("divisor"))
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - ZoneInfoNotFoundError / ImportError 等统一回退。
+        if name in ("Asia/Shanghai", "Asia/Chongqing", "Asia/Harbin", "Asia/Hong_Kong",
+                    "Asia/Macau", "Asia/Taipei", "PRC"):
+            return datetime.timezone(datetime.timedelta(hours=8), "UTC+8")
+        if name.upper() == "UTC":
+            return datetime.timezone.utc
+        raise ValueError("无法识别的时区：{0}".format(name))
+
+
+def _epoch_from_value(value, ts_unit="auto"):
+    """把接口原始值解析为 epoch 秒（float）或 datetime。
+
+    - 数字 / 数字字符串：按 ts_unit 换算；auto 按数量级识别秒(<1e11)/毫秒(<1e14)/微秒(<1e17)/纳秒。
+    - ISO 8601 字符串（含 Z / 偏移）：返回 datetime；无时区信息时由调用方按目标时区解释。
+    """
+    if isinstance(value, bool):
+        raise ValueError("布尔值不是时间")
+    if isinstance(value, (int, float)):
+        num = float(value)
+    else:
+        text = str(value).strip()
+        if not text:
+            raise ValueError("空值")
+        try:
+            num = float(text)
+        except ValueError:
+            iso = text[:-1] + "+00:00" if text[-1:] in ("Z", "z") else text
+            try:
+                return datetime.datetime.fromisoformat(iso)
+            except ValueError:
+                raise ValueError("无法识别的时间格式：{0}".format(text[:40]))
+    unit = str(ts_unit or "auto").lower()
+    if unit == "auto":
+        mag = abs(num)
+        if mag < 1e11:
+            unit = "s"
+        elif mag < 1e14:
+            unit = "ms"
+        elif mag < 1e17:
+            unit = "us"
+        else:
+            unit = "ns"
+    return num / {"s": 1.0, "ms": 1e3, "us": 1e6, "ns": 1e9}[unit]
+
+
+def convert_value(value, field):
+    """按字段类型换算接口原始值。返回 (display_str, raw, error)；error 非空表示失败。
+
+    - amount：沿用旧余额逻辑（可选除数，保留两位小数；字符串仅在配置除数时数值化）。
+    - time：秒/毫秒时间戳或 ISO 字符串 → 目标时区（默认 Asia/Shanghai）的 YYYY-MM-DD HH:MM:SS，raw 为 epoch 秒。
+    - raw：原样文本（对象/数组转 JSON），最长 200 字。
+    """
+    ftype = str(field.get("type") or "amount")
+    if ftype == "time":
+        try:
+            tz = _resolve_tz(field.get("tz") or DEFAULT_TZ)
+            parsed = _epoch_from_value(value, field.get("ts_unit") or "auto")
+            if isinstance(parsed, datetime.datetime):
+                dt = parsed if parsed.tzinfo else parsed.replace(tzinfo=tz)
+                dt = dt.astimezone(tz)
+            else:
+                dt = datetime.datetime.fromtimestamp(parsed, tz)
+        except (ValueError, OverflowError, OSError) as exc:
+            return None, None, "时间换算失败：{0}".format(exc)
+        return dt.strftime("%Y-%m-%d %H:%M:%S"), round(dt.timestamp(), 3), ""
+    if ftype == "raw":
+        if isinstance(value, (dict, list)):
+            text = json.dumps(value, ensure_ascii=False)
+        else:
+            text = str(value).strip()
+        return text[:200], None, ""
+    # amount
+    if isinstance(value, bool):
+        return None, None, "布尔值不是金额"
+    try:
+        divisor = float(field.get("divisor"))
         if divisor <= 0:
             divisor = 1.0
     except (TypeError, ValueError):
         divisor = 1.0
-
     if isinstance(value, (int, float)):
-        return "{0:.2f}".format(float(value) / divisor), ""
-    # 字符串值：仅当配置了换算系数（≠1）时才数值化，否则保持原样精度。
+        return "{0:.2f}".format(float(value) / divisor), float(value), ""
+    text = str(value).strip()
     if divisor != 1.0:
         try:
-            return "{0:.2f}".format(float(str(value).strip()) / divisor), ""
+            num = float(text)
         except (TypeError, ValueError):
             pass
-    return str(value).strip(), ""
+        else:
+            return "{0:.2f}".format(num / divisor), num, ""
+    return text, None, ""
 
 
-def _apply_balance_to_bookmark(bookmark, proxy_url):
-    """拉取并就地写回单条收藏的余额/错误状态。返回 (ok, balance_or_errmsg)。
+def _fetch_balance(balance_cfg, proxy_url):
+    """兼容旧调用：按金额类型获取并换算。返回 (balance_str_or_None, error_msg)。"""
+    value, err = _fetch_json_value(balance_cfg, proxy_url)
+    if err:
+        return None, err
+    display, _raw, cerr = convert_value(value, {"type": "amount", "divisor": balance_cfg.get("divisor")})
+    if cerr:
+        return None, cerr
+    return display, ""
 
-    成功：写 balance + balance_updated_at，清除 balance_error。
-    失败：写 balance_error + balance_updated_at，保留上次 balance 不动。
+
+def _request_config(src):
+    """从字段或旧 balance_config 中抽取请求配置部分（method/url/headers/body/json_path/curl/divisor）。"""
+    cfg = {
+        "method": str(src.get("method") or "GET").strip().upper(),
+        "url": str(src.get("url") or "").strip(),
+        "headers": dict(src.get("headers") or {}),
+        "body": src.get("body"),
+        "json_path": str(src.get("json_path") or "").strip(),
+    }
+    if src.get("curl"):
+        cfg["curl"] = str(src["curl"])
+    divisor = src.get("divisor")
+    if divisor not in (None, ""):
+        try:
+            cfg["divisor"] = float(divisor)
+        except (TypeError, ValueError):
+            pass
+    return cfg
+
+
+def legacy_field_from_balance(bookmark):
+    """把旧的单一 balance_config（含 balance 快照）表示为一个标签为「余额」的金额字段。"""
+    cfg = bookmark.get("balance_config") or {}
+    field = {"id": LEGACY_FIELD_ID, "label": "余额", "type": "amount", "enabled": True}
+    field.update(_request_config(cfg))
+    if bookmark.get("balance") is not None:
+        field["value"] = bookmark.get("balance")
+    if bookmark.get("balance_updated_at"):
+        field["updated_at"] = bookmark["balance_updated_at"]
+    if bookmark.get("balance_error"):
+        field["error"] = bookmark["balance_error"]
+    return field
+
+
+def sync_legacy_balance(bookmark):
+    """把首个启用的金额字段镜像回旧键 balance_config/balance 等，使回滚到旧版本仍可用；没有则清除旧键。"""
+    primary = None
+    for f in bookmark.get("fields") or []:
+        if f.get("enabled", True) and f.get("type") == "amount":
+            primary = f
+            break
+    if primary is None:
+        for k in ("balance_config", "balance", "balance_updated_at", "balance_error"):
+            bookmark.pop(k, None)
+        return bookmark
+    bookmark["balance_config"] = _request_config(primary)
+    for src_key, dst_key in (("value", "balance"), ("updated_at", "balance_updated_at"), ("error", "balance_error")):
+        if primary.get(src_key) not in (None, ""):
+            bookmark[dst_key] = primary[src_key]
+        else:
+            bookmark.pop(dst_key, None)
+    return bookmark
+
+
+def normalize_bookmark(bookmark):
+    """读取时统一为多字段结构：无 fields 的旧数据由 balance_config 合成；补齐 id/type/enabled 并同步旧键镜像。"""
+    if not isinstance(bookmark, dict):
+        return bookmark
+    fields = bookmark.get("fields")
+    if not isinstance(fields, list):
+        fields = [legacy_field_from_balance(bookmark)] if bookmark.get("balance_config") else []
+    cleaned, taken = [], set()
+    for f in fields:
+        if not isinstance(f, dict):
+            continue
+        f = dict(f)
+        fid = str(f.get("id") or "").strip()
+        if not _FIELD_ID_RE.match(fid) or fid in taken:
+            fid = _gen_field_id(taken)
+        f["id"] = fid
+        taken.add(fid)
+        if not str(f.get("label") or "").strip():
+            f["label"] = "余额" if fid == LEGACY_FIELD_ID else "字段"
+        if f.get("type") not in FIELD_TYPES:
+            f["type"] = "amount"
+        f["enabled"] = bool(f.get("enabled", True))
+        cleaned.append(f)
+    bookmark["fields"] = cleaned
+    return sync_legacy_balance(bookmark)
+
+
+def _field_signature(field):
+    """影响取值结果的配置签名；变化时丢弃旧快照，避免把旧值当新配置的结果展示。"""
+    return (
+        field.get("type"), field.get("method"), field.get("url"), field.get("json_path"),
+        json.dumps(field.get("headers") or {}, sort_keys=True), field.get("body"),
+        field.get("divisor"), field.get("ts_unit"), field.get("tz"),
+    )
+
+
+def clean_field(raw, existing=None, taken=()):
+    """校验并规整单个接口字段配置。
+
+    - 请求部分与旧 balance_config 同规则：优先解析 curl，否则接受分字段 method/url/headers/body。
+    - 类型专属：amount 可选 divisor(>0)/unit；time 可选 ts_unit(auto/s/ms)/tz（默认 Asia/Shanghai）。
+    - 快照（value/raw/updated_at/error）：优先沿用同 id 旧字段（配置签名未变时），否则接受 payload 自带（导入）。
     """
-    cfg = bookmark.get("balance_config")
-    if not cfg:
-        return False, "未配置余额接口"
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        balance, error_msg = _fetch_balance(cfg, proxy_url)
-    except Exception as exc:  # noqa: BLE001 - 单条异常不应影响调用方批量流程。
-        balance, error_msg = None, "刷新余额失败：{0}".format(exc)
-    bookmark["balance_updated_at"] = now
-    if balance is None:
-        bookmark["balance_error"] = error_msg or "获取余额失败"
-        return False, bookmark["balance_error"]
-    bookmark["balance"] = balance
-    bookmark.pop("balance_error", None)
-    return True, balance
+    if not isinstance(raw, dict):
+        raise ValueError("字段需为对象")
+    errors = []
+    label = str(raw.get("label") or "").strip()
+    if not label:
+        errors.append("字段标签必填")
+    elif len(label) > 40:
+        errors.append("字段标签过长（最多 40 字）")
+    ftype = str(raw.get("type") or "amount").strip().lower()
+    if ftype not in FIELD_TYPES:
+        errors.append("转换类型无效（amount / time / raw）")
+    enabled = bool(raw.get("enabled", True))
+
+    json_path = str(raw.get("json_path") or "").strip()
+    curl_text = str(raw.get("curl") or "").strip()
+    if curl_text:
+        try:
+            parsed = parse_curl(curl_text)
+            method, api_url, headers, body = parsed["method"], parsed["url"], parsed["headers"], parsed["body"]
+        except ValueError as exc:
+            errors.append("curl 解析失败：{0}".format(exc))
+            method, api_url, headers, body = "", "", {}, None
+    else:
+        method = str(raw.get("method") or "").strip().upper()
+        api_url = str(raw.get("url") or "").strip()
+        headers = raw.get("headers")
+        body = raw.get("body")
+    if method not in ("GET", "POST"):
+        errors.append("method 需为 GET 或 POST")
+    if not api_url:
+        errors.append("接口 URL 必填（粘贴 curl 命令）")
+    elif not api_url.startswith(("http://", "https://")):
+        errors.append("接口 URL 需以 http:// 或 https:// 开头")
+    if not isinstance(headers, dict):
+        errors.append("headers 需为对象")
+    if body is not None and not isinstance(body, str):
+        errors.append("body 需为字符串或 null")
+    if not json_path:
+        errors.append("JSON 取值路径必填")
+
+    field = {
+        "id": "", "label": label, "type": ftype, "enabled": enabled,
+        "method": method, "url": api_url, "headers": dict(headers or {}), "body": body, "json_path": json_path,
+    }
+    if curl_text:
+        field["curl"] = curl_text
+
+    if ftype == "amount":
+        divisor_raw = raw.get("divisor")
+        if divisor_raw is not None and str(divisor_raw).strip() != "":
+            try:
+                divisor = float(divisor_raw)
+            except (TypeError, ValueError):
+                errors.append("金额换算除数需为数字")
+            else:
+                if divisor <= 0:
+                    errors.append("金额换算除数需大于 0")
+                elif divisor != 1:
+                    field["divisor"] = divisor
+        unit = str(raw.get("unit") or "").strip()
+        if len(unit) > 12:
+            errors.append("单位过长（最多 12 字）")
+        elif unit:
+            field["unit"] = unit
+    elif ftype == "time":
+        ts_unit = str(raw.get("ts_unit") or "auto").strip().lower()
+        if ts_unit not in TS_UNITS:
+            errors.append("时间戳单位需为 auto / s / ms")
+        field["ts_unit"] = ts_unit
+        tz = str(raw.get("tz") or DEFAULT_TZ).strip() or DEFAULT_TZ
+        try:
+            _resolve_tz(tz)
+        except ValueError as exc:
+            errors.append(str(exc))
+        field["tz"] = tz
+
+    if errors:
+        raise ValueError("；".join(errors))
+
+    fid = str(raw.get("id") or "").strip()
+    if not _FIELD_ID_RE.match(fid) or fid in taken:
+        fid = _gen_field_id(taken)
+    field["id"] = fid
+
+    # 快照沿用：同 id 旧字段且配置签名未变 → 沿用旧快照；无旧字段（导入）→ 接受 payload 自带。
+    snapshot_src = None
+    if existing and existing.get("id") == fid:
+        if _field_signature(existing) == _field_signature(field):
+            snapshot_src = existing
+    else:
+        snapshot_src = raw
+    if snapshot_src:
+        for k in _SNAPSHOT_KEYS:
+            v = snapshot_src.get(k)
+            if v not in (None, "") and isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                field[k] = v
+    return field
 
 
 def clean_bookmark(payload, existing=None):
-    """校验并规整单条收藏站点；保留 name/url/balance_config 及余额快照。
+    """校验并规整单条收藏站点；保留 name/url 与多字段配置 fields（含快照）。
 
-    balance_config 可选；传入时为完整配置对象，不传又无 existing 时清除旧配置。
+    字段来源优先级：
+      1. payload.fields（数组，null 视为清空）→ 逐条校验，同 id 旧字段沿用快照
+      2. payload.balance_config（旧客户端/旧导出）→ 合成「余额」金额字段替换旧的迁移字段；null 表示删除该字段
+      3. 都不传 → 沿用 existing 的字段
+    始终把首个启用的金额字段镜像回 balance_config/balance 旧键，保证旧版本可回滚读取。
     """
     name = str(payload.get("name") or "").strip()
     url = str(payload.get("url") or "").strip()
@@ -437,99 +731,111 @@ def clean_bookmark(payload, existing=None):
     elif not url.startswith(("http://", "https://")):
         errors.append("url 需以 http:// 或 https:// 开头")
 
-    # balance_config 可选：三个分支
-    #  1. payload 不含 balance_config → 编辑时沿用旧值，新建时不设
-    #  2. payload.balance_config 为 null → 显式清除
-    #  3. payload.balance_config 为 dict → 校验并存储
-    has_balance_config = "balance_config" in payload
-    balance_cfg = None
-    if has_balance_config:
-        balance_cfg_raw = payload["balance_config"]
-        if balance_cfg_raw is not None:
-            if not isinstance(balance_cfg_raw, dict):
-                errors.append("balance_config 需为对象或 null")
+    existing_norm = normalize_bookmark(json.loads(json.dumps(existing))) if isinstance(existing, dict) else None
+    existing_fields = list((existing_norm or {}).get("fields") or [])
+    existing_by_id = {f["id"]: f for f in existing_fields}
+
+    fields = existing_fields
+    if "fields" in payload:
+        raw_fields = payload["fields"]
+        if raw_fields is None:
+            raw_fields = []
+        if not isinstance(raw_fields, list):
+            errors.append("fields 需为数组")
+        elif len(raw_fields) > MAX_FIELDS_PER_BOOKMARK:
+            errors.append("字段数量过多（最多 {0} 个）".format(MAX_FIELDS_PER_BOOKMARK))
+        else:
+            fields, taken = [], set()
+            for i, rf in enumerate(raw_fields):
+                rid = str(rf.get("id") or "").strip() if isinstance(rf, dict) else ""
+                try:
+                    f = clean_field(rf, existing_by_id.get(rid), taken)
+                except ValueError as exc:
+                    errors.append("字段 {0}：{1}".format(i + 1, exc))
+                    continue
+                taken.add(f["id"])
+                fields.append(f)
+    elif "balance_config" in payload:
+        bc = payload["balance_config"]
+        others = [f for f in existing_fields if f["id"] != LEGACY_FIELD_ID]
+        if bc is None:
+            fields = others
+        elif not isinstance(bc, dict):
+            errors.append("balance_config 需为对象或 null")
+        else:
+            raw_field = legacy_field_from_balance(payload)
+            try:
+                f = clean_field(raw_field, existing_by_id.get(LEGACY_FIELD_ID), {o["id"] for o in others})
+            except ValueError as exc:
+                errors.append("balance_config：{0}".format(exc))
             else:
-                json_path = str(balance_cfg_raw.get("json_path") or "").strip()
-                curl_text = str(balance_cfg_raw.get("curl") or "").strip()
-
-                if curl_text:
-                    # 新式：用户粘贴 curl，后端解析出 method/url/headers/body
-                    try:
-                        parsed = parse_curl(curl_text)
-                        method = parsed["method"]
-                        api_url = parsed["url"]
-                        headers = parsed["headers"]
-                        body = parsed["body"]
-                    except ValueError as exc:
-                        errors.append("curl 解析失败：{0}".format(exc))
-                        method, api_url, headers, body = "", "", {}, None
-                else:
-                    # 兼容旧式：分字段提交
-                    method = str(balance_cfg_raw.get("method") or "").strip().upper()
-                    api_url = str(balance_cfg_raw.get("url") or "").strip()
-                    headers = balance_cfg_raw.get("headers")
-                    body = balance_cfg_raw.get("body")
-
-                if method not in ("GET", "POST"):
-                    errors.append("balance_config.method 需为 GET 或 POST")
-                if not api_url:
-                    errors.append("balance_config.url 必填")
-                elif not api_url.startswith(("http://", "https://")):
-                    errors.append("balance_config.url 需以 http:// 或 https:// 开头")
-                if not isinstance(headers, dict):
-                    errors.append("balance_config.headers 需为对象")
-                if body is not None and not isinstance(body, str):
-                    errors.append("balance_config.body 需为字符串或 null")
-                if not json_path:
-                    errors.append("balance_config.json_path 必填")
-
-                # 可选换算系数（如分→元填 100）；缺省/空表示不换算。
-                divisor = None
-                divisor_raw = balance_cfg_raw.get("divisor")
-                if divisor_raw is not None and str(divisor_raw).strip() != "":
-                    try:
-                        divisor = float(divisor_raw)
-                    except (TypeError, ValueError):
-                        errors.append("balance_config.divisor 需为数字")
-                    else:
-                        if divisor <= 0:
-                            errors.append("balance_config.divisor 需大于 0")
-
-                balance_cfg = {
-                    "method": method,
-                    "url": api_url,
-                    "headers": dict(headers or {}),
-                    "body": body,
-                    "json_path": json_path,
-                }
-                # 保留原始 curl，便于编辑时回填文本框
-                if curl_text:
-                    balance_cfg["curl"] = curl_text
-                # 仅在配置了有效且 ≠1 的系数时存储，避免污染旧配置
-                if divisor and divisor != 1:
-                    balance_cfg["divisor"] = divisor
-            # balance_cfg_raw is None → 显式清除，balance_cfg 保持 None
-    elif existing and existing.get("balance_config"):
-        # 编辑时 payload 不含 balance_config 字段 → 沿用旧配置
-        balance_cfg = existing["balance_config"]
+                pos = next((i for i, o in enumerate(existing_fields) if o["id"] == LEGACY_FIELD_ID), 0)
+                fields = others[:pos] + [f] + others[pos:]
 
     if errors:
         raise ValueError("；".join(errors))
 
-    item = {"name": name, "url": url}
-    if balance_cfg:
-        item["balance_config"] = balance_cfg
+    item = {"name": name, "url": url, "fields": fields}
+    return sync_legacy_balance(item)
 
-    # 保留余额快照（编辑时避免丢失上次查询结果）
-    if existing:
-        if existing.get("balance") is not None:
-            item["balance"] = existing.get("balance")
-        if existing.get("balance_updated_at"):
-            item["balance_updated_at"] = existing.get("balance_updated_at")
-        if existing.get("balance_error"):
-            item["balance_error"] = existing.get("balance_error")
 
-    return item
+def _apply_field(field, proxy_url):
+    """拉取并就地写回单个字段的快照。返回 (ok, value_or_errmsg)。
+
+    成功：写 value（+raw）与 updated_at，清除 error。失败：写 error + updated_at，保留上次 value 不动。
+    """
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    display, raw, err = None, None, None
+    try:
+        value, err = _fetch_json_value(field, proxy_url)
+        if not err:
+            display, raw, err = convert_value(value, field)
+    except Exception as exc:  # noqa: BLE001 - 单个字段异常不应影响批量流程。
+        err = "刷新失败：{0}".format(exc)
+    field["updated_at"] = now
+    if err:
+        field["error"] = err
+        return False, err
+    field["value"] = display
+    if raw is not None:
+        field["raw"] = raw
+    else:
+        field.pop("raw", None)
+    field.pop("error", None)
+    return True, display
+
+
+def refresh_bookmark_fields(bookmark, proxy_url, field_id=None):
+    """刷新收藏的全部启用字段（或 field_id 指定的单个字段，不论启用与否），并同步旧键镜像。
+
+    返回 [{id, label, ok, value|error}]；field_id 不存在时返回空列表。
+    """
+    normalize_bookmark(bookmark)
+    results = []
+    for f in bookmark.get("fields") or []:
+        if field_id is not None:
+            if f.get("id") != field_id:
+                continue
+        elif not f.get("enabled", True):
+            continue
+        ok, msg = _apply_field(f, proxy_url)
+        entry = {"id": f["id"], "label": f.get("label"), "ok": ok}
+        entry["value" if ok else "error"] = msg
+        results.append(entry)
+    sync_legacy_balance(bookmark)
+    return results
+
+
+def _apply_balance_to_bookmark(bookmark, proxy_url):
+    """兼容旧调用：刷新全部启用字段。返回 (all_ok, balance_or_errmsg)。"""
+    results = refresh_bookmark_fields(bookmark, proxy_url)
+    if not results:
+        return False, "未配置接口字段"
+    failed = [r for r in results if not r["ok"]]
+    if failed:
+        return False, "；".join("{0}：{1}".format(r["label"], r["error"]) for r in failed)
+    return True, bookmark.get("balance") or results[0].get("value")
+
 
 def mask_token(token):
     """token 脱敏：保留首尾各 4 位。"""
@@ -1057,36 +1363,90 @@ def api_bookmark_reorder():
     return jsonify({"ok": True})
 
 
-@app.post("/api/bookmarks/<int:idx>/refresh_balance")
-def api_bookmark_refresh_balance(idx):
-    """刷新指定收藏的余额；需管理密码。"""
-    guard = _guard_admin()
-    if guard:
-        return guard
-
-    try:
-        store = read_store()
-    except RuntimeError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
-
-    bookmarks = store["bookmarks"]
-    if idx < 0 or idx >= len(bookmarks):
-        return jsonify({"ok": False, "error": "收藏不存在"}), 404
-
-    bookmark = bookmarks[idx]
-    if not bookmark.get("balance_config"):
-        return jsonify({"ok": False, "error": "该收藏未配置余额接口"}), 400
-
-    ok, msg = _apply_balance_to_bookmark(bookmark, store.get("proxy_url", ""))
+def _bookmark_refresh_response(store, bookmark, results):
+    """刷新结果统一响应：ok 表示所请求字段全部成功；附带最新收藏对象与旧键 balance 供前端就地更新。"""
     try:
         write_store(store)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+    failed = [r for r in results if not r["ok"]]
+    resp = {
+        "ok": bool(results) and not failed,
+        "results": results,
+        "bookmark": bookmark,
+        "balance": bookmark.get("balance"),
+        "balance_updated_at": bookmark.get("balance_updated_at"),
+    }
+    if not results:
+        resp["error"] = "没有可刷新的字段"
+    elif failed:
+        resp["error"] = "；".join("{0}：{1}".format(r["label"], r["error"]) for r in failed)
+    return jsonify(resp)
 
-    # 请求本身成功（HTTP 200）；余额拉取成败由 ok 字段体现，失败信息已落盘。
-    resp = {"ok": ok, "balance_updated_at": bookmark.get("balance_updated_at")}
+
+@app.post("/api/bookmarks/<int:idx>/refresh_balance")
+def api_bookmark_refresh_balance(idx):
+    """刷新指定收藏的全部启用字段（旧路径名保留以兼容）；需管理密码。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    bookmarks = store["bookmarks"]
+    if idx < 0 or idx >= len(bookmarks):
+        return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    bookmark = bookmarks[idx]
+    if not [f for f in bookmark.get("fields") or [] if f.get("enabled", True)]:
+        return jsonify({"ok": False, "error": "该收藏没有启用的接口字段"}), 400
+    results = refresh_bookmark_fields(bookmark, store.get("proxy_url", ""))
+    return _bookmark_refresh_response(store, bookmark, results)
+
+
+@app.post("/api/bookmarks/<int:idx>/fields/<field_id>/refresh")
+def api_bookmark_refresh_field(idx, field_id):
+    """刷新指定收藏的单个字段（即使已禁用也可手动刷新）；需管理密码。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    bookmarks = store["bookmarks"]
+    if idx < 0 or idx >= len(bookmarks):
+        return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    bookmark = bookmarks[idx]
+    if not any(f.get("id") == field_id for f in bookmark.get("fields") or []):
+        return jsonify({"ok": False, "error": "字段不存在"}), 404
+    results = refresh_bookmark_fields(bookmark, store.get("proxy_url", ""), field_id=field_id)
+    return _bookmark_refresh_response(store, bookmark, results)
+
+
+@app.post("/api/bookmarks/field_preview")
+def api_bookmark_field_preview():
+    """保存前测试单个字段配置：校验 + 请求 + 换算，不落盘；需管理密码。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    try:
+        field = clean_field(payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    for k in _SNAPSHOT_KEYS:
+        field.pop(k, None)
+    ok, msg = _apply_field(field, store.get("proxy_url", ""))
+    resp = {"ok": ok, "type": field["type"], "label": field["label"], "updated_at": field.get("updated_at")}
     if ok:
-        resp["balance"] = bookmark.get("balance")
+        resp["value"] = msg
+        if field.get("raw") is not None:
+            resp["raw"] = field["raw"]
     else:
         resp["error"] = msg
     return jsonify(resp)
@@ -1258,13 +1618,13 @@ def _scheduler_tick():
                     update_metric(cfg, serialize(r), mark_signed=True)
         except Exception as exc:  # noqa: BLE001
             record_history("scheduled", error="定时签到失败：{0}".format(exc))
-        # 定时签到联动刷新收藏余额：配置了接口的收藏顺带取一次，
-        # 成败状态写回 bookmark（失败写 balance_error），供前端展示。
+        # 定时签到联动刷新收藏字段：配置了接口字段的收藏顺带取一次，
+        # 成败状态写回各字段（失败写 error），供前端展示。
         for bm in store.get("bookmarks") or []:
-            if bm.get("balance_config"):
+            if bm.get("fields"):
                 try:
-                    _apply_balance_to_bookmark(bm, store.get("proxy_url", ""))
-                except Exception:  # noqa: BLE001 - 单条余额失败不影响调度主流程。
+                    refresh_bookmark_fields(bm, store.get("proxy_url", ""))
+                except Exception:  # noqa: BLE001 - 单条收藏失败不影响调度主流程。
                     pass
         # 无论成功与否都标记当天已跑，避免循环重试。
         schedule["last_run_date"] = today
