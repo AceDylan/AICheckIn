@@ -364,7 +364,7 @@
           <div class="view-header"><div><div class="eyebrow">Preferences</div><h1>系统设置</h1><p>设置自动签到、全局代理与管理权限。</p></div></div>
           <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote">定时基于服务器本地时间。容器应设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。</div><div class="controls" style="align-items:flex-end"><label class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></label><div class="field" style="max-width:140px"><label>每天执行时间</label><input class="input" type="time" id="schedTime" value="08:30"></div><button class="btn sm" id="saveSched">保存定时</button></div><div class="note" id="schedStatus"></div></div>
           <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:240px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
-          <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" type="password" placeholder="管理密码" autocomplete="off"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
+          <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" name="gyqd-admin-password" type="password" placeholder="管理密码" autocomplete="current-password"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
         </section>
       </div>
     </main>
@@ -443,13 +443,10 @@
     let RESULTS = [];  // 与 configs 同序的本次签到结果；未签到项为空，回退到持久化指标快照。
     const $ = (id) => document.getElementById(id);
 
-    function adminPwd() { return sessionStorage.getItem('gyqd_admin') || ''; }
-    function setAdminPwd(v) { v ? sessionStorage.setItem('gyqd_admin', v) : sessionStorage.removeItem('gyqd_admin'); }
+    // 解锁状态由服务端签发的 HttpOnly 会话 Cookie 承载（浏览器自动随同源请求发送），
+    // 浏览器端不保存任何明文管理密码，关闭浏览器再打开依然保持解锁。
     function adminHeaders(base) {
-      const h = Object.assign({ 'Content-Type': 'application/json' }, base || {});
-      const p = adminPwd();
-      if (p) h['X-Admin-Password'] = p;
-      return h;
+      return Object.assign({ 'Content-Type': 'application/json' }, base || {});
     }
     function escapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -1323,15 +1320,23 @@
     // 管理密码解锁
     $('unlockBtn').addEventListener('click', async () => {
       const pwd = $('adminPwd').value;
-      setAdminPwd(pwd);
       try {
-        const resp = await fetch('/api/auth', { method: 'POST', headers: adminHeaders() });
+        // 密码只在这一次请求里出现；成功后服务端下发会话 Cookie，之后的请求都不再带密码。
+        const resp = await fetch('/api/auth', {
+          method: 'POST', credentials: 'same-origin',
+          headers: adminHeaders({ 'X-Admin-Password': pwd }),
+        });
         const data = await resp.json();
-        if (data.ok) { toast('解锁成功', 'ok'); loadConfigs(); }
-        else { setAdminPwd(''); toast('密码错误', 'err'); }
+        if (data.ok) { $('adminPwd').value = ''; toast('解锁成功', 'ok'); loadConfigs(); }
+        else { toast('密码错误', 'err'); }
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     });
-    $('lockBtn').addEventListener('click', () => { setAdminPwd(''); loadConfigs(); toast('已锁定', 'ok'); });
+    $('lockBtn').addEventListener('click', async () => {
+      try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin', headers: adminHeaders() }); }
+      catch (e) { toast('网络错误：' + e.message, 'err'); return; }
+      toast('已锁定', 'ok');
+      loadConfigs();
+    });
 
     // ===== 历史 =====
     async function loadHistory() {

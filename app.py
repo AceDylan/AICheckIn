@@ -18,6 +18,7 @@ import json
 import os
 import random
 import re
+import secrets
 import string
 import sys
 import threading
@@ -1026,11 +1027,112 @@ def update_metric(config, serialized, mark_signed=False):
 # 鉴权（仅管理操作）
 # =========================
 
+# 会话 Cookie：解锁成功后由服务端签发一个带有效期的 HMAC 令牌，写入 HttpOnly Cookie。
+# 这样浏览器关闭再打开仍保持解锁，而浏览器端不保存任何明文管理密码。
+SESSION_COOKIE = "gyqd_session"
+SESSION_MAX_AGE = 30 * 24 * 3600  # 令牌有效期 30 天。
+SESSION_SECRET_FILE = DATA_DIR / ".session_secret"
+
+_secret_lock = threading.Lock()
+_session_secret_cache = None
+
+
+def _session_secret():
+    """持久化的随机密钥；落盘失败时退回进程内随机值（仅表现为重启后需重新解锁）。"""
+    global _session_secret_cache
+    with _secret_lock:
+        if _session_secret_cache:
+            return _session_secret_cache
+        try:
+            if SESSION_SECRET_FILE.is_file():
+                raw = SESSION_SECRET_FILE.read_text(encoding="utf-8").strip()
+                if raw:
+                    _session_secret_cache = raw
+                    return raw
+        except OSError:
+            pass
+        raw = secrets.token_hex(32)
+        try:
+            # O_EXCL 独占创建：多个 gunicorn worker 同时首启时只有一个写入成功，
+            # 其余读回同一份密钥，避免各 worker 拿着不同密钥互相判定令牌无效。
+            fd = os.open(str(SESSION_SECRET_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(raw)
+        except FileExistsError:
+            try:
+                raw = SESSION_SECRET_FILE.read_text(encoding="utf-8").strip() or raw
+            except OSError:
+                pass
+        except OSError:
+            sys.stderr.write("[gyqd-web] 警告：会话密钥无法写入数据目录，服务重启后需重新解锁\n")
+        _session_secret_cache = raw
+        return raw
+
+
+def _session_key():
+    """签名密钥 = 持久随机密钥 + 当前管理密码；改密码即让全部旧会话立刻失效。"""
+    return hashlib.sha256((_session_secret() + "|" + ADMIN_PASSWORD).encode("utf-8")).digest()
+
+
+def _issue_session_token():
+    exp = str(int(time.time()) + SESSION_MAX_AGE)
+    return exp + "." + hmac.new(_session_key(), exp.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _session_token_ok(token):
+    exp, sep, sig = str(token or "").partition(".")
+    if not sep or not exp.isdigit():
+        return False
+    expected = hmac.new(_session_key(), exp.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return False
+    return int(exp) > time.time()
+
+
+def _request_is_https():
+    """反代（nginx）转发的是明文 http，真实协议看 X-Forwarded-Proto。"""
+    proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+    return proto == "https" if proto else bool(request.is_secure)
+
+
+def _set_session_cookie(resp):
+    # HttpOnly：JS 读不到，避免 XSS 直接窃取；SameSite=Lax：阻断跨站写操作携带该 Cookie（CSRF）。
+    resp.set_cookie(
+        SESSION_COOKIE,
+        _issue_session_token(),
+        max_age=SESSION_MAX_AGE,
+        path="/",
+        httponly=True,
+        samesite="Lax",
+        secure=_request_is_https(),
+    )
+    return resp
+
+
+def _clear_session_cookie(resp):
+    resp.set_cookie(
+        SESSION_COOKIE,
+        "",
+        max_age=0,
+        path="/",
+        httponly=True,
+        samesite="Lax",
+        secure=_request_is_https(),
+    )
+    return resp
+
+
 def admin_ok():
-    """签到放行；仅配置写/查 token/定时设置需要管理密码。未设密码则完全放行。"""
+    """签到放行；仅配置写/查 token/定时设置需要管理密码。未设密码则完全放行。
+
+    两种放行方式：请求头带管理密码（兼容旧前端与命令行脚本），或持有有效会话 Cookie。
+    """
     if not ADMIN_PASSWORD:
         return True
-    return hmac.compare_digest(request.headers.get("X-Admin-Password", ""), ADMIN_PASSWORD)
+    header = request.headers.get("X-Admin-Password", "")
+    if header and hmac.compare_digest(header, ADMIN_PASSWORD):
+        return True
+    return _session_token_ok(request.cookies.get(SESSION_COOKIE, ""))
 
 
 def _guard_admin():
@@ -1571,10 +1673,19 @@ def api_history():
     return jsonify({"ok": True, "history": read_history()})
 
 
-# 验证管理密码是否正确（前端解锁用）。
+# 验证管理密码是否正确（前端解锁用）；通过后下发会话 Cookie 以持久保持解锁状态。
 @app.post("/api/auth")
 def api_auth():
-    return jsonify({"ok": admin_ok()})
+    if not admin_ok():
+        return jsonify({"ok": False})
+    resp = jsonify({"ok": True})
+    return _set_session_cookie(resp) if ADMIN_PASSWORD else resp
+
+
+# 主动锁定：清除会话 Cookie。
+@app.post("/api/logout")
+def api_logout():
+    return _clear_session_cookie(jsonify({"ok": True}))
 
 
 # =========================
