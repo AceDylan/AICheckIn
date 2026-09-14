@@ -23,14 +23,15 @@ class BookmarkFirstUiTest(unittest.TestCase):
         self.assertIn('id="bmNavCount"', html)
 
     def test_modern_stylesheet_is_served(self):
-        response = self.client.get("/static/app-v2.css")
+        response = self.client.get("/static/app-v3.css")
         self.addCleanup(response.close)
         css = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(".app-shell", css)
         self.assertIn(".bookmark-grid", css)
-        self.assertIn("@media (max-width: 720px)", css)
+        self.assertIn(".link-grid", css)
+        self.assertIn("@media (max-width: 760px)", css)
 
     def test_existing_bookmark_and_checkin_api_bindings_remain(self):
         html = self.client.get("/").get_data(as_text=True)

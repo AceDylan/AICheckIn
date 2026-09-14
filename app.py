@@ -80,24 +80,28 @@ def read_store():
         except (ValueError, OSError) as exc:
             raise RuntimeError("读取配置文件失败：{0}".format(exc))
         if isinstance(raw, list):
-            store = {"configs": list(raw), "proxy_url": "", "schedule": {}, "bookmarks": []}
+            store = {"configs": list(raw), "proxy_url": "", "schedule": {}, "bookmarks": [], "link_groups": None}
         elif isinstance(raw, dict):
             store = {
                 "configs": list(raw.get("configs") or []),
                 "proxy_url": str(raw.get("proxy_url") or "").strip(),
                 "schedule": dict(raw.get("schedule") or {}),
                 "bookmarks": list(raw.get("bookmarks") or []),
+                # None 表示旧数据尚无此键（读取时合成默认分组）；[] 表示用户已清空。
+                "link_groups": raw.get("link_groups"),
             }
         else:
             raise RuntimeError("config.json 格式应为数组或对象")
     else:
-        store = {"configs": list(gyqd.CONFIGS), "proxy_url": "", "schedule": {}, "bookmarks": []}
+        store = {"configs": list(gyqd.CONFIGS), "proxy_url": "", "schedule": {}, "bookmarks": [], "link_groups": None}
     store.setdefault("configs", [])
     store.setdefault("proxy_url", "")
     store.setdefault("schedule", {})
     store.setdefault("bookmarks", [])  # 仅收藏不签到的站点：[{name, url, fields}]
     # 统一为多字段结构：旧数据的单一 balance_config 合成为「余额」金额字段，并维持旧键镜像。
     store["bookmarks"] = [normalize_bookmark(b) for b in store["bookmarks"] if isinstance(b, dict)]
+    # 收藏库子页面（自建服务 / 常用网站 / AI 服务 …）：键缺失时合成默认分组，写入时才落盘。
+    store["link_groups"] = normalize_link_groups(store.get("link_groups"))
     return store
 
 
@@ -1279,6 +1283,7 @@ def api_configs():
         "ok": True,
         "configs": configs_out,
         "bookmarks": list(store.get("bookmarks", [])),  # 仅收藏不签到的站点。
+        "link_groups": list(store.get("link_groups", [])),  # 收藏库子页面（网址分组）。
         "proxy_url": store.get("proxy_url", ""),
         "schedule": {
             "enabled": bool(schedule.get("enabled")),
@@ -1558,6 +1563,468 @@ def api_bookmark_field_preview():
 # 路由：导入 / 导出（管理）
 # =========================
 
+# =========================
+# 链接分组：收藏库下的网址收藏页面（自建服务 / 常用网站 / AI 服务 / 自定义分组）
+# =========================
+# 数据结构（config.json 顶层 link_groups）：
+#   [{id, name, icon, color, desc, links: [{id, name, url, desc, icon, tags[], pinned, created_at, updated_at}]}]
+# 与 bookmarks（带接口字段监控的站点看板）相互独立；键缺失时合成三个默认空分组，但不落盘，
+# 直到发生任意一次写入。用户清空全部分组会持久化为 []，不再重新合成默认分组。
+
+LINK_GROUP_COLORS = ("mint", "sky", "violet", "amber", "rose", "slate")
+LINK_GROUP_ICONS = (
+    "folder", "server", "globe", "sparkles", "code", "book", "play", "chat", "wrench", "star", "cloud", "shield",
+)
+MAX_LINK_GROUPS = 30
+MAX_LINKS_PER_GROUP = 300
+MAX_LINK_TAGS = 8
+_LINK_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+
+DEFAULT_LINK_GROUPS = (
+    {"id": "self-hosted", "name": "自建服务", "icon": "server", "color": "sky",
+     "desc": "自己部署的面板、工具与内网服务入口。"},
+    {"id": "daily", "name": "常用网站", "icon": "globe", "color": "mint",
+     "desc": "每天都会打开的站点。"},
+    {"id": "ai", "name": "AI 服务", "icon": "sparkles", "color": "violet",
+     "desc": "模型控制台、对话工具与 API 平台。"},
+)
+
+
+def default_link_groups():
+    return [dict(g, links=[]) for g in DEFAULT_LINK_GROUPS]
+
+
+def _gen_link_id(taken=()):
+    while True:
+        cand = secrets.token_hex(4)
+        if cand not in taken:
+            return cand
+
+
+def _squash_text(value, limit):
+    text = re.sub(r"\s+", " ", str(value if value is not None else "").strip())
+    return text[:limit]
+
+
+def _clean_text(value, limit, label, required=False):
+    text = re.sub(r"\s+", " ", str(value if value is not None else "").strip())
+    if required and not text:
+        raise ValueError("{0}必填".format(label))
+    if len(text) > limit:
+        raise ValueError("{0}过长（最多 {1} 字）".format(label, limit))
+    return text
+
+
+def _name_from_url(url):
+    try:
+        host = urlparse(url).hostname or ""
+    except ValueError:
+        host = ""
+    host = host.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host or url[:60]
+
+
+def _clean_link_url(value):
+    url = str(value if value is not None else "").strip()
+    if not url:
+        raise ValueError("网址必填")
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("网址需以 http:// 或 https:// 开头")
+    if len(url) > 2048:
+        raise ValueError("网址过长")
+    if any(ch.isspace() for ch in url):
+        raise ValueError("网址不能包含空白字符")
+    return url
+
+
+def _clean_tags(raw):
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = re.split(r"[,，;；\s]+", raw)
+    if not isinstance(raw, list):
+        raise ValueError("标签需为数组")
+    tags, seen = [], set()
+    for t in raw:
+        t = str(t if t is not None else "").strip()
+        if not t:
+            continue
+        if len(t) > 20:
+            raise ValueError("标签过长（最多 20 字）")
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(t)
+    if len(tags) > MAX_LINK_TAGS:
+        raise ValueError("标签最多 {0} 个".format(MAX_LINK_TAGS))
+    return tags
+
+
+def clean_link(payload, existing=None, taken=()):
+    """校验并规整单条链接。existing 存在时沿用 id / created_at；否则分配新 id。"""
+    if not isinstance(payload, dict):
+        raise ValueError("链接需为对象")
+    url = _clean_link_url(payload.get("url"))
+    name = _clean_text(payload.get("name"), 60, "名称") or _name_from_url(url)
+    desc = _clean_text(payload.get("desc"), 160, "描述")
+    icon = _clean_text(payload.get("icon"), 8, "图标")
+    tags = _clean_tags(payload.get("tags")) if "tags" in payload else list((existing or {}).get("tags") or [])
+    if "pinned" in payload:
+        pinned = bool(payload.get("pinned"))
+    else:
+        pinned = bool((existing or {}).get("pinned"))
+    if existing:
+        lid = existing["id"]
+    else:
+        lid = str(payload.get("id") or "").strip()
+        if not _LINK_ID_RE.match(lid) or lid in taken:
+            lid = _gen_link_id(taken)
+    now = _now_str()
+    created = (existing or {}).get("created_at") or ""
+    if not created:
+        raw_created = str(payload.get("created_at") or "").strip()
+        created = raw_created if _STAMP_RE.match(raw_created) else now
+    return {
+        "id": lid, "name": name, "url": url, "desc": desc, "icon": icon,
+        "tags": tags, "pinned": pinned, "created_at": created, "updated_at": now,
+    }
+
+
+def clean_link_group(payload, existing=None, taken=(), with_links=False):
+    """校验并规整分组元信息；with_links=True 时（导入路径）连同 links 数组一起校验替换。"""
+    if not isinstance(payload, dict):
+        raise ValueError("分组需为对象")
+    name = _clean_text(payload.get("name"), 40, "分组名称", required=True)
+    desc = _clean_text(payload.get("desc"), 120, "分组描述") if "desc" in payload else str((existing or {}).get("desc") or "")
+    icon = str(payload.get("icon") or (existing or {}).get("icon") or "folder").strip()
+    if icon not in LINK_GROUP_ICONS:
+        raise ValueError("图标不受支持")
+    color = str(payload.get("color") or (existing or {}).get("color") or "mint").strip()
+    if color not in LINK_GROUP_COLORS:
+        raise ValueError("颜色不受支持")
+    if existing:
+        gid = existing["id"]
+    else:
+        gid = str(payload.get("id") or "").strip()
+        if not _LINK_ID_RE.match(gid) or gid in taken:
+            gid = _gen_link_id(taken)
+    links = list((existing or {}).get("links") or [])
+    if with_links and isinstance(payload.get("links"), list):
+        links, used = [], set()
+        for i, raw in enumerate(payload["links"]):
+            try:
+                link = clean_link(raw, None, used)
+            except ValueError as exc:
+                raise ValueError("第 {0} 条链接：{1}".format(i + 1, exc))
+            used.add(link["id"])
+            links.append(link)
+        if len(links) > MAX_LINKS_PER_GROUP:
+            raise ValueError("单个分组最多 {0} 条链接".format(MAX_LINKS_PER_GROUP))
+    return {"id": gid, "name": name, "icon": icon, "color": color, "desc": desc, "links": links}
+
+
+def _coerce_link_group(raw, taken):
+    """读取路径的宽松规整：不抛错，缺失/非法字段补默认值，仅丢弃没有合法网址的链接。"""
+    gid = str(raw.get("id") or "").strip()
+    if not _LINK_ID_RE.match(gid) or gid in taken:
+        gid = _gen_link_id(taken)
+    icon = raw.get("icon") if raw.get("icon") in LINK_GROUP_ICONS else "folder"
+    color = raw.get("color") if raw.get("color") in LINK_GROUP_COLORS else "mint"
+    links, used = [], set()
+    for item in (raw.get("links") if isinstance(raw.get("links"), list) else []):
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            continue
+        lid = str(item.get("id") or "").strip()
+        if not _LINK_ID_RE.match(lid) or lid in used:
+            lid = _gen_link_id(used)
+        used.add(lid)
+        tags = item.get("tags") if isinstance(item.get("tags"), list) else []
+        links.append({
+            "id": lid,
+            "name": _squash_text(item.get("name"), 60) or _name_from_url(url),
+            "url": url[:2048],
+            "desc": _squash_text(item.get("desc"), 160),
+            "icon": _squash_text(item.get("icon"), 8),
+            "tags": [str(t).strip() for t in tags if isinstance(t, str) and str(t).strip()][:MAX_LINK_TAGS],
+            "pinned": bool(item.get("pinned")),
+            "created_at": str(item.get("created_at") or ""),
+            "updated_at": str(item.get("updated_at") or ""),
+        })
+        if len(links) >= MAX_LINKS_PER_GROUP:
+            break
+    return {
+        "id": gid,
+        "name": _squash_text(raw.get("name"), 40) or "未命名分组",
+        "icon": icon, "color": color,
+        "desc": _squash_text(raw.get("desc"), 120),
+        "links": links,
+    }
+
+
+def normalize_link_groups(raw):
+    """读取时规整 link_groups：键缺失（None）→ 默认三组；空数组保持为空；非法项跳过。"""
+    if raw is None:
+        return default_link_groups()
+    if not isinstance(raw, list):
+        return default_link_groups()
+    groups, taken = [], set()
+    for g in raw:
+        if not isinstance(g, dict):
+            continue
+        cleaned = _coerce_link_group(g, taken)
+        taken.add(cleaned["id"])
+        groups.append(cleaned)
+        if len(groups) >= MAX_LINK_GROUPS:
+            break
+    return groups
+
+
+def _find_group(store, gid):
+    for i, g in enumerate(store.get("link_groups") or []):
+        if g.get("id") == gid:
+            return i, g
+    return -1, None
+
+
+def _find_link(group, lid):
+    for i, link in enumerate(group.get("links") or []):
+        if link.get("id") == lid:
+            return i, link
+    return -1, None
+
+
+def _link_groups_response(store, **extra):
+    body = {"ok": True, "link_groups": store["link_groups"]}
+    body.update(extra)
+    return jsonify(body)
+
+
+def _load_store_or_error():
+    try:
+        return read_store(), None
+    except RuntimeError as exc:
+        return None, (jsonify({"ok": False, "error": str(exc)}), 500)
+
+
+def _save_store_or_error(store):
+    try:
+        write_store(store)
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return None
+
+
+@app.post("/api/link_groups")
+def api_link_group_create():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    if len(store["link_groups"]) >= MAX_LINK_GROUPS:
+        return jsonify({"ok": False, "error": "分组数量已达上限（{0}）".format(MAX_LINK_GROUPS)}), 400
+    try:
+        group = clean_link_group(payload, None, {g["id"] for g in store["link_groups"]})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    store["link_groups"].append(group)
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store, group=group)
+
+
+@app.put("/api/link_groups/<gid>")
+def api_link_group_update(gid):
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    pos, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+    try:
+        store["link_groups"][pos] = clean_link_group(payload, existing=group)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store, group=store["link_groups"][pos])
+
+
+@app.delete("/api/link_groups/<gid>")
+def api_link_group_delete(gid):
+    guard = _guard_admin()
+    if guard:
+        return guard
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    pos, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+    store["link_groups"].pop(pos)
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store)
+
+
+@app.post("/api/link_groups/reorder")
+def api_link_group_reorder():
+    """按分组 id 列表重排；order 须恰好为现有全部分组 id 的一个排列。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    order = payload.get("order")
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    by_id = {g["id"]: g for g in store["link_groups"]}
+    if not isinstance(order, list) or sorted(map(str, order)) != sorted(by_id):
+        return jsonify({"ok": False, "error": "排序参数无效"}), 400
+    store["link_groups"] = [by_id[str(gid)] for gid in order]
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store)
+
+
+@app.post("/api/link_groups/<gid>/links")
+def api_link_create(gid):
+    """新增链接：请求体为单条链接对象，或 {links: [...]} 批量新增（逐条校验，任一失败整体不写入）。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    pos, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+    raw_links = payload.get("links") if isinstance(payload, dict) and "links" in payload else [payload]
+    if not isinstance(raw_links, list) or not raw_links:
+        return jsonify({"ok": False, "error": "links 需为非空数组"}), 400
+    if len(group["links"]) + len(raw_links) > MAX_LINKS_PER_GROUP:
+        return jsonify({"ok": False, "error": "单个分组最多 {0} 条链接".format(MAX_LINKS_PER_GROUP)}), 400
+    taken = {l["id"] for l in group["links"]}
+    created = []
+    for i, raw in enumerate(raw_links):
+        try:
+            link = clean_link(raw, None, taken)
+        except ValueError as exc:
+            prefix = "第 {0} 条：".format(i + 1) if len(raw_links) > 1 else ""
+            return jsonify({"ok": False, "error": prefix + str(exc)}), 400
+        taken.add(link["id"])
+        created.append(link)
+    group["links"].extend(created)
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store, links=created, group_id=gid)
+
+
+@app.put("/api/link_groups/<gid>/links/<lid>")
+def api_link_update(gid, lid):
+    """更新链接；请求体可带 group 指定目标分组 id 以移动链接（追加到目标分组末尾）。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    _, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+    lpos, link = _find_link(group, lid)
+    if link is None:
+        return jsonify({"ok": False, "error": "链接不存在"}), 404
+    target_gid = str(payload.get("group") or gid)
+    _, target = _find_group(store, target_gid)
+    if target is None:
+        return jsonify({"ok": False, "error": "目标分组不存在"}), 404
+    merged = dict(link)
+    merged.update({k: v for k, v in payload.items() if k in ("name", "url", "desc", "icon", "tags", "pinned")})
+    try:
+        updated = clean_link(merged, existing=link)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    if target is group:
+        group["links"][lpos] = updated
+    else:
+        if len(target["links"]) >= MAX_LINKS_PER_GROUP:
+            return jsonify({"ok": False, "error": "目标分组链接已达上限"}), 400
+        if any(l["id"] == updated["id"] for l in target["links"]):
+            updated["id"] = _gen_link_id({l["id"] for l in target["links"]})
+        group["links"].pop(lpos)
+        target["links"].append(updated)
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store, link=updated, group_id=target_gid)
+
+
+@app.delete("/api/link_groups/<gid>/links/<lid>")
+def api_link_delete(gid, lid):
+    guard = _guard_admin()
+    if guard:
+        return guard
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    _, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+    lpos, link = _find_link(group, lid)
+    if link is None:
+        return jsonify({"ok": False, "error": "链接不存在"}), 404
+    group["links"].pop(lpos)
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store)
+
+
+@app.post("/api/link_groups/<gid>/links/reorder")
+def api_link_reorder(gid):
+    """按链接 id 列表重排分组内顺序；order 须恰好为该分组全部链接 id 的一个排列。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    order = payload.get("order")
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    _, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+    by_id = {l["id"]: l for l in group["links"]}
+    if not isinstance(order, list) or sorted(map(str, order)) != sorted(by_id):
+        return jsonify({"ok": False, "error": "排序参数无效"}), 400
+    group["links"] = [by_id[str(lid)] for lid in order]
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store)
+
+
 @app.get("/api/configs/export")
 def api_export():
     guard = _guard_admin()
@@ -1580,12 +2047,13 @@ def api_import():
         return jsonify({"ok": False, "error": "请求体不是合法 JSON"}), 400
 
     if isinstance(payload, list):
-        raw_configs, proxy_url, schedule, bookmarks_raw = payload, None, None, None
+        raw_configs, proxy_url, schedule, bookmarks_raw, groups_raw = payload, None, None, None, None
     elif isinstance(payload, dict):
         raw_configs = payload.get("configs")
         proxy_url = payload.get("proxy_url")
         schedule = payload.get("schedule")
         bookmarks_raw = payload.get("bookmarks")
+        groups_raw = payload.get("link_groups")
     else:
         return jsonify({"ok": False, "error": "格式应为数组或对象"}), 400
 
@@ -1609,6 +2077,20 @@ def api_import():
             except ValueError as exc:
                 return jsonify({"ok": False, "error": "第 {0} 条收藏无效：{1}".format(i + 1, exc)}), 400
 
+    # 链接分组同样为可选项：仅当导入数据提供 link_groups 数组时才覆盖。
+    cleaned_groups = None
+    if isinstance(groups_raw, list):
+        cleaned_groups, taken = [], set()
+        if len(groups_raw) > MAX_LINK_GROUPS:
+            return jsonify({"ok": False, "error": "分组数量过多（最多 {0} 个）".format(MAX_LINK_GROUPS)}), 400
+        for i, g in enumerate(groups_raw):
+            try:
+                cg = clean_link_group(g, None, taken, with_links=True)
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": "第 {0} 个分组无效：{1}".format(i + 1, exc)}), 400
+            taken.add(cg["id"])
+            cleaned_groups.append(cg)
+
     try:
         store = read_store()
         store["configs"] = cleaned
@@ -1618,6 +2100,8 @@ def api_import():
             store["schedule"] = _clean_schedule(schedule, store.get("schedule") or {})
         if cleaned_bookmarks is not None:
             store["bookmarks"] = cleaned_bookmarks
+        if cleaned_groups is not None:
+            store["link_groups"] = cleaned_groups
         write_store(store)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
