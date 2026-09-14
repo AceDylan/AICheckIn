@@ -773,15 +773,42 @@
     document.addEventListener('click', (e) => {
       document.querySelectorAll('details.action-menu[open]').forEach(d => { if (!d.contains(e.target)) d.removeAttribute('open'); });
     });
-    // 「···」菜单展开方向：触发按钮位于视口上半部时向下展开，否则向上，避免被视口边缘裁切。
+    // 「···」菜单定位：按实际可用空间决定向上（默认）还是向下展开，限制高度，
+    // 并在触发按钮被移动端固定底栏压住时整体上移，保证末项可点。
+    function placeMenu(menu) {
+      const pop = menu.querySelector('.menu-popover');
+      if (!pop) return;
+      pop.classList.remove('drop-down');       // 先复位，量出不受限的真实高度
+      pop.style.maxHeight = '';
+      pop.style.transform = '';
+      const gap = 8;
+      const rect = menu.getBoundingClientRect();
+      // 移动端侧栏变成固定底栏，会盖住菜单：可用空间只算到底栏上沿。
+      const nav = document.querySelector('.sidebar');
+      const navTop = nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
+      const limit = Math.min(window.innerHeight, navTop) - gap / 2;
+      const above = rect.top - gap;
+      const below = limit - rect.bottom - gap / 2;
+      const dropDown = pop.offsetHeight > above && below > above;
+      pop.classList.toggle('drop-down', dropDown);
+      pop.style.maxHeight = Math.max(120, Math.floor(dropDown ? below : above)) + 'px';
+      const pr = pop.getBoundingClientRect();
+      const over = pr.bottom - limit;
+      if (over > 0) pop.style.transform = 'translateY(-' + Math.ceil(Math.min(over, Math.max(0, pr.top - gap / 2))) + 'px)';
+    }
+    // 菜单展开时给所在卡片加 menu-open，把整张卡片抬到相邻卡片之上：卡片 :hover 的 transform
+    // 会新建层叠上下文，菜单内部的 z-index 无法越过 DOM 顺序靠后的下一行卡片。
     document.addEventListener('toggle', (e) => {
       const d = e.target;
-      if (!(d instanceof HTMLElement) || !d.classList.contains('action-menu') || !d.open) return;
-      const pop = d.querySelector('.menu-popover');
-      if (!pop) return;
-      const rect = d.getBoundingClientRect();
-      pop.classList.toggle('drop-down', rect.top < window.innerHeight / 2);
+      if (!(d instanceof HTMLElement) || !d.classList.contains('action-menu')) return;
+      const card = d.closest('.bookmark-card, .link-card');
+      if (card) card.classList.toggle('menu-open', d.open);
+      if (d.open) placeMenu(d);
     }, true);
+    // 菜单开着时页面滚动或窗口变化会让它滑到固定底栏下，需要跟随重新定位。
+    const replaceOpenMenus = () => document.querySelectorAll('details.action-menu[open]').forEach(m => placeMenu(m));
+    window.addEventListener('scroll', replaceOpenMenus, { passive: true });
+    window.addEventListener('resize', replaceOpenMenus);
 
     // ===== 站点看板（多接口字段：金额 / 时间 / 原值） =====
     const FIELD_TYPE_LABELS = { amount: '金额', time: '时间', raw: '原值' };

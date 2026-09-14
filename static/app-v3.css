@@ -334,8 +334,12 @@ details > summary::-webkit-details-marker { display: none; }
 .menu-trigger { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text-2); cursor: pointer; font-size: 18px; letter-spacing: 2px; line-height: 1; }
 .menu-trigger.sm { width: 32px; height: 32px; font-size: 16px; }
 .action-menu[open] .menu-trigger, .menu-trigger:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
-.menu-popover { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 12; width: 160px; padding: 6px; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface-2); box-shadow: var(--shadow-pop); }
+.menu-popover { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 12; width: 160px; max-height: 60vh; overflow-y: auto; padding: 6px; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface-2); box-shadow: var(--shadow-pop); overscroll-behavior: contain; }
 .menu-popover.drop-down { bottom: auto; top: calc(100% + 6px); }
+/* 「···」菜单展开时把整张卡片抬到相邻卡片之上。卡片 :hover 的 transform 会在卡片上
+   新建层叠上下文，令 .menu-popover 的 z-index 被关在卡片内部，菜单会被 DOM 顺序靠后的
+   下一行卡片盖住；只能提升卡片自身层级。保持低于固定底栏（.sidebar z-index:30）。 */
+.bookmark-card.menu-open, .link-card.menu-open { z-index: 25; }
 .menu-popover button { width: 100%; min-height: 33px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); text-align: left; cursor: pointer; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .menu-popover button:hover { background: var(--surface-hover); color: var(--text); }
 .menu-popover button.danger-text { color: var(--danger); }
