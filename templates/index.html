@@ -141,6 +141,7 @@
             <div class="panel"><div class="panel-title">站点数据自动刷新</div><div class="note" style="margin-top:0">让站点看板的余额 / 到期时间不必手点也保持新鲜。仅刷新配置了接口字段的收藏。</div><div class="controls" style="margin-top:10px;align-items:flex-end"><label class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></label><div class="field" style="max-width:160px"><label>刷新间隔</label><select class="input" id="refreshInterval"></select></div><button class="btn sm" id="saveRefresh">保存刷新</button></div><div class="note" id="refreshStatus"></div></div>
             <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
             <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus" style="margin-top:0"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" name="gyqd-admin-password" type="password" placeholder="管理密码" autocomplete="current-password"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
+            <div class="panel"><div class="panel-title">快速收藏</div><div class="note" style="margin-top:0">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
             <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
           </div>
         </section>
@@ -307,6 +308,7 @@
     // ===== 全局状态 =====
     let STATE = { configs: [], bookmarks: [], link_groups: [], proxy_url: '', schedule: {}, admin_required: false, admin_unlocked: true };
     let PRIVATE_PROMPTED = false;   // 私密模式的解锁引导每次加载只跳一次，别反复抢焦点
+    let SHARE_HANDLED = false;      // 分享参数每次加载只消费一次
     let STATE_LOADED = false;
     let RESULTS = [];  // 与 configs 同序的本次签到结果；未签到项为空，回退到持久化指标快照。
     const $ = (id) => document.getElementById(id);
@@ -735,6 +737,8 @@
         renderLibrary();
         renderSettings();
         renderCheckinCards();
+        // 分享 / 书签小工具带来的参数要等分组与解锁状态就绪后才能处理。
+        if (!SHARE_HANDLED) { SHARE_HANDLED = true; consumeShareParams(); }
       } catch (e) { toast('加载配置失败：' + e.message, 'err'); }
     }
 
@@ -2488,8 +2492,53 @@
     });
     window.addEventListener('appinstalled', () => { markInstallDone(); $('installBtn').hidden = true; });
 
+    // ===== 快速收藏（分享目标 / 书签小工具）=====
+    // 两个入口共用同一套查询参数：
+    //  - Android 分享菜单 → manifest 的 share_target 以 GET 带上 title/text/url；
+    //  - 桌面书签栏的书签小工具 → 直接打开 /?url=…&title=…
+    // 参数只用于预填弹窗，不会自动落盘——误触分享不应该悄悄往收藏库里塞东西。
+    function pendingShare() {
+      const q = new URLSearchParams(location.search);
+      // 部分应用把网址塞在 text 里（比如只分享了一段带链接的文字）。
+      const raw = q.get('url') || q.get('add') || '';
+      const text = q.get('text') || '';
+      const fromText = raw || (text.match(/https?:\/\/\S+/) || [''])[0];
+      const url = safeUrl(normalizeUrlInput(fromText));
+      if (!url) return null;
+      let name = (q.get('title') || q.get('name') || '').trim();
+      // 有些分享把标题也塞进 text，取第一行当名称总比留空好。
+      if (!name && text && text !== fromText) name = text.split(/\r?\n/)[0].trim().slice(0, 60);
+      return { url, name };
+    }
+    function consumeShareParams() {
+      const share = pendingShare();
+      // 无论有没有命中，都把查询串清掉：刷新页面不该重复弹窗，地址栏也别一直挂着。
+      if (location.search) history.replaceState(null, '', location.pathname + location.hash);
+      if (!share) return;
+      if (!canEdit()) { toast('请先在「系统设置」中解锁后再收藏', 'err'); switchView('settings'); return; }
+      const target = findGroup(LIB.page) ? LIB.page : (libGroups()[0] || {}).id;
+      if (!target) { toast('请先新建一个分组', 'err'); return; }
+      openLinkModal(target, null, 'single');
+      $('lk_url').value = share.url;
+      if (share.name) $('lk_name').value = share.name;
+      refreshDupHint();
+      $('lk_name').focus();
+    }
+
+    // 书签小工具：拖到书签栏，在任意网页上点一下即可把当前页收进来。
+    function bookmarkletHref() {
+      const base = location.origin + '/';
+      return "javascript:void(window.open('" + base +
+        "?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'_blank'))";
+    }
+    function renderBookmarklet() {
+      const el = $('bookmarkletLink');
+      if (el) el.setAttribute('href', bookmarkletHref());
+    }
+
     // ===== 初始化 =====
     renderLibrary();
+    renderBookmarklet();
     loadConfigs();
   </script>
 </body>

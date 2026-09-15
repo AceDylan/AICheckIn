@@ -7,7 +7,7 @@
  * 外壳（/ 与 /static/*）走 stale-while-revalidate：先用缓存秒开，后台再更新，
  * 下一次访问就是新版本。CACHE_VERSION 改了会清掉所有旧缓存。
  */
-const CACHE_VERSION = 'bh-shell-v1';
+const CACHE_VERSION = 'bh-shell-v2';
 const SHELL = [
   '/',
   '/static/app-v3.css',
@@ -46,6 +46,14 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
   if (!isShellRequest(url)) return;
+
+  // 带查询串的导航（分享目标 / 书签小工具带 ?url=…）：每次都是不同的 URL，
+  // 写进缓存就等于分享一次多一条，缓存会无限长。这里只读不写，
+  // 离线时回退到已缓存的外壳。
+  if (url.search) {
+    event.respondWith(fetch(request).catch(() => caches.match('/')));
+    return;
+  }
 
   event.respondWith(
     caches.open(CACHE_VERSION).then((cache) => cache.match(request).then((cached) => {
