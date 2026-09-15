@@ -61,6 +61,10 @@ SCHEDULER_ENABLED = os.environ.get("GYQD_SCHEDULER", "1") == "1"
 # 收藏导航页。公网部署若不想让路人看到自建服务的地址与站点清单，设 GYQD_PRIVATE=1。
 PRIVATE_MODE = os.environ.get("GYQD_PRIVATE", "0") == "1"
 
+# 定时签到的当日补签：失败的账号隔一段时间再试几次。设 0 关闭。
+SCHEDULE_RETRY_LIMIT = max(0, int(os.environ.get("GYQD_RETRY_LIMIT", "3")))
+SCHEDULE_RETRY_DELAY_MIN = max(1, int(os.environ.get("GYQD_RETRY_DELAY_MINUTES", "30")))
+
 # 请求体上限：没有上限时，一个几百 MB 的 JSON 就能把单 worker 的内存吃光。
 # 导入整份配置是这里最大的合法载荷，4 MB 绰绰有余。
 MAX_REQUEST_BYTES = max(64 * 1024, int(os.environ.get("GYQD_MAX_REQUEST_BYTES", str(4 * 1024 * 1024))))
@@ -1767,6 +1771,11 @@ def api_configs():
             "time": schedule.get("time", "08:30"),
             "last_run_time": schedule.get("last_run_time"),
             "last_run_date": schedule.get("last_run_date"),
+            "retry_count": schedule.get("retry_count") or 0,
+            "retry_limit": SCHEDULE_RETRY_LIMIT,
+            "retry_delay_minutes": SCHEDULE_RETRY_DELAY_MIN,
+            # 今天还没签成功的启用配置数：>0 且未用完重试次数时，后台还会自动补签。
+            "pending_today": len(pending_configs(store)) if schedule.get("enabled") else 0,
         },
         "refresh": {
             "enabled": bool(refresh.get("enabled")),
@@ -3202,6 +3211,85 @@ def _scheduler_tick():
         # 无论签到成功与否都标记当天已跑，避免循环重试。
         persist_field_snapshots(snapshots, schedule_run={
             "last_run_date": today, "last_run_time": _now_str(),
+            # 新的一天重新计数；失败项交给 _retry_tick 稍后补签。
+            "retry_count": 0, "last_attempt_ts": time.time(),
+        })
+
+
+def pending_configs(store):
+    """今天还没签到成功的启用配置。
+
+    判据用指标快照里的 last_checkin_date，而不是上一轮的 results 数组——
+    快照按 base_url|user_id 索引，配置增删改排序都不会错位，当天晚些时候
+    新加的配置也会被自然带上。
+    """
+    metrics = read_metrics()
+    today = _today_str()
+    pending = []
+    for cfg in store.get("configs") or []:
+        if not cfg.get("enabled", True):
+            continue
+        snap = metrics.get(metrics_key(cfg)) or {}
+        if snap.get("last_checkin_date") != today:
+            pending.append(cfg)
+    return pending
+
+
+def _retry_tick():
+    """补签：定时签到当天失败的账号，隔一段时间自动再试几次。
+
+    原先无论成功与否都把当天标记为「已跑」，于是 08:30 恰好断网就等于这天彻底没签。
+    这里只重跑「今天还没签成功」的账号，不会给已成功的账号重复发请求。
+    """
+    if SCHEDULE_RETRY_LIMIT <= 0:
+        return
+    try:
+        store = read_store()
+    except RuntimeError:
+        return
+    schedule = store.get("schedule") or {}
+    if not schedule.get("enabled"):
+        return
+    today = _today_str()
+    if schedule.get("last_run_date") != today:
+        return  # 当天的主轮次还没跑，轮不到补签
+    try:
+        attempts = int(schedule.get("retry_count") or 0)
+    except (TypeError, ValueError):
+        attempts = 0
+    if attempts >= SCHEDULE_RETRY_LIMIT:
+        return
+    try:
+        last_ts = float(schedule.get("last_attempt_ts") or 0)
+    except (TypeError, ValueError):
+        last_ts = 0.0
+    now = time.time()
+    # 时钟回拨（now - last_ts < 0）同样当作「等够了」，否则会卡住不再补签。
+    if last_ts and 0 <= now - last_ts < SCHEDULE_RETRY_DELAY_MIN * 60:
+        return
+    pending = pending_configs(store)
+    if not pending:
+        return
+
+    with _run_lock:
+        # 二次确认：等锁期间可能已经被手动签到补上了。
+        store = read_store()
+        schedule = store.get("schedule") or {}
+        if schedule.get("last_run_date") != today:
+            return
+        pending = pending_configs(store)
+        if not pending:
+            return
+        try:
+            results = run_checkin(pending, store["proxy_url"])
+            record_history("retry", results)
+            for cfg, r in zip(pending, results):
+                if r.get("status") in ("signed", "skipped"):
+                    update_metric(cfg, serialize(r), mark_signed=True)
+        except Exception as exc:  # noqa: BLE001
+            record_history("retry", error="补签失败：{0}".format(exc))
+        persist_field_snapshots({}, schedule_run={
+            "retry_count": attempts + 1, "last_attempt_ts": time.time(),
         })
 
 
@@ -3237,7 +3325,7 @@ def _refresh_tick():
 
 def _scheduler_loop():
     while True:
-        for tick in (_scheduler_tick, _refresh_tick):
+        for tick in (_scheduler_tick, _retry_tick, _refresh_tick):
             try:
                 tick()
             except Exception:  # noqa: BLE001 - 调度线程必须长存。

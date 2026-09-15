@@ -2114,6 +2114,13 @@
       $('schedDot').style.display = s.enabled ? 'inline-block' : 'none';
       let status = s.enabled ? `已启用：每天 ${s.time} 自动签到` : '未启用';
       if (s.last_run_time) status += ` · 上次定时执行：${s.last_run_time}`;
+      // 补签状态：让「今天到底签上没有」这件事在设置页就能看清，不必翻运行记录。
+      if (s.enabled && s.retry_limit > 0) {
+        const left = Math.max(0, (s.retry_limit || 0) - (s.retry_count || 0));
+        if (s.pending_today > 0 && left > 0) status += ` · ${s.pending_today} 个账号今日未签成，将在 ${s.retry_delay_minutes} 分钟内自动补签（剩 ${left} 次）`;
+        else if (s.pending_today > 0) status += ` · ${s.pending_today} 个账号今日未签成，自动补签次数已用完，请手动签到`;
+        else if (s.retry_count > 0) status += ` · 今日补签 ${s.retry_count} 次后已全部签成`;
+      }
       if (!STATE.scheduler_running) status += '（注意：后台调度未运行，GYQD_SCHEDULER=0）';
       $('schedStatus').textContent = status;
 
@@ -2391,7 +2398,7 @@
 
     // ===== 历史 =====
     const HIST_EMPTY_TEXT = '暂无历史记录。';
-    const HIST_TRIGGER_LABEL = { scheduled: '定时', 'manual-single': '单签', manual: '手动' };
+    const HIST_TRIGGER_LABEL = { scheduled: '定时', 'manual-single': '单签', manual: '手动', retry: '补签' };
 
     // 单条结果：站点名 + 状态 + 一句话说明 + 本次额度。
     // 这些数据后端一直在存，此前只在页面上显示汇总数字，失败了也看不出是哪个站点。
@@ -2410,7 +2417,7 @@
     function histItemHtml(h) {
       const s = h.summary;
       const trig = HIST_TRIGGER_LABEL[h.trigger] || '手动';
-      const trigCls = h.trigger === 'scheduled' ? 'scheduled' : '';
+      const trigCls = (h.trigger === 'scheduled' || h.trigger === 'retry') ? 'scheduled' : '';
       const results = Array.isArray(h.results) ? h.results : [];
       let stats = '';
       if (h.error) stats = `<span class="pill red">错误</span> ${escapeHtml(h.error)}`;
