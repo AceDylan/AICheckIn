@@ -602,10 +602,11 @@
     async function runCheckin() {
       const box = $('runBox');
       if (box && box.classList.contains('busy')) return;  // 防止签到进行中重复触发。
+      if (!guardAdmin()) return;
       $('error').style.display = 'none';
       setRunBusy(true);
       try {
-        const resp = await fetch('/api/checkin', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const resp = await fetch('/api/checkin', { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
         if (!data.ok) { $('error').textContent = data.error || ('HTTP ' + resp.status); $('error').style.display = 'block'; return; }
         RESULTS = data.results.slice();
@@ -620,8 +621,9 @@
     }
 
     async function checkinOne(idx) {
+      if (!guardAdmin()) return;
       try {
-        const resp = await fetch('/api/checkin/' + idx, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const resp = await fetch('/api/checkin/' + idx, { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
         if (!data.ok) { toast(data.error || '失败', 'err'); return; }
         RESULTS[idx] = data.result;
@@ -630,8 +632,9 @@
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     }
     async function testOne(idx) {
+      if (!guardAdmin()) return;
       try {
-        const resp = await fetch('/api/test/' + idx, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const resp = await fetch('/api/test/' + idx, { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
         if (!data.ok) { toast('测试失败：' + (data.error || ''), 'err'); return; }
         // 测试拿到的钱包指标本地写回快照，立即刷新卡片显示（后端也已持久化）。
@@ -1312,12 +1315,21 @@
       }
     }
 
-    function openBmModal(idx) {
+    // /api/configs 下发的收藏是脱敏视图（无 curl / 请求头），编辑时单条拉取原文。
+    async function openBmModal(idx) {
+      const isEdit = idx >= 0;
+      let b = { name: '', url: '', fields: [] };
+      if (isEdit) {
+        try {
+          const resp = await fetch(`/api/bookmarks/${idx}/secret`, { headers: adminHeaders() });
+          const data = await resp.json();
+          if (!data.ok) { toast(data.error || '读取站点配置失败', 'err'); return; }
+          b = data.bookmark || b;
+        } catch (e) { toast('网络错误：' + e.message, 'err'); return; }
+      }
       bmEditIdx = idx;
       $('bm_error').style.display = 'none';
-      const isEdit = idx >= 0;
       $('bmModalTitle').textContent = isEdit ? '编辑站点' : '新增站点';
-      const b = isEdit ? STATE.bookmarks[idx] : { name: '', url: '', fields: [] };
       $('bm_name').value = b.name || '';
       $('bm_url').value = b.url || '';
       bmDraftFields = (b.fields || []).map(draftFromField);
@@ -1737,7 +1749,10 @@
       const s = STATE.schedule || {};
       $('schedEnabled').checked = !!s.enabled;
       if (s.time) $('schedTime').value = s.time;
+      // 代理串可能带账号密码，未解锁时后端不下发，这里用占位说明「已配置但不可见」。
       $('proxyUrl').value = STATE.proxy_url || '';
+      $('proxyUrl').placeholder = (!STATE.proxy_url && STATE.proxy_configured)
+        ? '已配置（解锁后可见）' : '例如 socks5://127.0.0.1:7890';
       $('schedDot').style.display = s.enabled ? 'inline-block' : 'none';
       let status = s.enabled ? `已启用：每天 ${s.time} 自动签到` : '未启用';
       if (s.last_run_time) status += ` · 上次定时执行：${s.last_run_time}`;
@@ -1786,7 +1801,8 @@
         });
         const data = await resp.json();
         if (data.ok) { $('adminPwd').value = ''; toast('解锁成功', 'ok'); loadConfigs(); }
-        else { toast('密码错误', 'err'); }
+        else if (resp.status === 429) { toast(data.error || '尝试过于频繁，请稍后再试', 'err'); }
+        else { toast(data.error || '密码错误', 'err'); }
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     });
     $('adminPwd').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('unlockBtn').click(); });
@@ -1798,11 +1814,20 @@
     });
 
     // ===== 历史 =====
+    const HIST_EMPTY_TEXT = '暂无历史记录。';
     async function loadHistory() {
+      const list = $('histList'), empty = $('histEmpty');
+      // 历史含各账号的签到结果，属管理数据；未解锁时不请求，直接提示。
+      if (!canEdit()) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        empty.textContent = '🔒 运行历史需要先在「系统设置」中解锁后查看。';
+        return;
+      }
+      empty.textContent = HIST_EMPTY_TEXT;
       try {
-        const resp = await fetch('/api/history');
+        const resp = await fetch('/api/history', { headers: adminHeaders() });
         const data = await resp.json();
-        const list = $('histList'), empty = $('histEmpty');
         if (!data.ok || !data.history.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
         empty.style.display = 'none';
         list.innerHTML = data.history.map(h => {

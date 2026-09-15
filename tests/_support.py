@@ -37,6 +37,7 @@ class StoreIsolationMixin(object):
         app_module.FAVICON_DIR = self.data_dir / "favicons"
         app_module.SESSION_SECRET_FILE = self.data_dir / ".session_secret"
         app_module._session_secret_cache = None
+        app_module._login_fails.clear()  # 防爆破计数是进程级的，逐用例清零免得互相影响
         self.addCleanup(self._restore_store, saved)
 
     def _restore_store(self, saved):

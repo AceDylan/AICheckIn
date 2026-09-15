@@ -634,7 +634,18 @@ def clean_field(raw, existing=None, taken=()):
 
     json_path = str(raw.get("json_path") or "").strip()
     curl_text = str(raw.get("curl") or "").strip()
-    if curl_text:
+    raw_url = str(raw.get("url") or "").strip()
+    # 「不传即沿用」：payload 既没给 curl 也没给 url 时，整段请求配置从同 id 的旧字段继承。
+    # /api/configs 下发的是脱敏视图（没有 curl / url / headers / json_path），
+    # 前端只改标签或启用开关时因此可以原样回存，不必重新粘贴 curl。
+    if existing and not curl_text and not raw_url:
+        method = str(existing.get("method") or "").strip().upper()
+        api_url = str(existing.get("url") or "").strip()
+        headers = dict(existing.get("headers") or {})
+        body = existing.get("body")
+        curl_text = str(existing.get("curl") or "").strip()
+        json_path = json_path or str(existing.get("json_path") or "").strip()
+    elif curl_text:
         try:
             parsed = parse_curl(curl_text)
             method, api_url, headers, body = parsed["method"], parsed["url"], parsed["headers"], parsed["body"]
@@ -643,7 +654,7 @@ def clean_field(raw, existing=None, taken=()):
             method, api_url, headers, body = "", "", {}, None
     else:
         method = str(raw.get("method") or "").strip().upper()
-        api_url = str(raw.get("url") or "").strip()
+        api_url = raw_url
         headers = raw.get("headers")
         body = raw.get("body")
     if method not in ("GET", "POST"):
@@ -854,16 +865,66 @@ def mask_token(token):
     return "{0}…{1}".format(token[:4], token[-4:])
 
 
-def public_config(item):
-    """对外暴露的脱敏配置视图（不含真实 token）。"""
-    return {
+def public_config(item, reveal=False):
+    """对外暴露的脱敏配置视图（不含真实 token）。
+
+    reveal=True 仅在已通过管理鉴权时使用：额外带上 turnstile 原文，供编辑弹窗回填。
+    """
+    out = {
         "name": item.get("name", ""),
         "base_url": item.get("base_url", ""),
         "user_id": item.get("user_id", ""),
         "enabled": bool(item.get("enabled", True)),
-        "turnstile": item.get("turnstile", ""),
         "token_masked": mask_token(item.get("access_token", "")),
         "has_token": bool(item.get("access_token")),
+        "has_turnstile": bool(str(item.get("turnstile") or "").strip()),
+    }
+    out["turnstile"] = item.get("turnstile", "") if reveal else ""
+    return out
+
+
+# 收藏字段里承载凭据的键：请求头（Authorization / Cookie）、原始 curl 命令、
+# 请求体、接口 URL（常带 key / token 查询参数）。这些一律不出现在开放接口里。
+_FIELD_SECRET_KEYS = ("headers", "curl", "body", "url", "method")
+# 展示用的非敏感元信息（缺失则不输出，保持响应精简）。
+_FIELD_PUBLIC_META = ("unit", "divisor", "ts_unit", "tz")
+
+
+def public_error(message):
+    """错误文案脱敏：去掉附在末尾的上游响应片段，只保留可公开的失败原因。"""
+    text = str(message or "")
+    cut = text.find("（响应开头：")
+    return text[:cut] if cut >= 0 else text
+
+
+def public_field(field):
+    """字段的对外视图：只留标签 / 类型 / 取值快照，整段请求配置与凭据一律剥离。"""
+    out = {
+        "id": field.get("id", ""),
+        "label": field.get("label", ""),
+        "type": field.get("type", "amount"),
+        "enabled": bool(field.get("enabled", True)),
+        # 前端据此判断「已配置接口但还没刷新过」与「压根没配接口」。
+        "has_request": bool(field.get("url")),
+    }
+    for key in _FIELD_PUBLIC_META:
+        if field.get(key) not in (None, ""):
+            out[key] = field[key]
+    for key in _SNAPSHOT_KEYS:  # value / raw / updated_at / error
+        if field.get(key) not in (None, ""):
+            out[key] = public_error(field[key]) if key == "error" else field[key]
+    return out
+
+
+def public_bookmark(bookmark):
+    """收藏站点的对外视图：名称 / 网址 / 字段展示值；不含 fields 的请求配置，也不含 balance_config。"""
+    return {
+        "name": bookmark.get("name", ""),
+        "url": bookmark.get("url", ""),
+        "fields": [public_field(f) for f in bookmark.get("fields") or [] if isinstance(f, dict)],
+        # 旧键镜像仅用于展示，本身不含凭据；balance_config（含请求头）刻意不下发。
+        "balance": bookmark.get("balance", ""),
+        "balance_updated_at": bookmark.get("balance_updated_at", ""),
     }
 
 
@@ -1129,10 +1190,7 @@ def _clear_session_cookie(resp):
 
 
 def admin_ok():
-    """签到放行；仅配置写/查 token/定时设置需要管理密码。未设密码则完全放行。
-
-    两种放行方式：请求头带管理密码（兼容旧前端与命令行脚本），或持有有效会话 Cookie。
-    """
+    """管理鉴权：请求头带管理密码（兼容命令行脚本），或持有有效会话 Cookie。未设密码则完全放行。"""
     if not ADMIN_PASSWORD:
         return True
     header = request.headers.get("X-Admin-Password", "")
@@ -1141,10 +1199,138 @@ def admin_ok():
     return _session_token_ok(request.cookies.get(SESSION_COOKIE, ""))
 
 
+# =========================
+# 管理密码防爆破
+# =========================
+#
+# 公网部署下 /api/auth 与任何带 X-Admin-Password 的请求都是在线爆破入口。
+# 这里按「客户端 IP + 全局」双维度计数：窗口内失败次数超限即锁定并回 429。
+# 全局维度是兜底——X-Forwarded-For 可伪造，只按 IP 计数挡不住换头重试。
+
+LOGIN_MAX_FAILS = max(1, int(os.environ.get("GYQD_LOGIN_MAX_FAILS", "8")))
+LOGIN_WINDOW = max(30, int(os.environ.get("GYQD_LOGIN_WINDOW", "900")))
+LOGIN_GLOBAL_MAX_FAILS = max(LOGIN_MAX_FAILS, int(os.environ.get("GYQD_LOGIN_GLOBAL_MAX_FAILS", "40")))
+_LOGIN_GLOBAL_KEY = "*"
+_LOGIN_MAX_KEYS = 4096  # 计数表上限，防止伪造 IP 把内存撑爆
+
+_login_lock = threading.Lock()
+_login_fails = {}  # key -> [失败时间戳]（升序）
+
+
+def client_ip():
+    """反代后的真实来源 IP；取 X-Forwarded-For 最左一跳，缺失时用 remote_addr。"""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first[:64]
+    return str(request.remote_addr or "?")[:64]
+
+
+def _login_prune(now):
+    """就地清掉过期时间戳与空桶；表过大时整体丢弃（等价于放宽一次窗口，可接受）。"""
+    for key in list(_login_fails):
+        kept = [t for t in _login_fails[key] if now - t < LOGIN_WINDOW]
+        if kept:
+            _login_fails[key] = kept
+        else:
+            del _login_fails[key]
+    if len(_login_fails) > _LOGIN_MAX_KEYS:
+        _login_fails.clear()
+
+
+def login_retry_after(key=None):
+    """当前是否被锁定：返回还需等待的秒数，0 表示可以尝试。"""
+    now = time.time()
+    key = key or client_ip()
+    with _login_lock:
+        _login_prune(now)
+        for bucket, limit in ((key, LOGIN_MAX_FAILS), (_LOGIN_GLOBAL_KEY, LOGIN_GLOBAL_MAX_FAILS)):
+            stamps = _login_fails.get(bucket) or []
+            if len(stamps) >= limit:
+                wait = int(LOGIN_WINDOW - (now - stamps[-1])) + 1
+                if wait > 0:
+                    return wait
+    return 0
+
+
+def record_login_failure(key=None):
+    now = time.time()
+    key = key or client_ip()
+    with _login_lock:
+        _login_prune(now)
+        for bucket, limit in ((key, LOGIN_MAX_FAILS), (_LOGIN_GLOBAL_KEY, LOGIN_GLOBAL_MAX_FAILS)):
+            stamps = _login_fails.get(bucket) or []
+            stamps.append(now)
+            _login_fails[bucket] = stamps[-(limit + 1):]
+
+
+def clear_login_failures(key=None):
+    """本次鉴权成功：清掉该来源的失败计数（全局桶不清，避免一次成功抹掉爆破痕迹）。"""
+    with _login_lock:
+        _login_fails.pop(key or client_ip(), None)
+
+
+def _credential_presented():
+    """请求是否真的带了凭据。没带就只是「未解锁」，不该计入爆破失败。"""
+    return bool(request.headers.get("X-Admin-Password") or request.cookies.get(SESSION_COOKIE))
+
+
+def _locked_response(wait):
+    resp = jsonify({"ok": False, "error": "管理密码尝试过于频繁，请 {0} 秒后再试".format(wait)})
+    resp.headers["Retry-After"] = str(wait)
+    return resp, 429
+
+
 def _guard_admin():
-    if not admin_ok():
-        return jsonify({"ok": False, "error": "需要管理密码"}), 403
-    return None
+    """管理接口统一入口：未解锁回 403，爆破中回 429。返回 None 表示放行。"""
+    if admin_ok():
+        return None
+    if not ADMIN_PASSWORD:  # 理论上到不了这里（未设密码时 admin_ok 恒真），保守处理。
+        return None
+    wait = login_retry_after()
+    if wait:
+        return _locked_response(wait)
+    if _credential_presented():
+        record_login_failure()
+    return jsonify({"ok": False, "error": "需要管理密码"}), 403
+
+
+# =========================
+# 响应安全头
+# =========================
+#
+# 页面内联了全部脚本与样式（单文件模板），因此 script-src / style-src 必须放行
+# 'unsafe-inline'；其余方向一律收紧到同源，并禁止被嵌进 iframe。
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "font-src 'self' data:; "
+    "form-action 'self'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+# HSTS 会把整个域名（含其它端口的服务）锁到 https，默认不开，由部署方按需打开。
+HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
+
+
+@app.after_request
+def apply_security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    resp.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    if HSTS_ENABLED and _request_is_https():
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    # 接口响应可能含配置与运行数据，不允许中间层或浏览器留存；
+    # /api/favicon 自带长缓存头，这里不覆盖已显式设置的值。
+    if request.path.startswith("/api/") and "Cache-Control" not in resp.headers:
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # =========================
@@ -1162,11 +1348,17 @@ def health():
 
 
 # =========================
-# 路由：签到（开放）
+# 路由：签到（需管理密码）
 # =========================
+#
+# 签到会带着账号凭据请求第三方平台，并把结果写进历史，属于代表账号主人执行的动作。
+# 未设管理密码时 _guard_admin 恒放行，本地/内网部署的行为不变。
 
 @app.post("/api/checkin")
 def api_checkin():
+    guard = _guard_admin()
+    if guard:
+        return guard
     try:
         store = read_store()
     except RuntimeError as exc:
@@ -1199,6 +1391,9 @@ def api_checkin():
 
 @app.post("/api/checkin/<int:idx>")
 def api_checkin_one(idx):
+    guard = _guard_admin()
+    if guard:
+        return guard
     try:
         store = read_store()
     except RuntimeError as exc:
@@ -1224,6 +1419,9 @@ def api_checkin_one(idx):
 
 @app.post("/api/test/<int:idx>")
 def api_test_one(idx):
+    guard = _guard_admin()
+    if guard:
+        return guard
     try:
         store = read_store()
     except RuntimeError as exc:
@@ -1264,29 +1462,40 @@ def api_test_one(idx):
 
 @app.get("/api/configs")
 def api_configs():
-    """脱敏配置列表 + 全局设置 + 鉴权状态。开放访问。"""
+    """页面初始数据：脱敏配置列表 + 收藏展示值 + 全局设置 + 鉴权状态。开放访问。
+
+    这是首页唯一的开放读接口，因此凭据一律不出现在这里：
+    - 签到配置只给 token 掩码；turnstile 仅在已解锁时回填。
+    - 收藏站点走 public_bookmark：剥掉 fields 的 headers / curl / body / url 与 balance_config，
+      编辑态需要的原文另走 admin-only 的 /api/bookmarks/<idx>/secret。
+    - proxy_url 可能形如 http://user:pass@host，未解锁时只回是否已配置。
+    """
     try:
         store = read_store()
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+    unlocked = admin_ok()
     schedule = store.get("schedule") or {}
     metrics = read_metrics()
     today = _today_str()
     configs_out = []
     for c in store["configs"]:
-        pc = public_config(c)
+        pc = public_config(c, reveal=unlocked)
         snap = metrics.get(metrics_key(c)) or None
         pc["metrics"] = snap  # 上一次获取的指标快照，供刷新后填充。
         # 今日是否已签到（手动/定时签到成功或已签到跳过时写入），供前端「待签到」跨刷新统计。
         pc["checked_in_today"] = bool(snap and snap.get("last_checkin_date") == today)
         configs_out.append(pc)
+    proxy_url = str(store.get("proxy_url") or "")
     return jsonify({
         "ok": True,
         "configs": configs_out,
-        "bookmarks": list(store.get("bookmarks", [])),  # 仅收藏不签到的站点。
+        # 仅收藏不签到的站点：只下发展示所需字段，接口配置与凭据不出现在开放接口里。
+        "bookmarks": [public_bookmark(b) for b in store.get("bookmarks") or []],
         "link_groups": list(store.get("link_groups", [])),  # 收藏库子页面（网址分组）。
-        "proxy_url": store.get("proxy_url", ""),
+        "proxy_url": proxy_url if unlocked else "",
+        "proxy_configured": bool(proxy_url.strip()),
         "schedule": {
             "enabled": bool(schedule.get("enabled")),
             "time": schedule.get("time", "08:30"),
@@ -1294,7 +1503,7 @@ def api_configs():
             "last_run_date": schedule.get("last_run_date"),
         },
         "admin_required": bool(ADMIN_PASSWORD),
-        "admin_unlocked": admin_ok(),
+        "admin_unlocked": unlocked,
         "scheduler_running": SCHEDULER_ENABLED,
     })
 
@@ -1482,7 +1691,9 @@ def _bookmark_refresh_response(store, bookmark, results):
     resp = {
         "ok": bool(results) and not failed,
         "results": results,
-        "bookmark": bookmark,
+        # 前端拿到后直接替换 STATE.bookmarks[i]，因此这里也用公开视图，
+        # 免得凭据经由刷新响应重新回到页面内存里。
+        "bookmark": public_bookmark(bookmark),
         "balance": bookmark.get("balance"),
         "balance_updated_at": bookmark.get("balance_updated_at"),
     }
@@ -1491,6 +1702,25 @@ def _bookmark_refresh_response(store, bookmark, results):
     elif failed:
         resp["error"] = "；".join("{0}：{1}".format(r["label"], r["error"]) for r in failed)
     return jsonify(resp)
+
+
+@app.get("/api/bookmarks/<int:idx>/secret")
+def api_bookmark_secret(idx):
+    """编辑弹窗专用：返回该收藏的完整字段配置（含 curl / 请求头）；需管理密码。
+
+    /api/configs 已把这些剥干净，编辑态按需单条拉取，凭据不再随列表广播。
+    """
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    bookmarks = store["bookmarks"]
+    if idx < 0 or idx >= len(bookmarks):
+        return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    return jsonify({"ok": True, "bookmark": bookmarks[idx]})
 
 
 @app.post("/api/bookmarks/<int:idx>/refresh_balance")
@@ -2539,16 +2769,28 @@ def api_settings():
 
 @app.get("/api/history")
 def api_history():
+    """运行历史含各账号的签到结果与额度，属于账号主人的私有数据；需管理密码。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
     return jsonify({"ok": True, "history": read_history()})
 
 
 # 验证管理密码是否正确（前端解锁用）；通过后下发会话 Cookie 以持久保持解锁状态。
+# 失败计数在这里落地：窗口内错够次数直接 429，堵住在线爆破。
 @app.post("/api/auth")
 def api_auth():
+    if not ADMIN_PASSWORD:
+        return jsonify({"ok": True})
+    wait = login_retry_after()
+    if wait:
+        return _locked_response(wait)
     if not admin_ok():
-        return jsonify({"ok": False})
-    resp = jsonify({"ok": True})
-    return _set_session_cookie(resp) if ADMIN_PASSWORD else resp
+        record_login_failure()
+        remaining = max(0, LOGIN_MAX_FAILS - len(_login_fails.get(client_ip()) or []))
+        return jsonify({"ok": False, "error": "管理密码不正确", "attempts_left": remaining}), 401
+    clear_login_failures()
+    return _set_session_cookie(jsonify({"ok": True}))
 
 
 # 主动锁定：清除会话 Cookie。
