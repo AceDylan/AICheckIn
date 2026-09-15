@@ -39,6 +39,7 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
         <span>搜索全部收藏</span><kbd class="omni-kbd">⌘K</kbd>
       </button>
+      <button class="keys-hint" id="keysOpen" type="button" title="查看全部键盘快捷键">快捷键 <kbd>?</kbd></button>
       <div class="nav-label">工作区</div>
       <nav class="tabs" aria-label="主视图">
         <button class="tab active" data-view="bookmarks" aria-label="收藏库">
@@ -255,6 +256,15 @@
   </div>
 
   <!-- 链接分组：分组编辑弹窗 -->
+  <!-- 快捷键速查：? 唤起。功能都做了，但没人猜得到，不列出来等于没有。 -->
+  <div class="modal-mask" id="keysModal" role="dialog" aria-modal="true" aria-label="键盘快捷键">
+    <div class="modal">
+      <div class="modal-head"><div><h3>键盘快捷键</h3><div class="modal-sub">按 ? 随时唤起本表</div></div></div>
+      <div class="keys-list" id="keysList"></div>
+      <div class="modal-actions"><button class="btn sm" id="keysClose">知道了</button></div>
+    </div>
+  </div>
+
   <!-- 全局搜索：跨全部分组 / 看板 / 签到配置的命令面板，Ctrl-⌘K 唤起 -->
   <div class="modal-mask omni-mask" id="omniModal" role="dialog" aria-modal="true" aria-label="全局搜索">
     <div class="omni">
@@ -1114,7 +1124,14 @@
         openOmni(document.activeElement === $('bmSearch') ? $('bmSearch').value : '');
         return;
       }
-      if (event.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(tag || '')) {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(tag || '');
+      // ? 在中文输入法下也可能是 shift+/，统一按 key 判断，输入框里不拦截。
+      if (event.key === '?' && !typing) {
+        event.preventDefault();
+        openKeysModal();
+        return;
+      }
+      if (event.key === '/' && !typing) {
         event.preventDefault();
         switchView('bookmarks');
         $('bmSearch').focus();
@@ -2166,6 +2183,34 @@
       loadConfigs();
     });
 
+    // ===== 快捷键速查 =====
+    // 全局搜索、页内搜索、排序、跳分组都有快捷键，但没人猜得到。
+    const SHORTCUTS = [
+      { keys: ['⌘/Ctrl', 'K'], desc: '全局搜索：跨全部分组找网址、看板站点与签到配置' },
+      { keys: ['/'], desc: '聚焦当前页面的搜索框' },
+      { keys: ['#'], desc: '在全局搜索里输入 # 开头按标签筛选' },
+      { keys: ['↑', '↓'], desc: '在全局搜索结果中上下选择' },
+      { keys: ['Enter'], desc: '打开选中的网址' },
+      { keys: ['Shift', 'Enter'], desc: '跳到选中项所在的分组，而不是打开它' },
+      { keys: ['Alt', '↑/↓'], desc: '焦点在拖拽把手上时，键盘调整卡片顺序' },
+      { keys: ['Alt', '←/→'], desc: '焦点在分组导航上时，调整分组顺序' },
+      { keys: ['Esc'], desc: '关闭弹窗；或清空当前搜索框' },
+      { keys: ['?'], desc: '打开本表' },
+    ];
+    function renderShortcuts() {
+      $('keysList').innerHTML = SHORTCUTS.map(s => `<div class="keys-row">
+        <span class="keys-combo">${s.keys.map(k => `<kbd>${escapeHtml(k)}</kbd>`).join('<span class="keys-plus">+</span>')}</span>
+        <span class="keys-desc">${escapeHtml(s.desc)}</span>
+      </div>`).join('');
+    }
+    function openKeysModal() {
+      renderShortcuts();
+      $('keysModal').classList.add('show');
+      $('keysClose').focus();
+    }
+    $('keysOpen').addEventListener('click', openKeysModal);
+    $('keysClose').addEventListener('click', () => $('keysModal').classList.remove('show'));
+
     // ===== 全局搜索（命令面板）=====
     // 数据全在 STATE 里，搜索纯前端完成，不额外打接口。
     // 覆盖：全部分组的网址、站点看板的收藏、签到配置，以及「跳到某个分组」。
@@ -2346,6 +2391,45 @@
 
     // ===== 历史 =====
     const HIST_EMPTY_TEXT = '暂无历史记录。';
+    const HIST_TRIGGER_LABEL = { scheduled: '定时', 'manual-single': '单签', manual: '手动' };
+
+    // 单条结果：站点名 + 状态 + 一句话说明 + 本次额度。
+    // 这些数据后端一直在存，此前只在页面上显示汇总数字，失败了也看不出是哪个站点。
+    function histResultHtml(r) {
+      const color = r.color || 'gray';
+      const note = r.message || '';
+      const quota = r.quota_awarded && r.quota_awarded !== '-' ? r.quota_awarded : '';
+      return `<div class="hist-row">
+        <span class="pill ${escapeHtml(color)}">${escapeHtml(r.status_label || r.status || '')}</span>
+        <span class="hist-row-name" title="${escapeHtml(r.name || '')}">${escapeHtml(r.name || '')}</span>
+        ${note ? `<span class="hist-row-note" title="${escapeHtml(note)}">${escapeHtml(note)}</span>` : ''}
+        ${quota ? `<span class="hist-row-quota">+${escapeHtml(quota)}</span>` : ''}
+      </div>`;
+    }
+
+    function histItemHtml(h) {
+      const s = h.summary;
+      const trig = HIST_TRIGGER_LABEL[h.trigger] || '手动';
+      const trigCls = h.trigger === 'scheduled' ? 'scheduled' : '';
+      const results = Array.isArray(h.results) ? h.results : [];
+      let stats = '';
+      if (h.error) stats = `<span class="pill red">错误</span> ${escapeHtml(h.error)}`;
+      else if (s) stats = `<span class="pill green">成功 ${s.signed}</span><span class="pill cyan">跳过 ${s.skipped}</span><span class="pill red">失败 ${s.failed}</span> · 本次额度 ${s.quota_total}`;
+      const head = `<div class="hist-head">
+          <span class="hist-time">${escapeHtml(h.time)}</span>
+          <span class="hist-trigger ${trigCls}">${trig}</span>
+        </div>
+        <div class="hist-stats">${stats}</div>`;
+      if (!results.length) return `<div class="hist-item">${head}</div>`;
+      // 有失败项时默认展开——这正是打开运行记录想看的东西。
+      const failed = results.filter(r => r.status === 'failed').length;
+      return `<details class="hist-item"${failed ? ' open' : ''}>
+        <summary class="hist-summary">${head}
+          <span class="hist-toggle">${failed ? `${failed} 项失败` : `${results.length} 项`} ▾</span>
+        </summary>
+        <div class="hist-results">${results.map(histResultHtml).join('')}</div>
+      </details>`;
+    }
     async function loadHistory() {
       const list = $('histList'), empty = $('histEmpty');
       // 历史含各账号的签到结果，属管理数据；未解锁时不请求，直接提示。
@@ -2361,21 +2445,7 @@
         const data = await resp.json();
         if (!data.ok || !data.history.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
         empty.style.display = 'none';
-        list.innerHTML = data.history.map(h => {
-          const s = h.summary;
-          const trig = h.trigger === 'scheduled' ? '定时' : (h.trigger === 'manual-single' ? '单签' : '手动');
-          const trigCls = h.trigger === 'scheduled' ? 'scheduled' : '';
-          let stats = '';
-          if (h.error) stats = `<span class="pill red">错误</span> ${escapeHtml(h.error)}`;
-          else if (s) stats = `<span class="pill green">成功 ${s.signed}</span><span class="pill cyan">跳过 ${s.skipped}</span><span class="pill red">失败 ${s.failed}</span> · 本次额度 ${s.quota_total}`;
-          return `<div class="hist-item">
-            <div class="hist-head">
-              <span class="hist-time">${escapeHtml(h.time)}</span>
-              <span class="hist-trigger ${trigCls}">${trig}</span>
-            </div>
-            <div class="hist-stats">${stats}</div>
-          </div>`;
-        }).join('');
+        list.innerHTML = data.history.map(histItemHtml).join('');
       } catch (e) { toast('加载历史失败：' + e.message, 'err'); }
     }
     $('refreshHist').addEventListener('click', loadHistory);
