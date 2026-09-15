@@ -1,14 +1,7 @@
 import json
-import os
-import tempfile
 import unittest
 
-# 隔离运行：不启动调度线程，配置文件指向临时目录，关闭管理密码。
-os.environ["GYQD_SCHEDULER"] = "0"
-os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
-os.environ["GYQD_ADMIN_PASSWORD"] = ""
-
-from app import clean_bookmark, convert_value, normalize_bookmark  # noqa: E402
+from app import clean_bookmark, convert_value, normalize_bookmark
 
 LEGACY = {
     "name": "old", "url": "https://x.example",

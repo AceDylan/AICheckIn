@@ -1,15 +1,10 @@
 import json
-import os
-import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# 隔离运行：不启动调度线程，配置文件指向临时目录，关闭管理密码。
-os.environ["GYQD_SCHEDULER"] = "0"
-os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
-os.environ["GYQD_ADMIN_PASSWORD"] = ""
-
+# 隔离运行：不启动调度线程，配置文件指向本用例专属临时目录，关闭管理密码。
+from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
 from app import app  # noqa: E402
 
 LEGACY = {
@@ -33,7 +28,7 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
-class BookmarkFieldsApiTest(unittest.TestCase):
+class BookmarkFieldsApiTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.server = HTTPServer(("127.0.0.1", 0), _Handler)
@@ -41,8 +36,10 @@ class BookmarkFieldsApiTest(unittest.TestCase):
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         app.config["TESTING"] = True
         cls.client = app.test_client()
-        with open(os.environ["GYQD_CONFIG_FILE"], "w", encoding="utf-8") as fh:
-            json.dump({"configs": [], "proxy_url": "", "schedule": {}, "bookmarks": [LEGACY]}, fh)
+
+    def setUp(self):
+        super(BookmarkFieldsApiTest, self).setUp()
+        self.write_config({"configs": [], "proxy_url": "", "schedule": {}, "bookmarks": [LEGACY]})
 
     @classmethod
     def tearDownClass(cls):
@@ -82,7 +79,7 @@ class BookmarkFieldsApiTest(unittest.TestCase):
         self.assertEqual(one["results"][0]["value"], "hi")
         self.assertEqual(c.post("/api/bookmarks/%d/fields/nope/refresh" % idx).status_code, 404)
 
-        with open(os.environ["GYQD_CONFIG_FILE"], encoding="utf-8") as fh:
+        with open(app_module.CONFIG_FILE, encoding="utf-8") as fh:
             bm = json.load(fh)["bookmarks"][idx]
         self.assertEqual(bm["balance"], "123.45")
         self.assertEqual(bm["balance_config"]["json_path"], "data.balance_cents")

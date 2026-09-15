@@ -1,26 +1,9 @@
 # -*- coding: utf-8 -*-
 """收藏库子页面（链接分组）：默认分组合成、CRUD、排序、移动、批量新增、导入导出与管理密码保护。"""
-import json
-import os
-import tempfile
 import unittest
 
-os.environ["GYQD_SCHEDULER"] = "0"
-os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
-os.environ["GYQD_ADMIN_PASSWORD"] = ""
-
-import app as app_module  # noqa: E402
+from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
 from app import app, clean_link, clean_link_group, normalize_link_groups  # noqa: E402
-
-
-def _write_config(payload):
-    with open(os.environ["GYQD_CONFIG_FILE"], "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False)
-
-
-def _read_config():
-    with open(os.environ["GYQD_CONFIG_FILE"], encoding="utf-8") as fh:
-        return json.load(fh)
 
 
 class NormalizeTest(unittest.TestCase):
@@ -74,15 +57,16 @@ class NormalizeTest(unittest.TestCase):
         self.assertEqual(len(g["links"]), 1)
 
 
-class LinkGroupApiTest(unittest.TestCase):
+class LinkGroupApiTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         app.config["TESTING"] = True
         cls.client = app.test_client()
 
     def setUp(self):
+        super(LinkGroupApiTest, self).setUp()
         # 旧数据：没有 link_groups 键，且已有一条收藏与一组签到配置，验证两者不受影响。
-        _write_config({
+        self.write_config({
             "configs": [{"name": "svc", "base_url": "https://svc.example", "user_id": "1",
                          "access_token": "tok", "enabled": True, "turnstile": ""}],
             "proxy_url": "", "schedule": {"enabled": False},
@@ -97,7 +81,7 @@ class LinkGroupApiTest(unittest.TestCase):
     def test_defaults_are_exposed_but_not_persisted_until_write(self):
         groups = self._groups()
         self.assertEqual([g["id"] for g in groups], ["self-hosted", "daily", "ai"])
-        self.assertNotIn("link_groups", _read_config())
+        self.assertNotIn("link_groups", self.read_config())
 
     def test_link_crud_and_persistence(self):
         c = self.client
@@ -107,7 +91,7 @@ class LinkGroupApiTest(unittest.TestCase):
         link = data["links"][0]
         self.assertEqual(data["group_id"], "daily")
         self.assertEqual(link["name"], "Docs")
-        saved = _read_config()
+        saved = self.read_config()
         self.assertEqual(saved["link_groups"][1]["links"][0]["url"], "https://docs.example")
         # 原有收藏与签到配置原样保留。
         self.assertEqual(saved["bookmarks"][0]["name"], "site")
@@ -126,7 +110,7 @@ class LinkGroupApiTest(unittest.TestCase):
 
         resp = c.delete("/api/link_groups/daily/links/%s" % link["id"])
         self.assertTrue(resp.get_json()["ok"])
-        self.assertEqual(_read_config()["link_groups"][1]["links"], [])
+        self.assertEqual(self.read_config()["link_groups"][1]["links"], [])
 
         self.assertEqual(c.delete("/api/link_groups/daily/links/missing").status_code, 404)
         self.assertEqual(c.post("/api/link_groups/nope/links", json={"url": "https://x.example"}).status_code, 404)
@@ -138,12 +122,12 @@ class LinkGroupApiTest(unittest.TestCase):
         ]})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual([l["name"] for l in resp.get_json()["links"]], ["one.example", "Two"])
-        self.assertEqual(len(_read_config()["link_groups"][2]["links"]), 2)
+        self.assertEqual(len(self.read_config()["link_groups"][2]["links"]), 2)
 
         resp = c.post("/api/link_groups/ai/links", json={"links": [{"url": "https://three.example"}, {"url": "bad"}]})
         self.assertEqual(resp.status_code, 400)
         self.assertIn("第 2 条", resp.get_json()["error"])
-        self.assertEqual(len(_read_config()["link_groups"][2]["links"]), 2)
+        self.assertEqual(len(self.read_config()["link_groups"][2]["links"]), 2)
 
         self.assertEqual(c.post("/api/link_groups/ai/links", json={"links": []}).status_code, 400)
 
@@ -195,7 +179,7 @@ class LinkGroupApiTest(unittest.TestCase):
         for gid in ("self-hosted", "daily", "ai"):
             self.assertTrue(c.delete("/api/link_groups/%s" % gid).get_json()["ok"])
         self.assertEqual(self._groups(), [])
-        self.assertEqual(_read_config()["link_groups"], [])
+        self.assertEqual(self.read_config()["link_groups"], [])
 
     def test_export_import_roundtrip_and_optional_key(self):
         c = self.client

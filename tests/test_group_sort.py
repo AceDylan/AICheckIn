@@ -2,32 +2,22 @@
 """收藏库分组自定义排序：顺序落盘到 config.json、重新读取后恢复、旧数据兼容，
 以及前端拖拽 / 键盘排序的挂点。"""
 import json
-import os
 import re
-import tempfile
 import unittest
 
-os.environ["GYQD_SCHEDULER"] = "0"
-os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
-os.environ["GYQD_ADMIN_PASSWORD"] = ""
-
-import app as app_module  # noqa: E402
+from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
 from app import app, read_store  # noqa: E402
 
 
-def _write_config(payload):
-    with open(app_module.CONFIG_FILE, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False)
-
-
-class GroupOrderPersistenceTest(unittest.TestCase):
+class GroupOrderPersistenceTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         app.config["TESTING"] = True
         cls.client = app.test_client()
 
     def setUp(self):
-        _write_config({"configs": [], "bookmarks": [], "link_groups": [
+        super(GroupOrderPersistenceTest, self).setUp()
+        self.write_config({"configs": [], "bookmarks": [], "link_groups": [
             {"id": "a", "name": "甲", "icon": "folder", "color": "mint", "links": [
                 {"id": "l1", "name": "x", "url": "https://x.example"}]},
             {"id": "b", "name": "乙", "icon": "globe", "color": "sky", "links": []},
@@ -58,7 +48,7 @@ class GroupOrderPersistenceTest(unittest.TestCase):
 
     def test_legacy_config_without_link_groups_still_sorts(self):
         # 旧数据没有 link_groups 键：读取时合成默认三组，排序后才第一次落盘。
-        _write_config({"configs": [], "bookmarks": []})
+        self.write_config({"configs": [], "bookmarks": []})
         ids = self._ids()
         self.assertEqual(ids, ["self-hosted", "daily", "ai"])
         self.assertTrue(self.client.post("/api/link_groups/reorder", json={"order": ids[::-1]}).get_json()["ok"])

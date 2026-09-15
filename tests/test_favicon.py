@@ -2,17 +2,11 @@
 """站点图标：origin 归一化、HTML 候选解析、魔数嗅探、/api/favicon 的白名单与正负缓存，
 以及前端「成功才覆盖、失败回退首字母」的渲染挂点。"""
 import json
-import os
 import re
 import shutil
-import tempfile
 import unittest
 
-os.environ["GYQD_SCHEDULER"] = "0"
-os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
-os.environ["GYQD_ADMIN_PASSWORD"] = ""
-
-import app as app_module  # noqa: E402
+from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
 from app import app, favicon_candidates, favicon_origin, sniff_image_mime  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-png-body"
@@ -93,13 +87,14 @@ class CandidateTest(unittest.TestCase):
         self.assertEqual(favicon_candidates("<html><head><title>x</title></head></html>", "https://demo.example/"), [])
 
 
-class FaviconApiTest(unittest.TestCase):
+class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         app.config["TESTING"] = True
         cls.client = app.test_client()
 
     def setUp(self):
+        super(FaviconApiTest, self).setUp()
         with open(app_module.CONFIG_FILE, "w", encoding="utf-8") as fh:
             json.dump({
                 "configs": [{"name": "签到站", "base_url": "https://cfg.example", "user_id": "1",
