@@ -23,6 +23,7 @@ import string
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from urllib.parse import urljoin, urlparse
 from pathlib import Path
@@ -2036,7 +2037,8 @@ def api_link_reorder(gid):
 FAVICON_DIR = DATA_DIR / "favicons"
 FAVICON_OK_TTL = 7 * 24 * 3600        # 抓到图标后的缓存有效期
 FAVICON_FAIL_TTL = 6 * 3600           # 失败的负缓存有效期，避免反复抓死站
-FAVICON_MAX_BYTES = 256 * 1024        # 单个图标体积上限
+# 单个图标体积上限：不少站点直接拿几百 KB 的 Logo.png 当 favicon，卡太死会白白丢图标。
+FAVICON_MAX_BYTES = 512 * 1024
 FAVICON_HTML_MAX_BYTES = 256 * 1024   # 首页 HTML 只读前若干字节用于找 <link rel=icon>
 FAVICON_TIMEOUT = 5                   # 单次请求超时（秒）
 FAVICON_BUDGET = 12                   # 单个 origin 的总抓取时间预算（秒）
@@ -2045,8 +2047,12 @@ FAVICON_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/125.0.0.0 Safari/537.36"
 )
+# Cloudflare 一类 WAF 会因为 urllib 的 TLS 指纹直接挡掉；这些状态码才值得换 curl_cffi 重试，
+# 连不上 / 超时不重试，免得把死站的等待时间翻倍。
+_FAVICON_WAF_STATUSES = frozenset({403, 405, 406, 409, 429, 503})
 # 同时向外抓取的上限：gunicorn 线程数有限，抓图标不能把线程全占满。
 _favicon_fetch_slots = threading.BoundedSemaphore(3)
+_favicon_curl = {"mod": None, "tried": False}
 _favicon_locks = {}
 _favicon_locks_guard = threading.Lock()
 # origin 白名单按 config.json 的 mtime 缓存，避免每个图标请求都解析一遍配置。
@@ -2135,29 +2141,89 @@ def sniff_image_mime(data):
     return ""
 
 
-def _favicon_http_get(url, proxy, timeout, max_bytes):
-    """抓取单个 URL，最多读 max_bytes 字节。返回 (data, content_type, final_url)，失败为 (None, "", "")。"""
-    req = urllib.request.Request(url, headers={
-        "User-Agent": FAVICON_UA,
-        "Accept": "text/html,image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-    })
+_FAVICON_HEADERS = {
+    "User-Agent": FAVICON_UA,
+    "Accept": "text/html,image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
+
+
+def _favicon_curl_requests():
+    """按需加载 curl_cffi.requests（本仓库已依赖它做浏览器 TLS 指纹）。
+
+    不走 gyqd.load_curl_requests：那条路径在缺依赖时会触发 pip 自动安装，不能放在 Web 请求里。
+    """
+    if not _favicon_curl["tried"]:
+        _favicon_curl["tried"] = True
+        try:
+            import curl_cffi.requests as curl_requests  # noqa: PLC0415 - 可选依赖，按需导入
+            _favicon_curl["mod"] = curl_requests
+        except Exception:  # noqa: BLE001 - 缺失或加载失败都只是退回 urllib
+            _favicon_curl["mod"] = None
+    return _favicon_curl["mod"]
+
+
+def _favicon_urllib_get(url, proxy, timeout, max_bytes):
+    """标准库抓取。返回 (data, content_type, final_url, status)，status=0 表示根本没连上。"""
+    req = urllib.request.Request(url, headers=dict(_FAVICON_HEADERS))
     handlers = [_FaviconRedirectHandler()]
-    # urllib 的 ProxyHandler 不支持 socks；配的是 socks 时直连抓取（图标不涉敏感数据）。
+    # urllib 的 ProxyHandler 不支持 socks；配的是 socks 时交给下面的 curl_cffi 分支。
     if proxy and not proxy.lower().startswith("socks"):
         handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
     opener = urllib.request.build_opener(*handlers)
     try:
         with opener.open(req, timeout=timeout) as resp:
-            if int(getattr(resp, "status", None) or resp.getcode() or 0) != 200:
-                return None, "", ""
+            status = int(getattr(resp, "status", None) or resp.getcode() or 0)
+            if status != 200:
+                return None, "", "", status
             data = resp.read(max_bytes + 1)
             if not data or len(data) > max_bytes:
-                return None, "", ""
+                return None, "", "", status
             ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-            return data, ctype, resp.geturl() or url
-    except Exception:
+            return data, ctype, resp.geturl() or url, status
+    except urllib.error.HTTPError as exc:
+        try:
+            exc.read()
+        except Exception:  # noqa: BLE001 - 只是为了尽快释放连接
+            pass
+        return None, "", "", int(getattr(exc, "code", 0) or 0)
+    except Exception:  # noqa: BLE001 - DNS / 超时 / TLS 失败都只意味着这个候选不可用
+        return None, "", "", 0
+
+
+def _favicon_curl_get(url, proxy, timeout, max_bytes):
+    """用 curl_cffi 的 Chrome 指纹重试；同时是 socks 代理下唯一能走通的路径。"""
+    curl_requests = _favicon_curl_requests()
+    if curl_requests is None:
         return None, "", ""
+    kwargs = {
+        "method": "GET", "url": url, "headers": dict(_FAVICON_HEADERS),
+        "timeout": timeout, "impersonate": gyqd.CURL_IMPERSONATE_BROWSER,
+    }
+    proxies = gyqd.proxy_mapping(proxy)
+    if proxies:
+        kwargs["proxies"] = proxies
+    try:
+        resp = curl_requests.request(**kwargs)
+        if int(resp.status_code) != 200:
+            return None, "", ""
+        data = resp.content or b""
+        if not data or len(data) > max_bytes:
+            return None, "", ""
+        ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        return data, ctype, str(resp.url or url)
+    except Exception:  # noqa: BLE001 - 可选路径，失败即放弃该候选
+        return None, "", ""
+
+
+def _favicon_http_get(url, proxy, timeout, max_bytes):
+    """抓取单个 URL，最多读 max_bytes 字节。返回 (data, content_type, final_url)，失败为 (None, "", "")。"""
+    socks = bool(proxy) and proxy.lower().startswith("socks")
+    if not socks:
+        data, ctype, final_url, status = _favicon_urllib_get(url, proxy, timeout, max_bytes)
+        if data is not None or status not in _FAVICON_WAF_STATUSES:
+            return data, ctype, final_url
+    return _favicon_curl_get(url, proxy, timeout, max_bytes)
 
 
 def _favicon_attrs(chunk):

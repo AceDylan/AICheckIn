@@ -177,6 +177,52 @@ class FaviconApiTest(unittest.TestCase):
         })
         self.assertEqual(self.client.get("/api/favicon?u=https://cfg.example").status_code, 404)
 
+    def test_waf_blocked_site_is_retried_with_browser_fingerprint(self):
+        # Cloudflare 一类 WAF 会因为 urllib 的 TLS 指纹直接 403（线上 linux.do / aihub.top 即如此），
+        # 这时换 curl_cffi 的 Chrome 指纹再试一次。
+        curl_calls = []
+        real_urllib = app_module._favicon_urllib_get
+        real_curl = app_module._favicon_curl_get
+
+        def fake_urllib(url, proxy, timeout, max_bytes):
+            return (None, "", "", 403)
+
+        def fake_curl(url, proxy, timeout, max_bytes):
+            curl_calls.append(url)
+            return (PNG, "image/png", url) if url.endswith("/favicon.ico") else (b"<html></html>", "text/html", url)
+
+        app_module._favicon_urllib_get = fake_urllib
+        app_module._favicon_curl_get = fake_curl
+        self.addCleanup(setattr, app_module, "_favicon_urllib_get", real_urllib)
+        self.addCleanup(setattr, app_module, "_favicon_curl_get", real_curl)
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200, resp.get_data()[:200])
+        self.assertEqual(resp.get_data(), PNG)
+        self.assertIn("https://demo.example/favicon.ico", curl_calls)
+
+    def test_connection_failures_do_not_pay_for_a_second_attempt(self):
+        # 连不上 / 超时（status 0）不重试，否则死站的等待时间会翻倍。
+        curl_calls = []
+        real_urllib = app_module._favicon_urllib_get
+        real_curl = app_module._favicon_curl_get
+        app_module._favicon_urllib_get = lambda *a: (None, "", "", 0)
+        app_module._favicon_curl_get = lambda url, *a: curl_calls.append(url) or (None, "", "")
+        self.addCleanup(setattr, app_module, "_favicon_urllib_get", real_urllib)
+        self.addCleanup(setattr, app_module, "_favicon_curl_get", real_curl)
+        self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").status_code, 404)
+        self.assertEqual(curl_calls, [])
+
+    def test_oversized_payload_is_skipped_but_large_logos_still_fit(self):
+        # 线上 catcard.uk 拿 267KB 的 Logo.png 当 favicon，旧的 256KB 上限会把它整个丢掉。
+        self.assertGreaterEqual(app_module.FAVICON_MAX_BYTES, 300 * 1024)
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="icon" href="/logo.png"></head>', "text/html"),
+            "https://demo.example/logo.png": (PNG + b"x" * (300 * 1024), "image/png"),
+        })
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.get_data()), len(PNG) + 300 * 1024)
+
     def test_failure_is_negatively_cached(self):
         self._patch_http({})
         first = self.client.get("/api/favicon?u=https://demo.example/dash")
