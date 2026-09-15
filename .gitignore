@@ -3,3 +3,7 @@ data/
 docs/
 .claude/
 .agents/
+# 环境变量文件：含管理密码等机密，绝不入库。
+.env
+.env.*
+!.env.example

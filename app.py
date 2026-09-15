@@ -55,8 +55,21 @@ ADMIN_PASSWORD = os.environ.get("GYQD_ADMIN_PASSWORD", "").strip()
 # 是否启用后台定时调度线程。
 SCHEDULER_ENABLED = os.environ.get("GYQD_SCHEDULER", "1") == "1"
 
+# 建议的最短管理密码长度：低于此值在启动时告警（不阻止启动，内网/本地部署仍可自便）。
+MIN_ADMIN_PASSWORD_LEN = 12
+
 if not ADMIN_PASSWORD:
-    sys.stderr.write("[gyqd-web] 警告：未设置 GYQD_ADMIN_PASSWORD，配置可被任意访问者编辑/查看 token\n")
+    sys.stderr.write(
+        "[gyqd-web] 警告：未设置 GYQD_ADMIN_PASSWORD。"
+        "任何访问者都能编辑配置、查看真实 token、执行签到并读取运行历史。"
+        "公网部署请立即设置（见 SECURITY.md）\n"
+    )
+elif len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
+    sys.stderr.write(
+        "[gyqd-web] 警告：GYQD_ADMIN_PASSWORD 短于 {0} 位，公网上容易被爆破。"
+        "建议改用 python3 -c \"import secrets; print(secrets.token_urlsafe(24))\" 生成的随机口令\n"
+        .format(MIN_ADMIN_PASSWORD_LEN)
+    )
 
 # 并发保护：配置写、历史写、签到执行各一把锁。
 _store_lock = threading.Lock()
