@@ -1715,11 +1715,15 @@ def collect_diagnostics(request_is_https=None):
         if not schedule.get("enabled"):
             checks.append(_check("ok", "定时签到", "未启用"))
         else:
-            pending = len(pending_configs(store))
             detail = "每天 {0}".format(schedule.get("time") or "--:--")
             if schedule.get("last_run_time"):
                 detail += " · 上次 {0}".format(schedule["last_run_time"])
-            if pending:
+            ran_today = schedule.get("last_run_date") == _today_str()
+            pending = len(pending_configs(store))
+            if not ran_today:
+                # 今天的主轮次还没到点。此时 pending 只是「还没轮到」，不是失败。
+                checks.append(_check("ok", "定时签到", detail + " · 今日尚未执行"))
+            elif pending:
                 left = max(0, SCHEDULE_RETRY_LIMIT - int(schedule.get("retry_count") or 0))
                 detail += " · 今日 {0} 个未签成（剩 {1} 次补签）".format(pending, left)
                 checks.append(_check("warn" if left else "error", "定时签到", detail))

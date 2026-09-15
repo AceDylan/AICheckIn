@@ -165,6 +165,15 @@ class ChecksTest(DiagnosticsBase):
         os.chmod(str(app_module.SESSION_SECRET_FILE), 0o644)
         self.assertEqual(self.labels()["会话密钥"]["status"], "warn")
 
+    def test_before_the_daily_run_pending_is_not_an_alarm(self):
+        # 主轮次还没到点时，「未签成」只是「还没轮到」，不该报警。
+        store = STORE.copy()
+        store["schedule"] = {"enabled": True, "time": "23:59"}
+        self.write_config(store)
+        check = self.labels()["定时签到"]
+        self.assertEqual(check["status"], "ok")
+        self.assertIn("今日尚未执行", check["detail"])
+
     def test_pending_checkins_are_surfaced(self):
         store = STORE.copy()
         store["schedule"] = {"enabled": True, "time": "08:30",
