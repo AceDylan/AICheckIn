@@ -88,17 +88,40 @@ GYQD_CONFIG_FILE=$PWD/data/config.json GYQD_ADMIN_PASSWORD=dev-password-please-c
 
 ## 升级已部署的实例
 
+> **从旧版本升级时必读**：管理密码已从 `docker-compose.yml` 移到 `.env`。
+> 升级前不建好 `.env`，`docker compose` 会直接报错退出（这是刻意的，
+> 避免「以为设了密码、其实全开放」）。
+
 ```bash
 cd /root/AICheckIn
-cp -a data "../aicheckin-data-backup-$(date +%Y%m%d-%H%M%S)"   # 含明文凭据，妥善保管
+
+# 0. 备份（含明文凭据，妥善保管）
+cp -a data "../aicheckin-data-backup-$(date +%Y%m%d-%H%M%S)"
+
+# 1. 拉取
 git fetch origin && git checkout main && git merge --ff-only origin/main
+
+# 2. 建 .env（只需一次）。旧密码若曾写在 docker-compose.yml 里并进过 git 历史，
+#    请换成新的随机口令，详见 SECURITY.md。
+cp -n .env.example .env && chmod 600 .env
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # 把结果填进 .env
+grep -q '^GYQD_ADMIN_PASSWORD=.\+' .env || echo "⚠️  .env 里还没填管理密码"
+
+# 3. 构建并起服务（本版新增了 .dockerignore，务必重新 build 而不是只 up）
+docker compose config >/dev/null            # 先验证变量都齐了
 docker compose up -d --build
+
+# 4. 验证
 docker compose logs --tail=50 aicheckin
 curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5525/api/health
 ```
 
 升级后打开「系统设置 → 部署自检」（或解锁后 `GET /api/diagnostics`）确认
 管理密码、数据目录、后台调度、定时签到这些项都是绿的。
+
+回滚：`git checkout <上一个提交> && docker compose up -d --build`。
+数据在 `data/` 里、不随代码回滚，旧版本读得了新版本写的 `config.json`
+（新增的 `refresh` 键会被旧版本忽略）。
 
 ---
 
