@@ -773,7 +773,9 @@ details.hist-item[open] .hist-toggle { color: var(--accent); }
   padding: 1px 5px; border: 1px solid var(--border); border-radius: 5px;
   background: var(--surface); font-family: var(--mono); font-size: 10px;
 }
-.omni-foot-meta { margin-left: auto; }
+.omni-foot-meta { display: flex; gap: 8px; margin-left: auto; }
+.omni-hint { color: var(--text-3); }
+.omni-title .check-badge { margin-left: 2px; }
 /* 卡片上的标签可点：点一下就以 #标签 打开全局搜索，等于一个标签筛选入口。 */
 .tag-btn { border: 0; font: inherit; cursor: pointer; }
 .tag-btn:hover { filter: brightness(1.18); }

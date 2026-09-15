@@ -288,7 +288,7 @@
         <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
         <span><kbd>Enter</kbd> 打开</span>
         <span><kbd>⇧</kbd>+<kbd>Enter</kbd> 跳到所在分组</span>
-        <span class="omni-foot-meta" id="omniCount"></span>
+        <span class="omni-foot-meta"><span id="omniHint" class="omni-hint"></span><span id="omniCount"></span></span>
       </div>
     </div>
   </div>
@@ -2492,6 +2492,9 @@
           items.push({
             kind: 'link', title: l.name || siteHost(l.url), host: siteHost(l.url), sub: g.name,
             tags: l.tags || [], url: l.url, emoji: l.icon, color: g.color, groupId: g.id, pinned: !!l.pinned,
+            // created_at 形如 "YYYY-MM-DD HH:MM:SS"，字典序即时间序，直接拿来排序。
+            addedAt: l.created_at || '',
+            alert: linkCheckState(l),
             haystack: omniHaystack([l.name, l.url, siteHost(l.url), l.desc, (l.tags || []).join(' '), g.name]),
           });
         }
@@ -2533,11 +2536,14 @@
         const score = omniScore(item, query);
         if (score > 0) scored.push({ item, score });
       }
-      // 同分时：置顶优先 → 网址优先于分组/配置 → 名称字典序，保证结果稳定不跳动。
+      // 同分时：置顶优先 → 网址优先于分组/配置 → 最近添加的在前 → 名称字典序。
+      // 「最近添加」这一档主要服务于空查询：刚收进来的一批正是接下来要用的，
+      // 按字典序摆出来则基本等于随机。没有 created_at 的旧数据排在后面。
       const kindRank = { link: 0, bookmark: 1, config: 2, group: 3 };
       scored.sort((a, b) => b.score - a.score
         || (b.item.pinned ? 1 : 0) - (a.item.pinned ? 1 : 0)
         || kindRank[a.item.kind] - kindRank[b.item.kind]
+        || String(b.item.addedAt || '').localeCompare(String(a.item.addedAt || ''))
         || String(a.item.title).localeCompare(String(b.item.title), 'zh-Hans-CN'));
       return scored.slice(0, OMNI_LIMIT).map(x => x.item);
     }
@@ -2552,7 +2558,8 @@
           role="option" aria-selected="${i === omniActive}" data-omni="${i}">
         ${avatar}
         <span class="omni-text">
-          <span class="omni-title">${escapeHtml(item.title)}${item.pinned ? icon('pin', 'pin') : ''}</span>
+          <span class="omni-title">${escapeHtml(item.title)}${item.pinned ? icon('pin', 'pin') : ''}${
+            item.alert ? `<span class="check-badge" title="${escapeHtml(LINK_CHECK_META[item.alert].label)}">${LINK_CHECK_META[item.alert].icon}</span>` : ''}</span>
           <span class="omni-sub">${escapeHtml(item.sub)}${item.host ? ` · ${escapeHtml(item.host)}` : ''}</span>
         </span>
         ${tags ? `<span class="omni-tags">${tags}</span>` : ''}
@@ -2565,11 +2572,14 @@
       if (!omniResults.length) {
         const q = $('omniInput').value.trim();
         list.innerHTML = `<div class="omni-empty">${q ? '没有匹配的收藏，换个关键词试试。' : '输入关键词开始搜索，或用 #标签 按标签筛选。'}</div>`;
+        $('omniHint').textContent = '';
         $('omniCount').textContent = '';
         return;
       }
       list.innerHTML = omniResults.map(omniRowHtml).join('');
       $('omniCount').textContent = `${omniResults.length}${omniResults.length >= OMNI_LIMIT ? '+' : ''} 条结果`;
+      // 空查询下列的是「置顶 + 最近添加」，说清楚免得被当成全部收藏。
+      $('omniHint').textContent = $('omniInput').value.trim() ? '' : '置顶与最近添加';
       pumpFavicons();
       const active = list.querySelector('.omni-row.is-active');
       if (active) active.scrollIntoView({ block: 'nearest' });
