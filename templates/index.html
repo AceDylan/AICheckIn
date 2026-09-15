@@ -16,6 +16,14 @@
       document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
+  <!-- PWA：可「添加到主屏 / 安装」，独立窗口打开，图标由 tools/make_icons.py 生成。 -->
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+  <meta name="theme-color" content="#0a0c10" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f8fb" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bookmark Hub">
   <link rel="stylesheet" href="{{ url_for('static', filename='app-v3.css') }}">
 </head>
 <body>
@@ -55,6 +63,10 @@
           <span class="tab-text">系统设置</span><span class="dot" id="schedDot" style="display:none"></span>
         </button>
       </nav>
+      <button class="install-btn" id="installBtn" type="button" hidden title="把 Bookmark Hub 装成独立应用窗口">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10m0 0 3.5-3.5M12 14l-3.5-3.5M5 17v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2"/></svg>
+        <span>安装为应用</span>
+      </button>
       <div class="sidebar-foot">
         <button class="lock-pill" id="lockPill" type="button" title="编辑权限状态">编辑状态</button>
         <button class="icon-btn theme-toggle" id="themeToggle" type="button" title="切换深色 / 浅色" aria-label="切换主题">
@@ -2278,6 +2290,34 @@
 
     // 弹窗点击遮罩关闭
     document.querySelectorAll('.modal-mask').forEach(m => m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); }));
+
+    // ===== PWA =====
+    // Service Worker 从 /sw.js 提供（作用域必须是 /，放在 /static/ 下拿不到根作用域）。
+    // 只缓存应用外壳，接口一律不碰——细节见 static/sw.js 顶部注释。
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+    // 安装提示：浏览器判定可安装时才出现，点过或装过就不再打扰（记在 Cookie 里）。
+    let deferredInstall = null;
+    function installDismissed() { return /(?:^|; )bh_install_done=1/.test(document.cookie); }
+    function markInstallDone() { document.cookie = 'bh_install_done=1; path=/; max-age=' + 60 * 60 * 24 * 365 + '; samesite=lax'; }
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      if (installDismissed()) return;
+      deferredInstall = e;
+      $('installBtn').hidden = false;
+    });
+    $('installBtn').addEventListener('click', async () => {
+      $('installBtn').hidden = true;
+      markInstallDone();
+      if (!deferredInstall) return;
+      deferredInstall.prompt();
+      try { await deferredInstall.userChoice; } catch (_) {}
+      deferredInstall = null;
+    });
+    window.addEventListener('appinstalled', () => { markInstallDone(); $('installBtn').hidden = true; });
 
     // ===== 初始化 =====
     renderLibrary();

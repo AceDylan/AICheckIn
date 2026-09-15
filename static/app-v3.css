@@ -183,6 +183,21 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 .subnav-item.is-add:hover { color: var(--accent); }
 .subnav-item.is-add .sub-ic { background: transparent; color: inherit; border: 1px dashed var(--border-strong); }
 
+/* PWA 安装入口：浏览器判定可安装时才 unhide，点过 / 装过就不再出现。 */
+.install-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; margin-top: auto; padding: 9px 10px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius);
+  background: transparent; color: var(--text-2);
+  font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.install-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.install-btn .ic { width: 15px; height: 15px; }
+.install-btn[hidden] { display: none; }
+/* 安装入口出现时它顶到底部，页脚就不必再 margin-top:auto。 */
+.install-btn:not([hidden]) + .sidebar-foot { margin-top: 12px; }
+
 .sidebar-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 12px 4px 0; border-top: 1px solid var(--border); }
 .lock-pill { display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 6px 9px; border-radius: 999px; background: var(--surface-2); color: var(--text-3); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; border: 1px solid transparent; }
 .lock-pill:hover { border-color: var(--border-strong); color: var(--text); }

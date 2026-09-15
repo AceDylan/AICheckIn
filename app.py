@@ -1355,6 +1355,18 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/sw.js")
+def service_worker():
+    """Service Worker 必须从根路径提供：放在 /static/ 下作用域只有 /static/，
+    盖不住首页。文件本体仍在 static/ 里，这里只是换个路径吐出去。"""
+    resp = app.send_static_file("sw.js")
+    resp.headers["Content-Type"] = "application/javascript; charset=utf-8"
+    # SW 自身不缓存，否则改了缓存策略却要等旧 SW 过期才生效。
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
 @app.get("/api/health")
 def health():
     return jsonify({"ok": True})
