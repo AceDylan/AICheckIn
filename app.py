@@ -19,8 +19,10 @@ import os
 import random
 import re
 import secrets
+import stat
 import string
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -54,6 +56,11 @@ METRICS_FILE = str(DATA_DIR / "metrics.json")
 ADMIN_PASSWORD = os.environ.get("GYQD_ADMIN_PASSWORD", "").strip()
 # 是否启用后台定时调度线程。
 SCHEDULER_ENABLED = os.environ.get("GYQD_SCHEDULER", "1") == "1"
+
+# 请求体上限：没有上限时，一个几百 MB 的 JSON 就能把单 worker 的内存吃光。
+# 导入整份配置是这里最大的合法载荷，4 MB 绰绰有余。
+MAX_REQUEST_BYTES = max(64 * 1024, int(os.environ.get("GYQD_MAX_REQUEST_BYTES", str(4 * 1024 * 1024))))
+app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 
 # 建议的最短管理密码长度：低于此值在启动时告警（不阻止启动，内网/本地部署仍可自便）。
 MIN_ADMIN_PASSWORD_LEN = 12
@@ -153,8 +160,52 @@ def read_store():
     return store
 
 
+def _write_text_atomic(path, text):
+    """先写同目录临时文件再原子替换；替换不可用时退回就地写入。
+
+    config.json 装着全部凭据，就地截断写入一旦中途失败（磁盘写满、容器被杀），
+    留下的就是半截 JSON，下次启动整份配置都读不出来。同一文件系统内的 rename
+    要么全成要么全不成，配合 fsync 才能保证「要么是旧的完整内容，要么是新的完整内容」。
+
+    少数部署把 config.json 本身做成 bind mount（而不是挂它所在的目录），这时
+    rename 会失败（EBUSY / EXDEV / EINVAL），回退到就地写入，行为与从前一致。
+    """
+    # 新建时用 0600（里面是凭据）；文件已存在则沿用它的权限，不擅自改变部署现状。
+    try:
+        mode = stat.S_IMODE(os.stat(str(path)).st_mode)
+    except OSError:
+        mode = 0o600
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp_path, mode)
+        os.replace(tmp_path, str(path))
+        tmp_path = None
+    except OSError:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        path.write_text(text, encoding="utf-8")  # 失败则由调用方转成 RuntimeError
+        return
+    # 目录项也刷一次，确保 rename 本身落盘（掉电后新文件名才真的存在）。
+    try:
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
+
+
 def write_store(store):
-    """原子性较弱但兼容单文件 bind mount 的就地写入；写前留 .bak 备份。"""
+    """持久化配置：写前自检 JSON、留 .bak 备份，再原子替换目标文件。"""
     text = json.dumps(store, ensure_ascii=False, indent=2)
     json.loads(text)  # 写前自检，确保可往返。
     path = Path(CONFIG_FILE)
@@ -164,10 +215,10 @@ def write_store(store):
             if path.is_file():
                 try:
                     backup = path.with_name(path.name + ".bak")
-                    backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+                    _write_text_atomic(backup, path.read_text(encoding="utf-8"))
                 except OSError:
                     pass
-            path.write_text(text, encoding="utf-8")
+            _write_text_atomic(path, text)
         except OSError as exc:
             raise RuntimeError(
                 "配置写入失败（请检查挂载是否只读、容器用户对数据目录是否有写权限）：{0}".format(exc)
@@ -1435,6 +1486,42 @@ CONTENT_SECURITY_POLICY = (
 )
 # HSTS 会把整个域名（含其它端口的服务）锁到 https，默认不开，由部署方按需打开。
 HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
+
+
+def _wants_json():
+    """/api/* 一律回 JSON；页面路由保持 Flask 默认的 HTML 错误页。"""
+    return request.path.startswith("/api/")
+
+
+@app.errorhandler(404)
+def _handle_not_found(exc):
+    if _wants_json():
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    return exc
+
+
+@app.errorhandler(405)
+def _handle_method_not_allowed(exc):
+    if _wants_json():
+        return jsonify({"ok": False, "error": "请求方法不被允许"}), 405
+    return exc
+
+
+@app.errorhandler(413)
+def _handle_too_large(exc):
+    limit_mb = MAX_REQUEST_BYTES / 1024.0 / 1024.0
+    message = "请求体过大（上限 {0:.1f} MB）".format(limit_mb)
+    if _wants_json():
+        return jsonify({"ok": False, "error": message}), 413
+    return message, 413
+
+
+@app.errorhandler(500)
+def _handle_server_error(exc):
+    # 细节留在服务端日志里；回给前端的只有一句话，避免堆栈泄漏内部路径与配置。
+    if _wants_json():
+        return jsonify({"ok": False, "error": "服务器内部错误"}), 500
+    return exc
 
 
 @app.after_request
