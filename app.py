@@ -193,7 +193,12 @@ def _write_text_atomic(path, text):
     tmp_path = None
     try:
         fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        try:
+            handle = os.fdopen(fd, "w", encoding="utf-8")
+        except BaseException:
+            os.close(fd)  # fdopen 失败时 fd 不会被接管，必须自己关掉
+            raise
+        with handle as fh:
             fh.write(text)
             fh.flush()
             os.fsync(fh.fileno())
@@ -798,7 +803,9 @@ def clean_field(raw, existing=None, taken=()):
         method = str(raw.get("method") or "").strip().upper()
         api_url = raw_url
         headers = raw.get("headers")
-        body = raw.get("body")
+        # 显式给了请求配置但没带 body：沿用同 id 旧字段的请求体。
+        # 想清空请传 body: null —— 那时 "body" 在 raw 里，取到的就是 None。
+        body = raw["body"] if "body" in raw else (existing or {}).get("body")
     if method not in ("GET", "POST"):
         errors.append("method 需为 GET 或 POST")
     if not api_url:
@@ -2157,7 +2164,12 @@ def api_bookmark_reorder():
         return jsonify({"ok": False, "error": str(exc)}), 500
     bookmarks = store["bookmarks"]
     n = len(bookmarks)
-    if not isinstance(order, list) or sorted(order) != list(range(n)):
+    # 先确认每一项都是 int（bool 是 int 的子类，要排除），再排序比对：
+    # 混了字符串的数组会让 sorted() 直接抛 TypeError，冒成 500。
+    valid = (isinstance(order, list)
+             and all(isinstance(i, int) and not isinstance(i, bool) for i in order)
+             and sorted(order) == list(range(n)))
+    if not valid:
         return jsonify({"ok": False, "error": "排序参数无效"}), 400
     store["bookmarks"] = [bookmarks[i] for i in order]
     try:
@@ -3251,6 +3263,8 @@ def api_import():
         store["configs"] = cleaned
         if proxy_url is not None:
             store["proxy_url"] = str(proxy_url or "").strip()
+        # 这两个的校验会抛 ValueError（时间格式、刷新间隔档位）。不单独接住的话
+        # 会一路冒到 500 处理器，用户只看到「服务器内部错误」，不知道哪个字段不对。
         if isinstance(schedule, dict):
             store["schedule"] = _clean_schedule(schedule, store.get("schedule") or {})
         if isinstance(payload, dict) and isinstance(payload.get("refresh"), dict):
@@ -3260,6 +3274,8 @@ def api_import():
         if cleaned_groups is not None:
             store["link_groups"] = cleaned_groups
         write_store(store)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify({"ok": True, "count": len(cleaned)})

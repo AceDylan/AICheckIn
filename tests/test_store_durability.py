@@ -241,6 +241,46 @@ class RequestLimitTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
+class InvalidPayloadShapeTest(StoreIsolationMixin, unittest.TestCase):
+    """校验失败必须回 400 并说清哪里不对，不能冒成「服务器内部错误」。"""
+
+    @classmethod
+    def setUpClass(cls):
+        app.config["TESTING"] = True
+
+    def setUp(self):
+        super(InvalidPayloadShapeTest, self).setUp()
+        self.write_config(dict(SAMPLE, bookmarks=[{"name": "b", "url": "https://b.example", "fields": []}]))
+        self.client = app.test_client()
+
+    def test_import_rejects_a_bad_refresh_interval_with_a_reason(self):
+        resp = self.client.post("/api/configs/import",
+                                json={"configs": [], "refresh": {"interval_minutes": 7}})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("刷新间隔", resp.get_json()["error"])
+
+    def test_import_rejects_a_bad_schedule_time_with_a_reason(self):
+        resp = self.client.post("/api/configs/import",
+                                json={"configs": [], "schedule": {"time": "99:99"}})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("HH:MM", resp.get_json()["error"])
+
+    def test_a_rejected_import_changes_nothing(self):
+        before = self.read_config()
+        self.client.post("/api/configs/import", json={"configs": [], "schedule": {"time": "99:99"}})
+        self.assertEqual(self.read_config(), before)
+
+    def test_reorder_rejects_mixed_types_instead_of_crashing(self):
+        # sorted() 遇到 str 和 int 混排会抛 TypeError，冒成 500。
+        for bad in ([0, "x"], ["0"], [None], [True], [0.0], "01", {"0": 0}):
+            resp = self.client.post("/api/bookmarks/reorder", json={"order": bad})
+            self.assertEqual(resp.status_code, 400, bad)
+            self.assertFalse(resp.get_json()["ok"], bad)
+
+    def test_reorder_still_accepts_a_valid_permutation(self):
+        self.assertEqual(self.client.post("/api/bookmarks/reorder", json={"order": [0]}).status_code, 200)
+
+
 class ApiErrorShapeTest(unittest.TestCase):
     """前端所有接口调用都走 resp.json()；错误页回 HTML 会让它们抛解析异常。"""
 

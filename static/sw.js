@@ -33,6 +33,16 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// 既没缓存又断网时必须回一个真正的 Response：respondWith(undefined) 会抛
+// TypeError，控制台里看到的是一个和「断网」无关的报错，徒增排查成本。
+function offlineResponse() {
+  return new Response('离线：该资源尚未缓存。', {
+    status: 503,
+    statusText: 'Offline',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+}
+
 function isShellRequest(url) {
   return url.pathname === '/' || url.pathname.startsWith('/static/');
 }
@@ -51,7 +61,7 @@ self.addEventListener('fetch', (event) => {
   // 写进缓存就等于分享一次多一条，缓存会无限长。这里只读不写，
   // 离线时回退到已缓存的外壳。
   if (url.search) {
-    event.respondWith(fetch(request).catch(() => caches.match('/')));
+    event.respondWith(fetch(request).catch(() => caches.match('/').then((r) => r || offlineResponse())));
     return;
   }
 
@@ -60,7 +70,7 @@ self.addEventListener('fetch', (event) => {
       const network = fetch(request).then((response) => {
         if (response && response.ok && response.type === 'basic') cache.put(request, response.clone());
         return response;
-      }).catch(() => cached);
+      }).catch(() => cached || offlineResponse());
       // 有缓存先给缓存（秒开），同时后台刷新；没缓存就等网络。
       return cached || network;
     }))

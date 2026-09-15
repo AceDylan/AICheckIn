@@ -116,6 +116,42 @@ class BookmarkEditTest(EditFlowBase):
         self.assertEqual(saved["name"], "看板站")
 
 
+class FieldRequestConfigTest(EditFlowBase):
+    """字段请求配置的「不传即沿用」语义，别把已存的请求体悄悄抹掉。"""
+
+    def _post_field_store(self):
+        return {"configs": [], "proxy_url": "", "bookmarks": [{
+            "name": "POST 站", "url": "https://p.example", "fields": [{
+                "id": "f_post", "label": "余额", "type": "amount", "enabled": True,
+                "method": "POST", "url": "https://api.p.example/q", "headers": {"X-Key": "k"},
+                "body": '{"q":1}', "json_path": "data.balance"}]}], "link_groups": []}
+
+    def test_explicit_config_without_body_keeps_the_stored_body(self):
+        self.write_config(self._post_field_store())
+        field = self.c.get("/api/bookmarks/0/secret").get_json()["bookmark"]["fields"][0]
+        field.pop("body")           # 客户端只改了 header，没带 body
+        resp = self.c.put("/api/bookmarks/0", json={
+            "name": "POST 站", "url": "https://p.example", "fields": [field]})
+        self.assertTrue(resp.get_json()["ok"], resp.get_json())
+        self.assertEqual(self.read_config()["bookmarks"][0]["fields"][0]["body"], '{"q":1}')
+
+    def test_explicit_null_body_still_clears_it(self):
+        self.write_config(self._post_field_store())
+        field = self.c.get("/api/bookmarks/0/secret").get_json()["bookmark"]["fields"][0]
+        field["body"] = None        # 明确要求清空
+        self.assertTrue(self.c.put("/api/bookmarks/0", json={
+            "name": "POST 站", "url": "https://p.example", "fields": [field]}).get_json()["ok"])
+        self.assertIsNone(self.read_config()["bookmarks"][0]["fields"][0]["body"])
+
+    def test_a_brand_new_field_has_no_body_to_inherit(self):
+        self.write_config(self._post_field_store())
+        resp = self.c.put("/api/bookmarks/0", json={"name": "POST 站", "url": "https://p.example", "fields": [{
+            "label": "新字段", "type": "raw", "method": "GET",
+            "url": "https://api.p.example/x", "headers": {}, "json_path": "a"}]})
+        self.assertTrue(resp.get_json()["ok"], resp.get_json())
+        self.assertIsNone(self.read_config()["bookmarks"][0]["fields"][0]["body"])
+
+
 class LinkEditTest(EditFlowBase):
     """网址：没有凭据，列表本身就是可编辑的全量数据。"""
 

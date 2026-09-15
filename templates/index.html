@@ -498,9 +498,23 @@
       });
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
       if (updateHash) history.replaceState(null, '', name === 'bookmarks' ? libHash() : '#' + name);
-      if (name === 'history') loadHistory();
-      if (name === 'settings') loadDiagnostics();
+      // 仅在数据就绪后才触发页面自带的加载动作。initRoute() 在脚本顶部就会调用
+      // switchView，那时 STATE 还是默认值（canEdit() 恒为 true），而且下方的
+      // 常量都还没初始化——直接调 loadHistory / loadDiagnostics 会读到未初始化的
+      // const（TDZ ReferenceError），或者用错误的解锁状态发出请求。
+      // 首次加载由 loadConfigs() 结束时的 refreshActiveView() 统一补上。
+      if (STATE_LOADED) refreshActiveView(name);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // 切到某个页面时它自己要拉的数据。集中在这里，免得 switchView 直接引用
+    // 声明在文件更下方的函数与常量。
+    function refreshActiveView(name) {
+      if (name === 'history') loadHistory();
+      else if (name === 'settings') loadDiagnostics();
+    }
+    function currentViewName() {
+      const view = document.querySelector('.view.active');
+      return view ? view.id.replace('view-', '') : '';
     }
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => switchView(tab.dataset.view)));
     (function initRoute() {
@@ -740,6 +754,9 @@
         renderLibrary();
         renderSettings();
         renderCheckinCards();
+        // 首次加载时 initRoute() 已经把视图切好了，但那时 STATE 还没到位，
+        // 页面自带的加载动作被跳过了——这里按当前所在页面补上。
+        refreshActiveView(currentViewName());
         // 分享 / 书签小工具带来的参数要等分组与解锁状态就绪后才能处理。
         if (!SHARE_HANDLED) { SHARE_HANDLED = true; consumeShareParams(); }
       } catch (e) { toast('加载配置失败：' + e.message, 'err'); }
@@ -758,10 +775,7 @@
         if (tab) tab.hidden = !show;
       });
       // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库。
-      if (!show) {
-        const current = document.querySelector('.view.active');
-        if (current && ADMIN_VIEWS.includes(current.id.replace('view-', ''))) switchView('bookmarks');
-      }
+      if (!show && ADMIN_VIEWS.includes(currentViewName())) switchView('bookmarks');
     }
 
     function renderConfigs() {
@@ -2508,7 +2522,11 @@
     // ===== PWA =====
     // Service Worker 从 /sw.js 提供（作用域必须是 /，放在 /static/ 下拿不到根作用域）。
     // 只缓存应用外壳，接口一律不碰——细节见 static/sw.js 顶部注释。
-    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    // 浏览器只在安全上下文里允许注册 SW。https 之外，localhost / 127.0.0.1 也算安全上下文——
+    // 漏掉它们会让本地 http 部署永远装不上离线外壳，也没法在本地验证缓存策略。
+    const SECURE_CONTEXT = location.protocol === 'https:'
+      || ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+    if ('serviceWorker' in navigator && SECURE_CONTEXT) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
       });

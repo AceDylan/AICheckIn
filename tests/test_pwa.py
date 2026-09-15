@@ -105,6 +105,13 @@ class ServiceWorkerTest(unittest.TestCase):
     def test_precache_failure_does_not_break_install(self):
         self.assertIn("cache.add(url).catch(", self.source)
 
+    def test_offline_miss_returns_a_real_response(self):
+        # respondWith(undefined) 会抛 TypeError，控制台里看到的是一个和「断网」
+        # 无关的报错，徒增排查成本。
+        self.assertIn("function offlineResponse()", self.source)
+        self.assertIn("cached || offlineResponse()", self.source)
+        self.assertIn("r || offlineResponse()", self.source)
+
     @unittest.skipIf(NODE is None, "未安装 node，跳过语法检查")
     def test_parses(self):
         proc = subprocess.run([NODE, "--check", SW_PATH], capture_output=True, text=True)
@@ -120,9 +127,12 @@ class RegistrationTest(unittest.TestCase):
     def test_registers_the_root_scoped_worker(self):
         self.assertIn("navigator.serviceWorker.register('/sw.js')", self.html)
 
-    def test_registration_is_https_only(self):
-        # http 下浏览器本来就不给注册（localhost 除外），显式判断免得控制台刷错。
+    def test_registration_covers_every_secure_context(self):
+        # 浏览器只在安全上下文里允许注册；https 之外 localhost / 127.0.0.1 也算，
+        # 漏掉它们会让本地 http 部署永远装不上离线外壳。
         self.assertIn("location.protocol === 'https:'", self.html)
+        for host in ("'localhost'", "'127.0.0.1'", "'[::1]'"):
+            self.assertIn(host, self.html)
 
     def test_install_prompt_is_opt_in_and_remembered(self):
         self.assertIn("beforeinstallprompt", self.html)
