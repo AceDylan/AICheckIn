@@ -2031,6 +2031,52 @@ def normalize_link_groups(raw):
     return groups
 
 
+def link_dedupe_key(url):
+    """网址查重用的归一化键。
+
+    忽略协议、`www.` 前缀、默认端口与结尾斜杠——同一个站点被记成两条多半是因为
+    抄来的链接协议或尾斜杠不同。查询串保留（`?tab=a` 与 `?tab=b` 是两个页面），
+    片段（#...）丢弃。无法解析时回落到原串，宁可漏判也不误判成重复。
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        return raw.lower()
+    if not host:
+        return raw.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    default_port = 80 if parsed.scheme == "http" else (443 if parsed.scheme == "https" else None)
+    key = host if port in (None, default_port) else "{0}:{1}".format(host, port)
+    key += (parsed.path or "").rstrip("/")
+    if parsed.query:
+        key += "?" + parsed.query
+    return key
+
+
+def find_duplicate_links(store, url, skip_id=None):
+    """返回 store 里与 url 同指一处的既有链接：[{group_id, group_name, link_id, name, url}]。"""
+    key = link_dedupe_key(url)
+    if not key:
+        return []
+    hits = []
+    for group in store.get("link_groups") or []:
+        for link in group.get("links") or []:
+            if skip_id and link.get("id") == skip_id:
+                continue
+            if link_dedupe_key(link.get("url")) == key:
+                hits.append({
+                    "group_id": group.get("id"), "group_name": group.get("name"),
+                    "link_id": link.get("id"), "name": link.get("name"), "url": link.get("url"),
+                })
+    return hits
+
+
 def _find_group(store, gid):
     for i, g in enumerate(store.get("link_groups") or []):
         if g.get("id") == gid:
@@ -2169,19 +2215,25 @@ def api_link_create(gid):
         return jsonify({"ok": False, "error": "单个分组最多 {0} 条链接".format(MAX_LINKS_PER_GROUP)}), 400
     taken = {l["id"] for l in group["links"]}
     created = []
+    # 重复提示在写入前算，否则新加的这几条会跟自己撞上。不拦截——同一网址收进
+    # 两个分组有时是刻意的，只把事实告诉前端，由用户决定。
+    duplicates = []
     for i, raw in enumerate(raw_links):
         try:
             link = clean_link(raw, None, taken)
         except ValueError as exc:
             prefix = "第 {0} 条：".format(i + 1) if len(raw_links) > 1 else ""
             return jsonify({"ok": False, "error": prefix + str(exc)}), 400
+        hits = find_duplicate_links(store, link["url"])
+        if hits:
+            duplicates.append({"url": link["url"], "name": link["name"], "existing": hits})
         taken.add(link["id"])
         created.append(link)
     group["links"].extend(created)
     err = _save_store_or_error(store)
     if err:
         return err
-    return _link_groups_response(store, links=created, group_id=gid)
+    return _link_groups_response(store, links=created, group_id=gid, duplicates=duplicates)
 
 
 @app.put("/api/link_groups/<gid>/links/<lid>")
@@ -2210,6 +2262,8 @@ def api_link_update(gid, lid):
         updated = clean_link(merged, existing=link)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+    # 改网址后可能撞上别处已有的同一站点；同样只提示不拦截（排除自己）。
+    duplicates = find_duplicate_links(store, updated["url"], skip_id=lid)
     if target is group:
         group["links"][lpos] = updated
     else:
@@ -2222,7 +2276,7 @@ def api_link_update(gid, lid):
     err = _save_store_or_error(store)
     if err:
         return err
-    return _link_groups_response(store, link=updated, group_id=target_gid)
+    return _link_groups_response(store, link=updated, group_id=target_gid, duplicates=duplicates)
 
 
 @app.delete("/api/link_groups/<gid>/links/<lid>")

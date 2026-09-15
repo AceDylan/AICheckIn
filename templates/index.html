@@ -205,7 +205,9 @@
         <div class="mode-toggle" id="linkModeToggle"><button type="button" data-mode="single" class="active">单条</button><button type="button" data-mode="bulk">批量粘贴</button></div>
       </div>
       <div id="linkSingle">
-        <div class="field"><label>网址 *</label><input class="input" id="lk_url" placeholder="https://example.com（可省略 https://）" autocomplete="off" inputmode="url"></div>
+        <div class="field"><label>网址 *</label><input class="input" id="lk_url" placeholder="https://example.com（可省略 https://）" autocomplete="off" inputmode="url">
+          <div class="dup-hint" id="lk_dup" hidden></div>
+        </div>
         <div class="field"><label>名称</label><input class="input" id="lk_name" placeholder="留空则用域名" maxlength="60"></div>
         <div class="field"><label>描述</label><input class="input" id="lk_desc" placeholder="一句话说明用途（可选）" maxlength="160"></div>
         <div class="row-2">
@@ -219,7 +221,15 @@
       </div>
       <div id="linkBulk" hidden>
         <div class="field"><label>每行一条：网址，或「名称 | 网址」，或「名称 网址」</label><textarea class="input mono" id="lk_bulk" rows="7" placeholder="Grafana | https://grafana.example.com&#10;https://docs.example.com&#10;内部 Wiki https://wiki.example.com"></textarea></div>
-        <div class="field"><label>目标分组</label><select class="input" id="lk_bulk_group"></select></div>
+        <div class="row-2">
+          <div class="field"><label>目标分组</label><select class="input" id="lk_bulk_group"></select></div>
+          <div class="field"><label>重复处理</label>
+            <div class="switch-row" style="min-height:40px">
+              <label class="switch"><input type="checkbox" id="lk_skip_dup" checked><span class="slider"></span></label>
+              <span class="note">跳过收藏库里已有的网址</span>
+            </div>
+          </div>
+        </div>
         <div class="preview-list" id="lk_preview" hidden></div>
       </div>
       <div id="lk_error" class="error" style="display:none"></div>
@@ -1565,6 +1575,54 @@
       if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#].*)?$/i.test(v) || /^(localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:[/?#].*)?$/i.test(v)) return 'https://' + v;
       return v;
     }
+    // 网址查重：与后端 link_dedupe_key 保持同一套归一化规则
+    // （忽略协议 / www. / 默认端口 / 结尾斜杠，保留查询串，丢弃片段）。
+    function dedupeKey(url) {
+      const raw = String(url || '').trim();
+      if (!raw) return '';
+      let u;
+      try { u = new URL(raw); } catch (_) { return raw.toLowerCase(); }
+      let host = (u.hostname || '').toLowerCase();
+      if (!host) return raw.toLowerCase();
+      if (host.startsWith('www.')) host = host.slice(4);
+      const defaultPort = u.protocol === 'http:' ? '80' : (u.protocol === 'https:' ? '443' : '');
+      let key = (!u.port || u.port === defaultPort) ? host : `${host}:${u.port}`;
+      key += (u.pathname || '').replace(/\/+$/, '');
+      if (u.search) key += u.search;
+      return key;
+    }
+    // 在全部分组里找同指一处的既有网址；skipId 用于编辑时排除自己。
+    function findDuplicates(url, skipId) {
+      const key = dedupeKey(url);
+      if (!key) return [];
+      const hits = [];
+      for (const g of libGroups()) {
+        for (const l of g.links || []) {
+          if (skipId && l.id === skipId) continue;
+          if (dedupeKey(l.url) === key) hits.push({ group: g, link: l });
+        }
+      }
+      return hits;
+    }
+    // 单条模式的即时提示：只提醒、不阻止保存——同一网址收进两个分组有时是刻意的。
+    function refreshDupHint() {
+      const box = $('lk_dup');
+      const hits = findDuplicates(normalizeUrlInput($('lk_url').value), linkEdit.lid);
+      if (!hits.length) { box.hidden = true; box.innerHTML = ''; return; }
+      const where = hits.slice(0, 3).map(h =>
+        `<button type="button" class="dup-jump" data-dup-group="${escapeHtml(h.group.id)}">「${escapeHtml(h.group.name)}」· ${escapeHtml(h.link.name)}</button>`).join('、');
+      box.hidden = false;
+      box.innerHTML = `${icon('inbox')}<span>这个网址已经收藏过：${where}${hits.length > 3 ? ` 等 ${hits.length} 处` : ''}。仍可继续保存。</span>`;
+    }
+    $('lk_url').addEventListener('input', refreshDupHint);
+    $('lk_dup').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-dup-group]');
+      if (!btn) return;
+      $('linkModal').classList.remove('show');
+      switchView('bookmarks');
+      openLibPage(btn.dataset.dupGroup);
+    });
+
     // 批量文本解析：每行「网址」/「名称 | 网址」/「名称 网址」。
     function parseBulk(text) {
       return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(line => {
@@ -1610,6 +1668,8 @@
       fillGroupSelect($('lk_bulk_group'), g.id);
       $('lk_bulk').value = '';
       $('lk_preview').hidden = true;
+      $('lk_skip_dup').checked = true;
+      refreshDupHint();
       setLinkMode(l ? 'single' : (mode || 'single'));
       $('linkModal').classList.add('show');
       (linkEdit.mode === 'bulk' ? $('lk_bulk') : $('lk_url')).focus();
@@ -1618,15 +1678,43 @@
     $('addLinkBtn').addEventListener('click', () => openLinkModal(LIB.page, null, 'single'));
     $('linkCancel').addEventListener('click', () => $('linkModal').classList.remove('show'));
     $('linkModeToggle').addEventListener('click', (e) => { const b = e.target.closest('button[data-mode]'); if (b) setLinkMode(b.dataset.mode); });
-    $('lk_bulk').addEventListener('input', () => {
+    // 批量预览：逐行标出「可导入 / 无效 / 已存在」，并在行内点明重复落在哪个分组。
+    function bulkRows() {
       const rows = parseBulk($('lk_bulk').value);
+      const seen = new Set();
+      for (const r of rows) {
+        if (!r.ok) continue;
+        const key = dedupeKey(r.url);
+        r.dup = findDuplicates(r.url);
+        // 同一次粘贴里自己重复的行也算重复，避免一次导入就造出两条。
+        if (seen.has(key)) r.dupInBatch = true;
+        seen.add(key);
+      }
+      return rows;
+    }
+    function renderBulkPreview() {
+      const rows = bulkRows();
       const box = $('lk_preview');
       if (!rows.length) { box.hidden = true; return; }
+      const skipDup = $('lk_skip_dup').checked;
+      const isDup = (r) => r.ok && ((r.dup && r.dup.length) || r.dupInBatch);
+      const importable = rows.filter(r => r.ok && !(skipDup && isDup(r)));
+      const dupCount = rows.filter(isDup).length;
       box.hidden = false;
-      const okCount = rows.filter(r => r.ok).length;
-      box.innerHTML = `<div><b>${okCount} / ${rows.length} 行可导入</b></div>` + rows.slice(0, 40).map(r =>
-        `<div class="${r.ok ? 'ok' : 'bad'}">${r.ok ? '✓' : '✕'} ${escapeHtml(r.name || siteHost(r.url) || '')} <span style="color:var(--text-3)">${escapeHtml(r.url)}</span></div>`).join('');
-    });
+      let head = `<div><b>${importable.length} / ${rows.length} 行将导入</b>`;
+      if (dupCount) head += `<span style="color:var(--text-3)"> · ${dupCount} 行已存在${skipDup ? '（将跳过）' : '（仍会添加）'}</span>`;
+      head += '</div>';
+      box.innerHTML = head + rows.slice(0, 40).map(r => {
+        if (!r.ok) return `<div class="bad">✕ ${escapeHtml(r.name || r.url || '')} <span style="color:var(--text-3)">无法识别为网址</span></div>`;
+        if (isDup(r)) {
+          const where = r.dupInBatch ? '本次粘贴中重复' : `已在「${escapeHtml(r.dup[0].group.name)}」`;
+          return `<div class="dup">⟳ ${escapeHtml(r.name || siteHost(r.url))} <span style="color:var(--text-3)">${where}</span></div>`;
+        }
+        return `<div class="ok">✓ ${escapeHtml(r.name || siteHost(r.url) || '')} <span style="color:var(--text-3)">${escapeHtml(r.url)}</span></div>`;
+      }).join('');
+    }
+    $('lk_bulk').addEventListener('input', renderBulkPreview);
+    $('lk_skip_dup').addEventListener('change', renderBulkPreview);
     function showLinkError(msg) { $('lk_error').textContent = msg; $('lk_error').style.display = 'block'; }
     $('linkSave').addEventListener('click', async () => {
       $('lk_error').style.display = 'none';
@@ -1634,14 +1722,23 @@
       btn.classList.add('is-loading');
       try {
         if (linkEdit.mode === 'bulk') {
-          const rows = parseBulk($('lk_bulk').value);
-          const good = rows.filter(r => r.ok);
-          if (!good.length) { showLinkError('没有可导入的行：每行需包含 http(s):// 网址或域名'); return; }
+          const rows = bulkRows();
+          const skipDup = $('lk_skip_dup').checked;
+          const isDup = (r) => r.ok && ((r.dup && r.dup.length) || r.dupInBatch);
+          const good = rows.filter(r => r.ok && !(skipDup && isDup(r)));
+          if (!good.length) {
+            const anyDup = rows.some(isDup);
+            showLinkError(anyDup && skipDup
+              ? '这些网址都已经收藏过了；关掉「跳过已有」才会重复添加。'
+              : '没有可导入的行：每行需包含 http(s):// 网址或域名');
+            return;
+          }
           const target = $('lk_bulk_group').value;
           const data = await linkApi(`/api/link_groups/${target}/links`, 'POST', { links: good.map(r => ({ name: r.name, url: r.url })) });
           if (!data.ok) { showLinkError(data.error || '批量添加失败'); return; }
           $('linkModal').classList.remove('show');
-          toast(`已添加 ${good.length} 条${rows.length > good.length ? `，跳过 ${rows.length - good.length} 行无效内容` : ''}`, 'ok');
+          const skipped = rows.length - good.length;
+          toast(`已添加 ${good.length} 条${skipped ? `，跳过 ${skipped} 行（无效或已存在）` : ''}`, 'ok');
           openLibPage(target);
           return;
         }

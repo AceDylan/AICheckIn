@@ -518,6 +518,18 @@ details > summary::-webkit-details-marker { display: none; }
 .preview-list div { display: flex; gap: 8px; padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-list .ok { color: var(--success); }
 .preview-list .bad { color: var(--danger); }
+.preview-list .dup { color: var(--warning); }
+/* 网址重复提示：黄色而非红色——重复不是错误，只是提醒。 */
+.dup-hint {
+  display: flex; align-items: flex-start; gap: 7px; margin-top: 7px; padding: 7px 10px;
+  border-radius: 10px; background: var(--warning-soft); color: var(--warning);
+  font-size: 11.5px; line-height: 1.55;
+}
+.dup-hint .ic { flex: 0 0 auto; width: 14px; height: 14px; margin-top: 2px; }
+.dup-jump {
+  padding: 0; border: 0; background: none; color: inherit;
+  font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
 .suggest-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .suggest-row button { min-height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-2); font-size: 11px; cursor: pointer; }
 .suggest-row button:hover { border-color: var(--accent); color: var(--accent); }
