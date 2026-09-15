@@ -1956,9 +1956,14 @@ def api_configs():
         pc["checked_in_today"] = bool(snap and snap.get("last_checkin_date") == today)
         configs_out.append(pc)
     proxy_url = str(store.get("proxy_url") or "")
+    # 签到现在完全是管理功能（执行、历史、编辑都要解锁），账号清单对未解锁访客
+    # 已经没有任何用处——留着只是白白暴露平台名、base_url、user_id 与额度。
+    # 未设管理密码时不生效，本地 / 内网部署行为不变。
+    configs_hidden = bool(ADMIN_PASSWORD) and not unlocked
     return jsonify({
         "ok": True,
-        "configs": configs_out,
+        "configs": [] if configs_hidden else configs_out,
+        "configs_hidden": configs_hidden,
         # 仅收藏不签到的站点：只下发展示所需字段，接口配置与凭据不出现在开放接口里。
         "bookmarks": [public_bookmark(b) for b in store.get("bookmarks") or []],
         "link_groups": list(store.get("link_groups", [])),  # 收藏库子页面（网址分组）。

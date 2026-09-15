@@ -735,6 +735,7 @@
         }
         // 配置数量变化（增删/导入）会打乱结果索引对齐，重置本次结果。
         if (RESULTS.length !== STATE.configs.length) RESULTS = [];
+        syncAdminViews();
         renderConfigs();
         renderLibrary();
         renderSettings();
@@ -745,6 +746,23 @@
     }
 
     function canEdit() { return !STATE.admin_required || STATE.admin_unlocked; }
+
+    // 签到中心 / 服务配置 / 运行记录都是纯管理功能，未解锁时整页都点不动，
+    // 留在导航里只会让人白点一遍再看见「请先解锁」。直接收起来，
+    // 未解锁的首页就是一个干净的收藏库。
+    const ADMIN_VIEWS = ['checkin', 'configs', 'history'];
+    function syncAdminViews() {
+      const show = canEdit();
+      ADMIN_VIEWS.forEach(name => {
+        const tab = document.querySelector(`.tab[data-view="${name}"]`);
+        if (tab) tab.hidden = !show;
+      });
+      // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库。
+      if (!show) {
+        const current = document.querySelector('.view.active');
+        if (current && ADMIN_VIEWS.includes(current.id.replace('view-', ''))) switchView('bookmarks');
+      }
+    }
 
     function renderConfigs() {
       const list = $('cfgList'), empty = $('cfgEmpty');

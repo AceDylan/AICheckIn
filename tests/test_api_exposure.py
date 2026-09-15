@@ -91,24 +91,50 @@ class ConfigsMaskingTest(ExposureTestBase):
         self.assertTrue(field["enabled"])
         self.assertTrue(field["has_request"])
 
-    def test_checkin_token_is_masked_and_turnstile_gated(self):
-        locked = self.client.get("/api/configs").get_json()["configs"][0]
-        self.assertNotIn(CHECKIN_TOKEN, locked["token_masked"])
-        self.assertTrue(locked["has_token"])
-        # 未解锁时连首尾片段都不给：那对撞库是有用的信息，且掩码长度固定，
-        # 免得从掩码反推出 token 长度。
-        self.assertEqual(locked["token_masked"], app_module.OPAQUE_TOKEN_MASK)
-        self.assertNotIn(CHECKIN_TOKEN[:4], locked["token_masked"])
-        self.assertNotIn(CHECKIN_TOKEN[-4:], locked["token_masked"])
-        # 解锁后给首尾各 4 位，便于在多组配置里认出是哪一个。
-        revealed = self.unlocked().get("/api/configs").get_json()["configs"][0]["token_masked"]
-        self.assertTrue(revealed.startswith(CHECKIN_TOKEN[:4]))
-        self.assertTrue(revealed.endswith(CHECKIN_TOKEN[-4:]))
-        self.assertNotIn(CHECKIN_TOKEN, revealed)
-        self.assertEqual(locked["turnstile"], "")
-        self.assertTrue(locked["has_turnstile"])
-        # 解锁后 turnstile 原文回填，编辑弹窗不会把已有值清空。
-        self.assertEqual(self.unlocked().get("/api/configs").get_json()["configs"][0]["turnstile"], TURNSTILE)
+    def test_account_list_is_withheld_until_unlocked(self):
+        # 签到已完全是管理功能，账号清单对未解锁访客没有任何用处，
+        # 留着只会白白暴露平台名 / base_url / user_id / 额度。
+        locked = self.client.get("/api/configs").get_json()
+        self.assertEqual(locked["configs"], [])
+        self.assertTrue(locked["configs_hidden"])
+        blob = self.client.get("/api/configs").get_data(as_text=True)
+        for leak in ("签到站", "cfg.example", "42"):
+            self.assertNotIn(leak, blob)
+
+    def test_account_list_comes_back_when_unlocked(self):
+        data = self.unlocked().get("/api/configs").get_json()
+        self.assertFalse(data["configs_hidden"])
+        cfg = data["configs"][0]
+        self.assertEqual(cfg["name"], "签到站")
+        # 解锁后 token 给首尾各 4 位，便于在多组配置里认出是哪一个。
+        self.assertTrue(cfg["token_masked"].startswith(CHECKIN_TOKEN[:4]))
+        self.assertTrue(cfg["token_masked"].endswith(CHECKIN_TOKEN[-4:]))
+        self.assertNotIn(CHECKIN_TOKEN, cfg["token_masked"])
+        self.assertEqual(cfg["turnstile"], TURNSTILE)
+
+    def test_open_deployment_still_lists_accounts(self):
+        # 未设管理密码（本地 / 内网）时行为不变。
+        orig = app_module.ADMIN_PASSWORD
+        app_module.ADMIN_PASSWORD = ""
+        try:
+            data = self.client.get("/api/configs").get_json()
+            self.assertFalse(data["configs_hidden"])
+            self.assertEqual(len(data["configs"]), 1)
+        finally:
+            app_module.ADMIN_PASSWORD = orig
+
+    def test_public_config_masks_tokens_without_revealing_a_prefix(self):
+        # public_config 是通用的脱敏视图（列表之外也会用到）：未授权视角下
+        # 连首尾片段都不该给——那对撞库是有用的信息，且掩码长度固定，
+        # 免得从掩码长度反推出 token 长度。
+        masked = app_module.public_config(CONFIG, reveal=False)
+        self.assertEqual(masked["token_masked"], app_module.OPAQUE_TOKEN_MASK)
+        self.assertNotIn(CHECKIN_TOKEN[:4], masked["token_masked"])
+        self.assertNotIn(CHECKIN_TOKEN[-4:], masked["token_masked"])
+        self.assertTrue(masked["has_token"])
+        self.assertEqual(masked["turnstile"], "")
+        self.assertTrue(masked["has_turnstile"])
+        self.assertEqual(app_module.mask_token("", reveal=False), "")
 
     def test_proxy_url_is_hidden_until_unlocked(self):
         locked = self.client.get("/api/configs").get_json()
@@ -286,6 +312,17 @@ class FrontendWiringTest(ExposureTestBase):
         start = self.html.index("async function loadHistory")
         body = self.html[start:start + 500]
         self.assertIn("canEdit()", body)
+
+    def test_admin_only_tabs_are_hidden_until_unlocked(self):
+        # 三个页面未解锁时整页都点不动，留在导航里只会让人白点一遍。
+        self.assertIn("const ADMIN_VIEWS = ['checkin', 'configs', 'history']", self.html)
+        self.assertIn("function syncAdminViews", self.html)
+        self.assertIn("tab.hidden = !show", self.html)
+
+    def test_leaving_a_hidden_tab_falls_back_to_the_library(self):
+        # 会话过期时用户可能正停在被收起的页面上。
+        start = self.html.index("function syncAdminViews")
+        self.assertIn("switchView('bookmarks')", self.html[start:start + 700])
 
 
 if __name__ == "__main__":
