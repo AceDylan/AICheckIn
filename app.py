@@ -1037,11 +1037,22 @@ def _apply_balance_to_bookmark(bookmark, proxy_url):
     return True, bookmark.get("balance") or results[0].get("value")
 
 
-def mask_token(token):
-    """token 脱敏：保留首尾各 4 位。"""
+# 完全不透露内容的占位掩码：长度也固定，免得从掩码长度反推出 token 长度。
+OPAQUE_TOKEN_MASK = "•" * 8
+
+
+def mask_token(token, reveal=False):
+    """token 脱敏。
+
+    reveal=True（已通过管理鉴权）时保留首尾各 4 位，便于在多组配置里认出是哪一个。
+    未解锁的访客只拿到固定长度的占位符——给路人看 8 个真实字符没有任何必要，
+    而且首尾片段对撞库是有用的信息。
+    """
     token = str(token or "")
     if not token:
         return ""
+    if not reveal:
+        return OPAQUE_TOKEN_MASK
     if len(token) <= 8:
         return "•" * len(token)
     return "{0}…{1}".format(token[:4], token[-4:])
@@ -1057,7 +1068,7 @@ def public_config(item, reveal=False):
         "base_url": item.get("base_url", ""),
         "user_id": item.get("user_id", ""),
         "enabled": bool(item.get("enabled", True)),
-        "token_masked": mask_token(item.get("access_token", "")),
+        "token_masked": mask_token(item.get("access_token", ""), reveal=reveal),
         "has_token": bool(item.get("access_token")),
         "has_turnstile": bool(str(item.get("turnstile") or "").strip()),
     }
@@ -1775,7 +1786,7 @@ def api_configs():
             "retry_limit": SCHEDULE_RETRY_LIMIT,
             "retry_delay_minutes": SCHEDULE_RETRY_DELAY_MIN,
             # 今天还没签成功的启用配置数：>0 且未用完重试次数时，后台还会自动补签。
-            "pending_today": len(pending_configs(store)) if schedule.get("enabled") else 0,
+            "pending_today": len(pending_configs(store, metrics)) if schedule.get("enabled") else 0,
         },
         "refresh": {
             "enabled": bool(refresh.get("enabled")),
@@ -3216,14 +3227,17 @@ def _scheduler_tick():
         })
 
 
-def pending_configs(store):
+def pending_configs(store, metrics=None):
     """今天还没签到成功的启用配置。
 
     判据用指标快照里的 last_checkin_date，而不是上一轮的 results 数组——
     快照按 base_url|user_id 索引，配置增删改排序都不会错位，当天晚些时候
     新加的配置也会被自然带上。
+
+    metrics 可由调用方传入，避免同一次请求里重复读盘。
     """
-    metrics = read_metrics()
+    if metrics is None:
+        metrics = read_metrics()
     today = _today_str()
     pending = []
     for cfg in store.get("configs") or []:

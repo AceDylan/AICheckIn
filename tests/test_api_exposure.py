@@ -95,6 +95,16 @@ class ConfigsMaskingTest(ExposureTestBase):
         locked = self.client.get("/api/configs").get_json()["configs"][0]
         self.assertNotIn(CHECKIN_TOKEN, locked["token_masked"])
         self.assertTrue(locked["has_token"])
+        # 未解锁时连首尾片段都不给：那对撞库是有用的信息，且掩码长度固定，
+        # 免得从掩码反推出 token 长度。
+        self.assertEqual(locked["token_masked"], app_module.OPAQUE_TOKEN_MASK)
+        self.assertNotIn(CHECKIN_TOKEN[:4], locked["token_masked"])
+        self.assertNotIn(CHECKIN_TOKEN[-4:], locked["token_masked"])
+        # 解锁后给首尾各 4 位，便于在多组配置里认出是哪一个。
+        revealed = self.unlocked().get("/api/configs").get_json()["configs"][0]["token_masked"]
+        self.assertTrue(revealed.startswith(CHECKIN_TOKEN[:4]))
+        self.assertTrue(revealed.endswith(CHECKIN_TOKEN[-4:]))
+        self.assertNotIn(CHECKIN_TOKEN, revealed)
         self.assertEqual(locked["turnstile"], "")
         self.assertTrue(locked["has_turnstile"])
         # 解锁后 turnstile 原文回填，编辑弹窗不会把已有值清空。
