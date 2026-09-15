@@ -57,6 +57,10 @@ ADMIN_PASSWORD = os.environ.get("GYQD_ADMIN_PASSWORD", "").strip()
 # 是否启用后台定时调度线程。
 SCHEDULER_ENABLED = os.environ.get("GYQD_SCHEDULER", "1") == "1"
 
+# 私密模式：连「只读浏览」也要先解锁。默认关闭——首页本来就是设计给人直接打开的
+# 收藏导航页。公网部署若不想让路人看到自建服务的地址与站点清单，设 GYQD_PRIVATE=1。
+PRIVATE_MODE = os.environ.get("GYQD_PRIVATE", "0") == "1"
+
 # 请求体上限：没有上限时，一个几百 MB 的 JSON 就能把单 worker 的内存吃光。
 # 导入整份配置是这里最大的合法载荷，4 MB 绰绰有余。
 MAX_REQUEST_BYTES = max(64 * 1024, int(os.environ.get("GYQD_MAX_REQUEST_BYTES", str(4 * 1024 * 1024))))
@@ -71,6 +75,9 @@ if not ADMIN_PASSWORD:
         "任何访问者都能编辑配置、查看真实 token、执行签到并读取运行历史。"
         "公网部署请立即设置（见 SECURITY.md）\n"
     )
+    if PRIVATE_MODE:
+        # 私密模式靠管理密码兜底，没有密码就无从校验，只能当作未开启。
+        sys.stderr.write("[gyqd-web] 警告：GYQD_PRIVATE=1 但未设置管理密码，私密模式不生效\n")
 elif len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
     sys.stderr.write(
         "[gyqd-web] 警告：GYQD_ADMIN_PASSWORD 短于 {0} 位，公网上容易被爆破。"
@@ -1488,6 +1495,33 @@ CONTENT_SECURITY_POLICY = (
 HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 
 
+# 私密模式下仍然开放的端点：
+#  - index / static / service_worker：应用外壳本身，不含任何数据，解锁界面要靠它渲染；
+#  - health：容器 HEALTHCHECK 在调，堵掉会让容器被判定为不健康；
+#  - api_auth / api_logout：解锁与锁定的入口，堵掉就没法解锁了；
+#  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截。
+_PRIVATE_OPEN_ENDPOINTS = frozenset({
+    "index", "static", "service_worker", "health", "api_auth", "api_logout", "api_configs",
+})
+
+
+def private_mode_active():
+    """私密模式是否真的生效：没有管理密码时无从校验，视为未开启。"""
+    return PRIVATE_MODE and bool(ADMIN_PASSWORD)
+
+
+@app.before_request
+def enforce_private_mode():
+    """私密模式：未解锁时连只读接口也不给，避免公网路人看到站点清单与自建服务地址。"""
+    if not private_mode_active():
+        return None
+    if request.endpoint in _PRIVATE_OPEN_ENDPOINTS:
+        return None
+    if admin_ok():
+        return None
+    return _guard_admin()
+
+
 def _wants_json():
     """/api/* 一律回 JSON；页面路由保持 Flask 默认的 HTML 错误页。"""
     return request.path.startswith("/api/")
@@ -1695,6 +1729,18 @@ def api_configs():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     unlocked = admin_ok()
+    # 私密模式未解锁：回一个不含任何数据的空壳，让页面能渲染出解锁面板，
+    # 而不是把用户怼到一个 403 的白屏上。
+    if private_mode_active() and not unlocked:
+        return jsonify({
+            "ok": True, "private": True, "locked": True,
+            "configs": [], "bookmarks": [], "link_groups": [],
+            "proxy_url": "", "proxy_configured": False,
+            "schedule": {"enabled": False, "time": "08:30", "last_run_time": None, "last_run_date": None},
+            "refresh": {"enabled": False, "interval_minutes": DEFAULT_REFRESH_INTERVAL,
+                        "last_run_time": "", "intervals": list(REFRESH_INTERVALS)},
+            "admin_required": True, "admin_unlocked": False, "scheduler_running": SCHEDULER_ENABLED,
+        })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
     metrics = read_metrics()
@@ -1731,6 +1777,8 @@ def api_configs():
         "admin_required": bool(ADMIN_PASSWORD),
         "admin_unlocked": unlocked,
         "scheduler_running": SCHEDULER_ENABLED,
+        "private": private_mode_active(),
+        "locked": False,
     })
 
 

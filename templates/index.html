@@ -296,6 +296,7 @@
   <script>
     // ===== 全局状态 =====
     let STATE = { configs: [], bookmarks: [], link_groups: [], proxy_url: '', schedule: {}, admin_required: false, admin_unlocked: true };
+    let PRIVATE_PROMPTED = false;   // 私密模式的解锁引导每次加载只跳一次，别反复抢焦点
     let STATE_LOADED = false;
     let RESULTS = [];  // 与 configs 同序的本次签到结果；未签到项为空，回退到持久化指标快照。
     const $ = (id) => document.getElementById(id);
@@ -707,6 +708,17 @@
         STATE = data;
         STATE.link_groups = Array.isArray(STATE.link_groups) ? STATE.link_groups : [];
         STATE_LOADED = true;
+        // 私密模式未解锁：后端只回了个空壳，把人直接带到解锁入口，别让他对着空页面发呆。
+        if (STATE.private && STATE.locked) {
+            if (!PRIVATE_PROMPTED) {
+                PRIVATE_PROMPTED = true;
+                switchView('settings');
+                const pwd = $('adminPwd');
+                if (pwd) { pwd.focus(); }
+            }
+        } else {
+            PRIVATE_PROMPTED = false;
+        }
         // 配置数量变化（增删/导入）会打乱结果索引对齐，重置本次结果。
         if (RESULTS.length !== STATE.configs.length) RESULTS = [];
         renderConfigs();
@@ -2059,7 +2071,7 @@
     function renderLockPill() {
       const pill = $('lockPill');
       if (!STATE.admin_required) { pill.innerHTML = `${icon('unlock')}<span>开放编辑</span>`; pill.className = 'lock-pill is-open'; pill.title = '未设置管理密码，任何人都可编辑'; return; }
-      if (STATE.admin_unlocked) { pill.innerHTML = `${icon('unlock')}<span>已解锁 · 可编辑</span>`; pill.className = 'lock-pill is-open'; pill.title = '点击前往系统设置可锁定'; }
+      if (STATE.admin_unlocked) { pill.innerHTML = `${icon('unlock')}<span>已解锁 · 可编辑</span>`; pill.className = 'lock-pill is-open'; pill.title = STATE.private ? '私密模式：锁定后整站不可见' : '点击前往系统设置可锁定'; }
       else { pill.innerHTML = `${icon('lock')}<span>只读 · 点击解锁</span>`; pill.className = 'lock-pill'; pill.title = '输入管理密码后可编辑'; }
     }
     $('lockPill').addEventListener('click', () => { switchView('settings'); setTimeout(() => { const el = $('adminPwd'); if (el && el.offsetParent) el.focus(); }, 80); });
@@ -2092,7 +2104,9 @@
       $('adminPanel').style.display = STATE.admin_required ? 'block' : 'none';
       if (STATE.admin_required) {
         const unlocked = STATE.admin_unlocked;
-        $('adminStatus').textContent = unlocked ? '✅ 已解锁，可编辑配置' : '🔒 未解锁，配置为只读';
+        $('adminStatus').textContent = unlocked
+          ? (STATE.private ? '✅ 已解锁（私密模式：仅解锁后可见）' : '✅ 已解锁，可编辑配置')
+          : (STATE.private ? '🔒 私密模式已开启：解锁后才能看到收藏、看板与配置' : '🔒 未解锁，配置为只读');
         $('unlockBtn').style.display = unlocked ? 'none' : 'inline-flex';
         $('lockBtn').style.display = unlocked ? 'inline-flex' : 'none';
         $('adminPwd').style.display = unlocked ? 'none' : 'block';

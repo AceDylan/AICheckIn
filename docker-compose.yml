@@ -21,6 +21,8 @@ services:
       GYQD_ADMIN_PASSWORD: "${GYQD_ADMIN_PASSWORD:?请先在 .env 中设置 GYQD_ADMIN_PASSWORD（见 SECURITY.md）}"
       # 反代已是 https 时可设为 1 下发 HSTS（会把整个域名锁到 https，含其它端口的服务）。
       GYQD_HSTS: "${GYQD_HSTS:-0}"
+      # 私密模式：设 1 后未解锁连收藏清单也看不到（默认 0 = 首页可公开浏览）。
+      GYQD_PRIVATE: "${GYQD_PRIVATE:-0}"
       # 后台定时调度开关，1 启用 0 关闭。
       GYQD_SCHEDULER: "1"
     volumes:
