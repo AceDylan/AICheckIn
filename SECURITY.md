@@ -96,8 +96,8 @@
 |---|---|---|
 | `GYQD_ADMIN_PASSWORD` | 空 | 管理密码。空 = 完全开放，公网必须设置 |
 | `GYQD_CONFIG_FILE` | `/app/data/config.json` | 配置文件路径，其所在目录同时存放历史 / 指标 / 图标缓存 |
-| `GYQD_SCHEDULER` | `1` | 后台定时签到线程开关 |
 | `GYQD_HSTS` | `0` | 设 `1` 时在 https 请求上下发 HSTS（会波及整个域名） |
+| `GYQD_SCHEDULER` | `1` | 设 `0` 关掉后台线程：定时签到与站点数据自动刷新都不再跑 |
 | `GYQD_LOGIN_MAX_FAILS` | `8` | 单个来源 IP 在窗口内允许的管理密码失败次数 |
 | `GYQD_LOGIN_GLOBAL_MAX_FAILS` | `40` | 全局失败上限，兜底伪造来源 IP |
 | `GYQD_LOGIN_WINDOW` | `900` | 失败计数窗口 / 锁定时长（秒） |

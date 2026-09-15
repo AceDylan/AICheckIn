@@ -76,14 +76,43 @@ _store_lock = threading.Lock()
 _history_lock = threading.Lock()
 _run_lock = threading.Lock()
 _metrics_lock = threading.Lock()
+# 定时刷新用独立的锁：它和签到互不相干，没必要互相等待。
+_refresh_lock = threading.Lock()
 _sched_thread = None
 
 # =========================
 # 配置存取（持久化层）
 # =========================
 
+# 站点看板自动刷新：可选的间隔（分钟）。给固定档位而不是任意数字，
+# 避免有人填个 1 分钟把被监控的站点打爆。
+REFRESH_INTERVALS = (15, 30, 60, 120, 360, 720, 1440)
+DEFAULT_REFRESH_INTERVAL = 60
+
+
+def normalize_refresh(raw):
+    """归一化 refresh 配置：{enabled, interval_minutes, last_run_time, last_run_ts}。"""
+    cfg = dict(raw or {}) if isinstance(raw, dict) else {}
+    try:
+        interval = int(cfg.get("interval_minutes") or DEFAULT_REFRESH_INTERVAL)
+    except (TypeError, ValueError):
+        interval = DEFAULT_REFRESH_INTERVAL
+    if interval not in REFRESH_INTERVALS:
+        interval = DEFAULT_REFRESH_INTERVAL
+    try:
+        last_ts = float(cfg.get("last_run_ts") or 0)
+    except (TypeError, ValueError):
+        last_ts = 0.0
+    return {
+        "enabled": bool(cfg.get("enabled")),
+        "interval_minutes": interval,
+        "last_run_time": str(cfg.get("last_run_time") or ""),
+        "last_run_ts": last_ts,
+    }
+
+
 def read_store():
-    """读取完整配置存储，归一化为 {configs, proxy_url, schedule}。
+    """读取完整配置存储，归一化为 {configs, proxy_url, schedule, refresh}。
 
     config.json 兼容两种历史格式：数组 或 {proxy_url, configs}。
     文件缺失时回退到 gyqd.CONFIGS（仅占位，token 为假）。
@@ -95,12 +124,14 @@ def read_store():
         except (ValueError, OSError) as exc:
             raise RuntimeError("读取配置文件失败：{0}".format(exc))
         if isinstance(raw, list):
-            store = {"configs": list(raw), "proxy_url": "", "schedule": {}, "bookmarks": [], "link_groups": None}
+            store = {"configs": list(raw), "proxy_url": "", "schedule": {}, "refresh": {},
+                     "bookmarks": [], "link_groups": None}
         elif isinstance(raw, dict):
             store = {
                 "configs": list(raw.get("configs") or []),
                 "proxy_url": str(raw.get("proxy_url") or "").strip(),
                 "schedule": dict(raw.get("schedule") or {}),
+                "refresh": dict(raw.get("refresh") or {}),
                 "bookmarks": list(raw.get("bookmarks") or []),
                 # None 表示旧数据尚无此键（读取时合成默认分组）；[] 表示用户已清空。
                 "link_groups": raw.get("link_groups"),
@@ -108,10 +139,12 @@ def read_store():
         else:
             raise RuntimeError("config.json 格式应为数组或对象")
     else:
-        store = {"configs": list(gyqd.CONFIGS), "proxy_url": "", "schedule": {}, "bookmarks": [], "link_groups": None}
+        store = {"configs": list(gyqd.CONFIGS), "proxy_url": "", "schedule": {}, "refresh": {},
+                 "bookmarks": [], "link_groups": None}
     store.setdefault("configs", [])
     store.setdefault("proxy_url", "")
     store.setdefault("schedule", {})
+    store["refresh"] = normalize_refresh(store.get("refresh"))
     store.setdefault("bookmarks", [])  # 仅收藏不签到的站点：[{name, url, fields}]
     # 统一为多字段结构：旧数据的单一 balance_config 合成为「余额」金额字段，并维持旧键镜像。
     store["bookmarks"] = [normalize_bookmark(b) for b in store["bookmarks"] if isinstance(b, dict)]
@@ -857,6 +890,80 @@ def refresh_bookmark_fields(bookmark, proxy_url, field_id=None):
     return results
 
 
+def bookmark_snapshot_key(bookmark):
+    """收藏的稳定标识：网址 + 名称。独立于数组下标，增删改导入都不会错位。"""
+    return "{0}|{1}".format(
+        str(bookmark.get("url") or "").strip(),
+        str(bookmark.get("name") or "").strip(),
+    )
+
+
+def collect_field_snapshots(bookmark):
+    """取出该收藏各字段的取值快照：{field_id: {value/raw/updated_at/error}}。"""
+    out = {}
+    for field in bookmark.get("fields") or []:
+        fid = field.get("id")
+        if not fid:
+            continue
+        out[fid] = {k: field[k] for k in _SNAPSHOT_KEYS if field.get(k) not in (None, "")}
+    return out
+
+
+def persist_field_snapshots(snapshots, schedule_run=None, refresh_run=False):
+    """把后台刷新拿到的取值快照合并回**最新的** store 并落盘。
+
+    后台任务（定时签到、定时刷新）可能跑几十秒，其间用户完全可能保存过配置。
+    如果把任务开始时读到的那份 store 整个写回去，这些编辑就被静默冲掉了。
+    所以这里重新读一次，只按 (收藏标识, 字段 id) 把快照贴回去；期间被删掉、
+    改了名或换了接口配置的字段找不到对应项，直接丢弃这份快照。
+    """
+    try:
+        store = read_store()
+    except RuntimeError:
+        return
+    for bookmark in store.get("bookmarks") or []:
+        snap = snapshots.get(bookmark_snapshot_key(bookmark))
+        if not snap:
+            continue
+        for field in bookmark.get("fields") or []:
+            values = snap.get(field.get("id"))
+            if values is None:
+                continue
+            for key in _SNAPSHOT_KEYS:
+                if key in values:
+                    field[key] = values[key]
+                else:
+                    field.pop(key, None)
+        sync_legacy_balance(bookmark)
+    if schedule_run:
+        schedule = dict(store.get("schedule") or {})
+        schedule.update(schedule_run)
+        store["schedule"] = schedule
+    if refresh_run:
+        refresh = dict(store.get("refresh") or {})
+        refresh["last_run_time"] = _now_str()
+        refresh["last_run_ts"] = time.time()
+        store["refresh"] = refresh
+    try:
+        write_store(store)
+    except RuntimeError:
+        pass
+
+
+def refresh_all_bookmarks(store):
+    """刷新 store 里所有配置了接口字段的收藏，返回可合并的快照映射。"""
+    snapshots = {}
+    for bookmark in store.get("bookmarks") or []:
+        if not bookmark.get("fields"):
+            continue
+        try:
+            refresh_bookmark_fields(bookmark, store.get("proxy_url", ""))
+        except Exception:  # noqa: BLE001 - 单条收藏失败不影响整体调度。
+            continue
+        snapshots[bookmark_snapshot_key(bookmark)] = collect_field_snapshots(bookmark)
+    return snapshots
+
+
 def _apply_balance_to_bookmark(bookmark, proxy_url):
     """兼容旧调用：刷新全部启用字段。返回 (all_ok, balance_or_errmsg)。"""
     results = refresh_bookmark_fields(bookmark, proxy_url)
@@ -1502,6 +1609,7 @@ def api_configs():
 
     unlocked = admin_ok()
     schedule = store.get("schedule") or {}
+    refresh = store.get("refresh") or {}
     metrics = read_metrics()
     today = _today_str()
     configs_out = []
@@ -1526,6 +1634,12 @@ def api_configs():
             "time": schedule.get("time", "08:30"),
             "last_run_time": schedule.get("last_run_time"),
             "last_run_date": schedule.get("last_run_date"),
+        },
+        "refresh": {
+            "enabled": bool(refresh.get("enabled")),
+            "interval_minutes": refresh.get("interval_minutes", DEFAULT_REFRESH_INTERVAL),
+            "last_run_time": refresh.get("last_run_time") or "",
+            "intervals": list(REFRESH_INTERVALS),
         },
         "admin_required": bool(ADMIN_PASSWORD),
         "admin_unlocked": unlocked,
@@ -2792,6 +2906,8 @@ def api_import():
             store["proxy_url"] = str(proxy_url or "").strip()
         if isinstance(schedule, dict):
             store["schedule"] = _clean_schedule(schedule, store.get("schedule") or {})
+        if isinstance(payload, dict) and isinstance(payload.get("refresh"), dict):
+            store["refresh"] = _clean_refresh(payload["refresh"], store.get("refresh") or {})
         if cleaned_bookmarks is not None:
             store["bookmarks"] = cleaned_bookmarks
         if cleaned_groups is not None:
@@ -2805,6 +2921,25 @@ def api_import():
 # =========================
 # 路由：全局设置（管理）
 # =========================
+
+def _clean_refresh(payload, existing):
+    cfg = normalize_refresh(existing)
+    if "enabled" in payload:
+        cfg["enabled"] = bool(payload.get("enabled"))
+    if "interval_minutes" in payload:
+        try:
+            minutes = int(payload.get("interval_minutes"))
+        except (TypeError, ValueError):
+            raise ValueError("刷新间隔需为数字")
+        if minutes not in REFRESH_INTERVALS:
+            raise ValueError("刷新间隔需为 {0} 分钟之一".format(
+                " / ".join(str(x) for x in REFRESH_INTERVALS)))
+        # 换了间隔就重新计时，避免「从 24 小时改成 15 分钟」还要等到下一个 24 小时。
+        if minutes != cfg["interval_minutes"]:
+            cfg["interval_minutes"] = minutes
+            cfg["last_run_ts"] = 0.0
+    return cfg
+
 
 def _clean_schedule(payload, existing):
     schedule = dict(existing or {})
@@ -2836,6 +2971,11 @@ def api_settings():
     if "schedule" in payload and isinstance(payload["schedule"], dict):
         try:
             store["schedule"] = _clean_schedule(payload["schedule"], store.get("schedule") or {})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+    if "refresh" in payload and isinstance(payload["refresh"], dict):
+        try:
+            store["refresh"] = _clean_refresh(payload["refresh"], store.get("refresh") or {})
         except ValueError as exc:
             return jsonify({"ok": False, "error": str(exc)}), 400
 
@@ -2921,28 +3061,52 @@ def _scheduler_tick():
             record_history("scheduled", error="定时签到失败：{0}".format(exc))
         # 定时签到联动刷新收藏字段：配置了接口字段的收藏顺带取一次，
         # 成败状态写回各字段（失败写 error），供前端展示。
-        for bm in store.get("bookmarks") or []:
-            if bm.get("fields"):
-                try:
-                    refresh_bookmark_fields(bm, store.get("proxy_url", ""))
-                except Exception:  # noqa: BLE001 - 单条收藏失败不影响调度主流程。
-                    pass
-        # 无论成功与否都标记当天已跑，避免循环重试。
-        schedule["last_run_date"] = today
-        schedule["last_run_time"] = _now_str()
-        store["schedule"] = schedule
-        try:
-            write_store(store)
-        except RuntimeError:
-            pass
+        snapshots = refresh_all_bookmarks(store)
+        # 上面的签到 + 刷新可能跑了几十秒，期间用户可能保存过配置：重新读一份最新
+        # store，只贴回快照与调度时间，避免把这些编辑冲掉。
+        # 无论签到成功与否都标记当天已跑，避免循环重试。
+        persist_field_snapshots(snapshots, schedule_run={
+            "last_run_date": today, "last_run_time": _now_str(),
+        })
+
+
+def _refresh_tick():
+    """按设定间隔刷新站点看板的全部接口字段，让余额 / 到期时间不必手点也保持新鲜。
+
+    与定时签到相互独立：签到一天一次，刷新按分钟级间隔。上一轮还没跑完就跳过本轮
+    （站点慢的时候不堆叠请求）。
+    """
+    try:
+        store = read_store()
+    except RuntimeError:
+        return
+    cfg = store.get("refresh") or {}
+    if not cfg.get("enabled"):
+        return
+    if not any(b.get("fields") for b in store.get("bookmarks") or []):
+        return
+    interval = int(cfg.get("interval_minutes") or DEFAULT_REFRESH_INTERVAL) * 60
+    last = float(cfg.get("last_run_ts") or 0)
+    now = time.time()
+    # last 为 0（从未跑过 / 刚开启）时立刻跑一次，让用户马上看到效果。
+    # 时钟回拨会让 now - last 变负数，同样当作「该跑了」。
+    if last and 0 <= now - last < interval:
+        return
+    if not _refresh_lock.acquire(False):
+        return  # 上一轮还在跑
+    try:
+        persist_field_snapshots(refresh_all_bookmarks(store), refresh_run=True)
+    finally:
+        _refresh_lock.release()
 
 
 def _scheduler_loop():
     while True:
-        try:
-            _scheduler_tick()
-        except Exception:  # noqa: BLE001 - 调度线程必须长存。
-            pass
+        for tick in (_scheduler_tick, _refresh_tick):
+            try:
+                tick()
+            except Exception:  # noqa: BLE001 - 调度线程必须长存。
+                pass
         time.sleep(30)
 
 

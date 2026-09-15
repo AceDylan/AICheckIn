@@ -136,6 +136,7 @@
           <div class="view-header"><div><div class="eyebrow">偏好</div><h1>系统设置</h1><p>自动签到、全局代理、管理权限与外观。</p></div></div>
           <div class="settings-grid">
             <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote">定时基于服务器本地时间。容器应设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。</div><div class="controls" style="align-items:flex-end"><label class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></label><div class="field" style="max-width:140px"><label>每天执行时间</label><input class="input" type="time" id="schedTime" value="08:30"></div><button class="btn sm" id="saveSched">保存定时</button></div><div class="note" id="schedStatus"></div></div>
+            <div class="panel"><div class="panel-title">站点数据自动刷新</div><div class="note" style="margin-top:0">让站点看板的余额 / 到期时间不必手点也保持新鲜。仅刷新配置了接口字段的收藏。</div><div class="controls" style="margin-top:10px;align-items:flex-end"><label class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></label><div class="field" style="max-width:160px"><label>刷新间隔</label><select class="input" id="refreshInterval"></select></div><button class="btn sm" id="saveRefresh">保存刷新</button></div><div class="note" id="refreshStatus"></div></div>
             <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
             <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus" style="margin-top:0"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" name="gyqd-admin-password" type="password" placeholder="管理密码" autocomplete="current-password"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
             <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
@@ -2014,6 +2015,17 @@
       $('proxyUrl').value = STATE.proxy_url || '';
       $('proxyUrl').placeholder = (!STATE.proxy_url && STATE.proxy_configured)
         ? '已配置（解锁后可见）' : '例如 socks5://127.0.0.1:7890';
+      // 自动刷新
+      const r = STATE.refresh || {};
+      const intervals = r.intervals || [15, 30, 60, 120, 360, 720, 1440];
+      $('refreshInterval').innerHTML = intervals.map(m =>
+        `<option value="${m}"${m === r.interval_minutes ? ' selected' : ''}>${intervalLabel(m)}</option>`).join('');
+      $('refreshEnabled').checked = !!r.enabled;
+      let rStatus = r.enabled ? `已启用：每 ${intervalLabel(r.interval_minutes)} 刷新一次` : '未启用（仅在手动点「刷新」或定时签到时取数）';
+      if (r.last_run_time) rStatus += ` · 上次刷新：${r.last_run_time}`;
+      if (r.enabled && !STATE.scheduler_running) rStatus += '（注意：后台调度未运行，GYQD_SCHEDULER=0）';
+      $('refreshStatus').textContent = rStatus;
+
       $('schedDot').style.display = s.enabled ? 'inline-block' : 'none';
       let status = s.enabled ? `已启用：每天 ${s.time} 自动签到` : '未启用';
       if (s.last_run_time) status += ` · 上次定时执行：${s.last_run_time}`;
@@ -2032,6 +2044,16 @@
       renderLockPill();
     }
 
+    function intervalLabel(minutes) {
+      const m = Number(minutes) || 60;
+      if (m % 1440 === 0) return `${m / 1440} 天`;
+      if (m % 60 === 0) return `${m / 60} 小时`;
+      return `${m} 分钟`;
+    }
+    $('saveRefresh').addEventListener('click', async () => {
+      if (!guardAdmin()) return;
+      await saveSettings({ refresh: { enabled: $('refreshEnabled').checked, interval_minutes: Number($('refreshInterval').value) } }, '自动刷新已保存');
+    });
     $('saveSched').addEventListener('click', async () => {
       if (!guardAdmin()) return;
       const body = { schedule: { enabled: $('schedEnabled').checked, time: $('schedTime').value } };
