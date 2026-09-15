@@ -181,7 +181,12 @@
   <div class="modal-mask" id="importModal">
     <div class="modal">
       <div class="modal-head"><div><h3>导入配置</h3><div class="modal-sub">粘贴 JSON（数组或 {proxy_url, configs, schedule, bookmarks, link_groups} 对象）。导入将<b>覆盖</b>提供的部分。</div></div></div>
-      <div class="field"><textarea class="input mono" id="importText" rows="8"></textarea></div>
+      <div class="controls" style="margin-bottom:10px">
+        <label class="btn sm ghost" for="importFile" title="选择之前导出的 JSON 文件">📄 选择文件…</label>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+        <span class="note" id="importFileName" style="margin:0"></span>
+      </div>
+      <div class="field"><textarea class="input mono" id="importText" rows="8" placeholder="也可以直接把 JSON 粘在这里"></textarea></div>
       <div id="import_error" class="error" style="display:none"></div>
       <div class="modal-actions">
         <button class="btn ghost sm" id="importCancel">取消</button>
@@ -891,16 +896,29 @@
       return [{ id: 'monitor', name: '站点看板', icon: 'pulse', color: 'mint', count: (STATE.bookmarks || []).length }]
         .concat(libGroups().map(g => ({ id: g.id, name: g.name, icon: g.icon, color: g.color, count: (g.links || []).length })));
     }
+    // 分组里还有几条链接需要处理（检查过、且不是「活着但不给匿名探测」那类）。
+    // 检查是分组逐个跑的，没有这个提示就得挨个点进去看结果。
+    function groupIssueCount(gid) {
+      const g = findGroup(gid);
+      if (!g) return 0;
+      return (g.links || []).filter(l => linkCheckState(l)).length;
+    }
+    function issueBadge(p) {
+      if (p.id === 'monitor') return '';
+      const n = groupIssueCount(p.id);
+      return n ? `<span class="issue-dot" title="${n} 条链接需要处理">${n}</span>` : '';
+    }
+
     function renderLibNav() {
       const pages = libPages();
       $('bmNavCount').textContent = (STATE.bookmarks || []).length + totalLinks();
       // 分组项可拖动排序（站点看板固定在首位，不参与排序）。
       const sortHint = (p) => p.id === 'monitor' ? '' : ` data-sortable="1" title="${escapeHtml(p.name)}｜按住拖动可调整顺序（Alt+↑/↓）"`;
       $('libSubnav').innerHTML = pages.map(p =>
-        `<button type="button" class="subnav-item tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)} aria-current="${LIB.page === p.id ? 'page' : 'false'}"><span class="sub-ic">${icon(p.icon)}</span><span class="sub-text">${escapeHtml(p.name)}</span><span class="nav-count">${p.count}</span></button>`
+        `<button type="button" class="subnav-item tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)} aria-current="${LIB.page === p.id ? 'page' : 'false'}"><span class="sub-ic">${icon(p.icon)}</span><span class="sub-text">${escapeHtml(p.name)}</span>${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="subnav-item is-add" data-act="add-group"><span class="sub-ic">${icon('plus')}</span><span class="sub-text">新建分组</span></button>`;
       $('libChips').innerHTML = pages.map(p =>
-        `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}<span class="nav-count">${p.count}</span></button>`
+        `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
     }
     function onLibNavClick(e) {
@@ -2193,7 +2211,31 @@
         toast('已导出', 'ok');
       } catch (e) { toast('导出失败：' + e.message, 'err'); }
     });
-    $('importCfg').addEventListener('click', () => { if (!guardAdmin()) return; $('import_error').style.display = 'none'; $('importText').value = ''; $('importModal').classList.add('show'); });
+    $('importCfg').addEventListener('click', () => {
+      if (!guardAdmin()) return;
+      $('import_error').style.display = 'none';
+      $('importText').value = '';
+      $('importFile').value = '';
+      $('importFileName').textContent = '';
+      $('importModal').classList.add('show');
+    });
+    // 导出是直接下载文件的，导入却只能粘贴——把文件读进文本框，两边对称起来。
+    // 文件只在浏览器里读，不额外上传：走的仍是同一个 /api/configs/import。
+    $('importFile').addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      $('import_error').style.display = 'none';
+      try {
+        const text = await file.text();
+        JSON.parse(text);                    // 先验一下，别等按了导入才报错
+        $('importText').value = text;
+        $('importFileName').textContent = `${file.name}（${Math.round(file.size / 1024)} KB）已载入，确认后点「导入并覆盖」`;
+      } catch (err) {
+        $('importFileName').textContent = '';
+        $('import_error').textContent = `「${file.name}」不是合法的 JSON：${err.message}`;
+        $('import_error').style.display = 'block';
+      }
+    });
     $('importCancel').addEventListener('click', () => $('importModal').classList.remove('show'));
     $('importDo').addEventListener('click', async () => {
       let parsed;

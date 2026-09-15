@@ -462,6 +462,15 @@ details > summary::-webkit-details-marker { display: none; }
 .bookmark-card.alert-error, .bookmark-card.alert-expired { box-shadow: inset 3px 0 0 var(--danger), var(--shadow-1); }
 .bookmark-card.alert-soon { box-shadow: inset 3px 0 0 var(--warning), var(--shadow-1); }
 
+/* 分组导航上的「有几条要处理」提示：检查是逐个分组跑的，
+   没有它就得挨个点进去才知道哪个分组有问题。 */
+.issue-dot {
+  flex: 0 0 auto; min-width: 16px; padding: 0 5px; border-radius: 999px;
+  background: var(--danger-soft); color: var(--danger);
+  font-size: 10px; font-weight: 750; line-height: 16px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ===== 死链检查的角标 ===== */
 /* 只给「需要处理」的三类上色；blocked（401/403…）不上色——服务器答了话就说明它还在。 */
 .check-badge { flex: 0 0 auto; font-size: 11px; line-height: 1; cursor: help; }
