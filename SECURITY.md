@@ -67,10 +67,11 @@
 | 收藏字段的 curl / 请求头 / 接口 URL / JSON 路径 | ❌ | ✅（`/api/bookmarks/<i>/secret`） |
 | 签到 token 原文 | ❌ | ✅（`/api/configs/<i>/secret`） |
 | 代理地址原文 | ❌（只回「是否已配置」） | ✅ |
-| 执行签到 / 单站签到 / 测试连接 | ❌ | ✅ |
-| 运行历史 | ❌ | ✅ |
-| 增删改配置 / 收藏 / 分组、导入导出、定时设置 | ❌ | ✅ |
-| 部署自检 `/api/diagnostics` | ❌ | ✅ |
+| 执行签到 / 单站签到 / 测试连接（`/api/checkin`、`/api/checkin/<i>`、`/api/test/<i>`） | ❌ | ✅ |
+| 运行历史（`/api/history`） | ❌ | ✅ |
+| 增删改配置 / 收藏 / 分组、定时设置 | ❌ | ✅ |
+| 导出 / 导入整份配置（`/api/configs/export`、`/api/configs/import`） | ❌ | ✅ |
+| 部署自检（`/api/diagnostics`） | ❌ | ✅ |
 
 **未设置 `GYQD_ADMIN_PASSWORD` 时上表整列放开**——这是给本地 / 内网部署留的口子，
 公网部署务必设置。
