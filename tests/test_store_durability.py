@@ -128,6 +128,94 @@ class AtomicWriteTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(read_store()["proxy_url"], "safe")
 
 
+class DailyBackupTest(StoreIsolationMixin, unittest.TestCase):
+    """.bak 只保留上一次写入前的内容：误删之后又随手改两下，好数据就没了。
+    按天的回溯点才救得回这类「隔天才发现」的问题。"""
+
+    def snapshots(self):
+        return sorted(n for n in os.listdir(str(self.data_dir))
+                      if n.startswith("config.json.") and n.endswith(".bak")
+                      and n != "config.json.bak")
+
+    def test_first_write_of_the_day_archives_the_previous_content(self):
+        write_store(dict(SAMPLE, proxy_url="v0"))
+        write_store(dict(SAMPLE, proxy_url="v1"))
+        names = self.snapshots()
+        self.assertEqual(len(names), 1, names)
+        self.assertIn(app_module._today_str(), names[0])
+        with open(os.path.join(str(self.data_dir), names[0]), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["proxy_url"], "v0")
+
+    def test_later_writes_do_not_overwrite_todays_snapshot(self):
+        # 快照必须停在「今天第一次改动之前」，否则改几次就又被冲掉了。
+        for value in ("v0", "v1", "v2", "v3"):
+            write_store(dict(SAMPLE, proxy_url=value))
+        names = self.snapshots()
+        self.assertEqual(len(names), 1)
+        with open(os.path.join(str(self.data_dir), names[0]), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["proxy_url"], "v0")
+
+    def test_plain_bak_still_tracks_the_previous_write(self):
+        for value in ("v0", "v1", "v2"):
+            write_store(dict(SAMPLE, proxy_url=value))
+        with open(app_module.CONFIG_FILE + ".bak", encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["proxy_url"], "v1")
+
+    def test_old_archives_are_pruned(self):
+        write_store(dict(SAMPLE, proxy_url="seed"))
+        # 造出比保留天数更多的历史快照。
+        keep = app_module.CONFIG_BACKUP_DAYS
+        made = []
+        for day in range(1, keep + 4):
+            name = "config.json.2020-01-%02d.bak" % day
+            path = os.path.join(str(self.data_dir), name)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("{}")
+            made.append(name)
+        write_store(dict(SAMPLE, proxy_url="trigger"))
+        left = self.snapshots()
+        self.assertEqual(len(left), keep, left)
+        self.assertIn("config.json.%s.bak" % app_module._today_str(), left)
+        # 删掉的应当是最旧的那几份。
+        self.assertNotIn(made[0], left)
+
+    def test_unrelated_bak_files_are_never_deleted(self):
+        write_store(dict(SAMPLE))
+        stray = os.path.join(str(self.data_dir), "config.json.manual-copy.bak")
+        with open(stray, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        for day in range(1, app_module.CONFIG_BACKUP_DAYS + 3):
+            with open(os.path.join(str(self.data_dir), "config.json.2020-02-%02d.bak" % day),
+                      "w", encoding="utf-8") as fh:
+                fh.write("{}")
+        write_store(dict(SAMPLE, proxy_url="trigger"))
+        self.assertTrue(os.path.isfile(stray), "手工命名的备份被误删了")
+        self.assertTrue(os.path.isfile(app_module.CONFIG_FILE + ".bak"))
+
+    def test_disabling_the_feature_keeps_only_bak(self):
+        self.addCleanup(setattr, app_module, "CONFIG_BACKUP_DAYS", app_module.CONFIG_BACKUP_DAYS)
+        app_module.CONFIG_BACKUP_DAYS = 0
+        write_store(dict(SAMPLE, proxy_url="v0"))
+        write_store(dict(SAMPLE, proxy_url="v1"))
+        self.assertEqual(self.snapshots(), [])
+        self.assertTrue(os.path.isfile(app_module.CONFIG_FILE + ".bak"))
+
+    def test_backup_failure_does_not_block_saving(self):
+        # 备份是附带保障，不该因为它失败就让用户存不了东西。
+        write_store(dict(SAMPLE, proxy_url="v0"))
+        real = app_module._rotate_daily_backup
+
+        def boom(path, previous_text):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        app_module._rotate_daily_backup = boom
+        try:
+            write_store(dict(SAMPLE, proxy_url="v1"))
+        finally:
+            app_module._rotate_daily_backup = real
+        self.assertEqual(read_store()["proxy_url"], "v1")
+
+
 class RequestLimitTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -48,6 +48,10 @@ DATA_DIR = Path(CONFIG_FILE).resolve().parent
 HISTORY_FILE = str(DATA_DIR / "history.json")
 # 历史记录保留条数上限。
 HISTORY_CAP = 50
+# 配置文件按天留档的保留天数（0 = 只保留 .bak，不留每日快照）。
+CONFIG_BACKUP_DAYS = max(0, int(os.environ.get("GYQD_BACKUP_DAYS", "7")))
+# 每日备份文件名里的日期段，用于识别与清理归档（避免误删同目录下其它 .bak）。
+_STAMP_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # 指标快照文件：持久化每组配置上一次获取到的签到奖励/钱包余额/已用额度/请求数。
 # 以 base_url|user_id 为键，独立于 configs 数组索引，避免增删改导入打乱对齐。
 METRICS_FILE = str(DATA_DIR / "metrics.json")
@@ -215,8 +219,37 @@ def _write_text_atomic(path, text):
         pass
 
 
+def _daily_backup_name(path, day):
+    return path.with_name("{0}.{1}.bak".format(path.name, day))
+
+
+def _rotate_daily_backup(path, previous_text):
+    """每天第一次写入时，把「今天改动之前」的内容另存一份，最多保留 N 天。
+
+    `.bak` 只保留上一次写入前的内容：误删一个分组之后又随手改了两下，
+    好数据就被冲掉了，而这类问题往往隔天才发现。按天的回溯点才救得回来。
+    """
+    if CONFIG_BACKUP_DAYS <= 0:
+        return
+    today = _daily_backup_name(path, _today_str())
+    if today.exists():
+        return  # 今天已经留过快照，后续写入不再覆盖它
+    _write_text_atomic(today, previous_text)
+    # 只保留最近 N 份，其余删掉；文件名里带日期，按名字排序即按时间排序。
+    prefix, suffix = path.name + ".", ".bak"
+    snapshots = sorted(
+        p for p in path.parent.glob(path.name + ".*.bak")
+        if _STAMP_DAY_RE.match(p.name[len(prefix):-len(suffix)] or "")
+    )
+    for stale in snapshots[:-CONFIG_BACKUP_DAYS]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
 def write_store(store):
-    """持久化配置：写前自检 JSON、留 .bak 备份，再原子替换目标文件。"""
+    """持久化配置：写前自检 JSON、留备份，再原子替换目标文件。"""
     text = json.dumps(store, ensure_ascii=False, indent=2)
     json.loads(text)  # 写前自检，确保可往返。
     path = Path(CONFIG_FILE)
@@ -225,10 +258,11 @@ def write_store(store):
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.is_file():
                 try:
-                    backup = path.with_name(path.name + ".bak")
-                    _write_text_atomic(backup, path.read_text(encoding="utf-8"))
+                    previous = path.read_text(encoding="utf-8")
+                    _write_text_atomic(path.with_name(path.name + ".bak"), previous)
+                    _rotate_daily_backup(path, previous)
                 except OSError:
-                    pass
+                    pass  # 备份失败不该挡住正常保存
             _write_text_atomic(path, text)
         except OSError as exc:
             raise RuntimeError(
@@ -1684,7 +1718,20 @@ def collect_diagnostics(request_is_https=None):
             len(store.get("configs") or []), len(store.get("bookmarks") or []),
             len(store.get("link_groups") or []), links)))
 
-    # 6. 会话密钥
+    # 6. 配置备份
+    if CONFIG_BACKUP_DAYS <= 0:
+        checks.append(_check("warn", "配置备份", "每日留档已关闭（GYQD_BACKUP_DAYS=0），只有一份 .bak"))
+    else:
+        try:
+            snaps = sorted(Path(CONFIG_FILE).parent.glob(Path(CONFIG_FILE).name + ".*.bak"))
+            days = [p for p in snaps if _STAMP_DAY_RE.match(
+                p.name[len(Path(CONFIG_FILE).name) + 1:-len(".bak")] or "")]
+        except OSError:
+            days = []
+        checks.append(_check("ok", "配置备份", "保留 {0} 天，现有 {1} 份每日留档".format(
+            CONFIG_BACKUP_DAYS, len(days))))
+
+    # 7. 会话密钥
     try:
         exists = SESSION_SECRET_FILE.is_file()
         mode = stat.S_IMODE(os.stat(str(SESSION_SECRET_FILE)).st_mode) if exists else None
@@ -1697,7 +1744,7 @@ def collect_diagnostics(request_is_https=None):
     else:
         checks.append(_check("ok", "会话密钥", "已持久化，权限 600"))
 
-    # 7. 后台调度
+    # 8. 后台调度
     alive = bool(_sched_thread and _sched_thread.is_alive())
     schedule = (store or {}).get("schedule") or {}
     refresh = (store or {}).get("refresh") or {}
@@ -1710,7 +1757,7 @@ def collect_diagnostics(request_is_https=None):
     else:
         checks.append(_check("ok", "后台调度", "运行中"))
 
-    # 8. 定时签到 / 补签
+    # 9. 定时签到 / 补签
     if store is not None:
         if not schedule.get("enabled"):
             checks.append(_check("ok", "定时签到", "未启用"))
@@ -1730,7 +1777,7 @@ def collect_diagnostics(request_is_https=None):
             else:
                 checks.append(_check("ok", "定时签到", detail + " · 今日已全部签成"))
 
-        # 9. 自动刷新
+        # 10. 自动刷新
         if refresh.get("enabled"):
             detail = "每 {0} 分钟".format(refresh.get("interval_minutes"))
             if refresh.get("last_run_time"):
