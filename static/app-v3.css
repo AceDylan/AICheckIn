@@ -555,6 +555,74 @@ details > summary::-webkit-details-marker { display: none; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }
 
 /* ---------- 响应式 ---------- */
+/* ===== 全局搜索（命令面板）===== */
+/* 侧栏入口：不记快捷键的人也能点开；移动端侧栏变底栏时隐藏，改由 ⌘K / 页内搜索承担。 */
+.omni-trigger {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 4px;
+  padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-input); color: var(--text-3);
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.omni-trigger:hover { border-color: var(--border-strong); color: var(--text-2); background: var(--surface-hover); }
+.omni-trigger .ic { flex: 0 0 auto; width: 15px; height: 15px; }
+.omni-trigger span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.omni-kbd {
+  flex: 0 0 auto; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text-3); font-family: var(--mono); font-size: 10px; line-height: 1.5;
+}
+
+.omni-mask { align-items: flex-start; padding-top: min(14vh, 120px); }
+.omni {
+  display: flex; flex-direction: column; width: min(100%, 640px); max-height: min(70vh, 560px);
+  overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius-xl);
+  background: var(--surface); box-shadow: var(--shadow-pop); animation: modal-in .18s ease both;
+}
+.omni-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.omni-head .ic { flex: 0 0 auto; width: 17px; height: 17px; color: var(--text-3); }
+.omni-input {
+  flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 15px; outline: none;
+}
+.omni-input::placeholder { color: var(--text-3); }
+.omni-list { flex: 1; overflow-y: auto; padding: 6px; -webkit-overflow-scrolling: touch; }
+.omni-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px;
+  border: 0; border-radius: var(--radius); background: transparent; color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.omni-row:hover { background: var(--surface-hover); }
+.omni-row.is-active { background: var(--tone-soft, var(--accent-soft)); box-shadow: inset 0 0 0 1px var(--tone, var(--accent)); }
+.omni-avatar { flex: 0 0 auto; }
+.omni-ic {
+  display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px;
+  border-radius: 10px; background: var(--tone-soft, var(--accent-soft)); color: var(--tone, var(--accent));
+}
+.omni-ic svg { width: 16px; height: 16px; }
+.omni-text { flex: 1; min-width: 0; }
+.omni-title { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 650; }
+.omni-title > span:first-child, .omni-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.omni-sub { display: block; margin-top: 1px; color: var(--text-3); font-size: 11px; }
+.omni-tags { display: flex; flex: 0 0 auto; gap: 4px; }
+.omni-kind {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-3); font-size: 10px; font-weight: 700;
+}
+.omni-empty { padding: 34px 20px; color: var(--text-3); font-size: 12.5px; text-align: center; }
+.omni-foot {
+  display: flex; align-items: center; gap: 14px; padding: 9px 16px;
+  border-top: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-3); font-size: 11px;
+}
+.omni-foot kbd {
+  padding: 1px 5px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); font-family: var(--mono); font-size: 10px;
+}
+.omni-foot-meta { margin-left: auto; }
+/* 卡片上的标签可点：点一下就以 #标签 打开全局搜索，等于一个标签筛选入口。 */
+.tag-btn { border: 0; font: inherit; cursor: pointer; }
+.tag-btn:hover { filter: brightness(1.18); }
+
 @media (max-width: 1180px) {
   :root { --sidebar-w: 230px; }
   .content { padding-inline: 26px; }
@@ -595,6 +663,11 @@ details > summary::-webkit-details-marker { display: none; }
   .dcard { align-items: flex-start; flex-direction: column; }
   .toast-wrap { left: 12px; right: 12px; top: 12px; }
   .toast { max-width: none; }
+  .omni-trigger { display: none; }
+  .omni-mask { align-items: flex-start; padding: 0; }
+  .omni { width: 100%; max-height: 100vh; height: 100vh; border: 0; border-radius: 0; }
+  .omni-foot { padding-bottom: calc(9px + env(safe-area-inset-bottom)); }
+  .omni-foot span:not(.omni-foot-meta) { display: none; }
   .modal-mask { align-items: flex-end; padding: 0; }
   .modal, .modal.modal-wide { width: 100%; max-height: 90vh; border-radius: 20px 20px 0 0; border-bottom: 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; animation: sheet-in .2s ease both; }
   @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }

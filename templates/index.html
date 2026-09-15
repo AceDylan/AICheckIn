@@ -27,6 +27,10 @@
         <div class="brand-mark">BH</div>
         <div><div class="brand-name">Bookmark Hub</div><div class="brand-sub">收藏库 · AI 服务工作台</div></div>
       </div>
+      <button class="omni-trigger" id="omniOpen" type="button" aria-label="全局搜索">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <span>搜索全部收藏</span><kbd class="omni-kbd">⌘K</kbd>
+      </button>
       <div class="nav-label">工作区</div>
       <nav class="tabs" aria-label="主视图">
         <button class="tab active" data-view="bookmarks" aria-label="收藏库">
@@ -227,6 +231,25 @@
   </div>
 
   <!-- 链接分组：分组编辑弹窗 -->
+  <!-- 全局搜索：跨全部分组 / 看板 / 签到配置的命令面板，Ctrl-⌘K 唤起 -->
+  <div class="modal-mask omni-mask" id="omniModal" role="dialog" aria-modal="true" aria-label="全局搜索">
+    <div class="omni">
+      <div class="omni-head">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input id="omniInput" class="omni-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="搜索网址、站点、签到配置…（支持 #标签）" aria-label="全局搜索" aria-controls="omniList" role="combobox" aria-expanded="true">
+        <kbd class="omni-kbd">Esc</kbd>
+      </div>
+      <div class="omni-list" id="omniList" role="listbox" aria-label="搜索结果"></div>
+      <div class="omni-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+        <span><kbd>Enter</kbd> 打开</span>
+        <span><kbd>⇧</kbd>+<kbd>Enter</kbd> 跳到所在分组</span>
+        <span class="omni-foot-meta" id="omniCount"></span>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-mask" id="groupModal">
     <div class="modal">
       <div class="modal-head"><div><h3 id="groupModalTitle">新建分组</h3><div class="modal-sub">分组会成为收藏库下的一个页面。</div></div></div>
@@ -930,6 +953,12 @@
     $('bmSearch').addEventListener('input', () => { if (LIB.page === 'monitor') renderBookmarks(); else renderLinks(); });
     document.addEventListener('keydown', (event) => {
       const tag = document.activeElement && document.activeElement.tagName;
+      // ⌘K / Ctrl+K：全局搜索。输入框里也生效，方便从页内搜索直接升级为全局搜索。
+      if ((event.metaKey || event.ctrlKey) && (event.key === 'k' || event.key === 'K')) {
+        event.preventDefault();
+        openOmni(document.activeElement === $('bmSearch') ? $('bmSearch').value : '');
+        return;
+      }
       if (event.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(tag || '')) {
         event.preventDefault();
         switchView('bookmarks');
@@ -1431,7 +1460,7 @@
             <div class="link-name"><span>${escapeHtml(l.name)}</span>${l.pinned ? icon('pin', 'pin') : ''}</div>
             <div class="link-host">${escapeHtml(host)}</div>
             ${l.desc ? `<div class="link-desc">${escapeHtml(l.desc)}</div>` : ''}
-            ${(l.tags || []).length ? `<div class="link-tags">${l.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+            ${(l.tags || []).length ? `<div class="link-tags">${l.tags.map(t => `<button type="button" class="tag tag-btn" title="按标签「${escapeHtml(t)}」搜索全部分组" onclick="filterByTag(event, '${escapeHtml(t).replace(/'/g, "\\'")}')">${escapeHtml(t)}</button>`).join('')}</div>` : ''}
           </div>
         </a>
         <div class="link-tools">
@@ -1811,6 +1840,184 @@
       catch (e) { toast('网络错误：' + e.message, 'err'); return; }
       toast('已锁定', 'ok');
       loadConfigs();
+    });
+
+    // ===== 全局搜索（命令面板）=====
+    // 数据全在 STATE 里，搜索纯前端完成，不额外打接口。
+    // 覆盖：全部分组的网址、站点看板的收藏、签到配置，以及「跳到某个分组」。
+    const OMNI_LIMIT = 40;          // 最多展示多少条，避免大库时一次渲染上千个节点
+    let omniResults = [];
+    let omniActive = 0;
+
+    function omniHaystack(parts) { return parts.filter(Boolean).join(' ').toLowerCase(); }
+
+    // 打分：名称前缀 > 名称包含 > 域名 > 描述/标签/分组名。分数越大越靠前。
+    function omniScore(item, query) {
+      if (!query) return item.pinned ? 2 : 1;
+      const name = (item.title || '').toLowerCase();
+      const host = (item.host || '').toLowerCase();
+      if (name.startsWith(query)) return 100 - Math.min(40, name.length);
+      if (name.includes(query)) return 70;
+      if (host.startsWith(query)) return 60;
+      if (host.includes(query)) return 50;
+      if ((item.tags || []).some(t => t.toLowerCase() === query)) return 45;
+      if (item.haystack.includes(query)) return 30;
+      return 0;
+    }
+
+    // 把 STATE 摊平成统一的候选项：{kind, title, host, sub, tags, url, group, open()}
+    function omniIndex() {
+      const items = [];
+      for (const g of libGroups()) {
+        items.push({
+          kind: 'group', title: g.name, host: '', sub: `分组 · ${(g.links || []).length} 个网址`,
+          tags: [], icon: g.icon, color: g.color, groupId: g.id,
+          haystack: omniHaystack([g.name, g.desc, '分组']),
+        });
+        for (const l of g.links || []) {
+          items.push({
+            kind: 'link', title: l.name || siteHost(l.url), host: siteHost(l.url), sub: g.name,
+            tags: l.tags || [], url: l.url, emoji: l.icon, color: g.color, groupId: g.id, pinned: !!l.pinned,
+            haystack: omniHaystack([l.name, l.url, siteHost(l.url), l.desc, (l.tags || []).join(' '), g.name]),
+          });
+        }
+      }
+      for (const b of STATE.bookmarks || []) {
+        const labels = (b.fields || []).map(f => f.label).filter(Boolean);
+        items.push({
+          kind: 'bookmark', title: b.name || siteHost(b.url), host: siteHost(b.url),
+          sub: labels.length ? `站点看板 · ${labels.join(' / ')}` : '站点看板',
+          tags: [], url: b.url, color: 'mint',
+          haystack: omniHaystack([b.name, b.url, siteHost(b.url), labels.join(' '), '站点看板']),
+        });
+      }
+      for (let i = 0; i < (STATE.configs || []).length; i++) {
+        const c = STATE.configs[i];
+        items.push({
+          kind: 'config', title: c.name, host: siteHost(c.base_url),
+          sub: c.enabled === false ? '签到配置 · 已禁用' : '签到配置', tags: [], url: c.base_url,
+          color: 'violet', configIndex: i,
+          haystack: omniHaystack([c.name, c.base_url, c.user_id, '签到配置']),
+        });
+      }
+      return items;
+    }
+
+    function omniSearch(raw) {
+      // 「#标签」前缀：只在标签里匹配，让标签成为一等公民的筛选入口。
+      const text = String(raw || '').trim();
+      const tagOnly = text.startsWith('#');
+      const query = (tagOnly ? text.slice(1) : text).trim().toLowerCase();
+      const scored = [];
+      for (const item of omniIndex()) {
+        if (tagOnly) {
+          if (!query) { if ((item.tags || []).length) scored.push({ item, score: 40 }); continue; }
+          const hit = (item.tags || []).some(t => t.toLowerCase().includes(query));
+          if (hit) scored.push({ item, score: (item.tags || []).some(t => t.toLowerCase() === query) ? 90 : 60 });
+          continue;
+        }
+        const score = omniScore(item, query);
+        if (score > 0) scored.push({ item, score });
+      }
+      // 同分时：置顶优先 → 网址优先于分组/配置 → 名称字典序，保证结果稳定不跳动。
+      const kindRank = { link: 0, bookmark: 1, config: 2, group: 3 };
+      scored.sort((a, b) => b.score - a.score
+        || (b.item.pinned ? 1 : 0) - (a.item.pinned ? 1 : 0)
+        || kindRank[a.item.kind] - kindRank[b.item.kind]
+        || String(a.item.title).localeCompare(String(b.item.title), 'zh-Hans-CN'));
+      return scored.slice(0, OMNI_LIMIT).map(x => x.item);
+    }
+
+    const OMNI_KIND_LABEL = { link: '网址', bookmark: '看板', config: '配置', group: '分组' };
+    function omniRowHtml(item, i) {
+      const avatar = item.kind === 'group'
+        ? `<span class="omni-ic tone-${escapeHtml(item.color || 'mint')}">${icon(item.icon || 'folder')}</span>`
+        : siteAvatarHtml(item.title, item.url, 'link-avatar omni-avatar', item.emoji);
+      const tags = (item.tags || []).slice(0, 3).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+      return `<button type="button" class="omni-row${i === omniActive ? ' is-active' : ''} tone-${escapeHtml(item.color || 'mint')}"
+          role="option" aria-selected="${i === omniActive}" data-omni="${i}">
+        ${avatar}
+        <span class="omni-text">
+          <span class="omni-title">${escapeHtml(item.title)}${item.pinned ? icon('pin', 'pin') : ''}</span>
+          <span class="omni-sub">${escapeHtml(item.sub)}${item.host ? ` · ${escapeHtml(item.host)}` : ''}</span>
+        </span>
+        ${tags ? `<span class="omni-tags">${tags}</span>` : ''}
+        <span class="omni-kind">${OMNI_KIND_LABEL[item.kind]}</span>
+      </button>`;
+    }
+
+    function renderOmni() {
+      const list = $('omniList');
+      if (!omniResults.length) {
+        const q = $('omniInput').value.trim();
+        list.innerHTML = `<div class="omni-empty">${q ? '没有匹配的收藏，换个关键词试试。' : '输入关键词开始搜索，或用 #标签 按标签筛选。'}</div>`;
+        $('omniCount').textContent = '';
+        return;
+      }
+      list.innerHTML = omniResults.map(omniRowHtml).join('');
+      $('omniCount').textContent = `${omniResults.length}${omniResults.length >= OMNI_LIMIT ? '+' : ''} 条结果`;
+      pumpFavicons();
+      const active = list.querySelector('.omni-row.is-active');
+      if (active) active.scrollIntoView({ block: 'nearest' });
+    }
+
+    function omniRefresh() {
+      omniResults = omniSearch($('omniInput').value);
+      omniActive = 0;
+      renderOmni();
+    }
+
+    function openOmni(preset) {
+      const input = $('omniInput');
+      input.value = preset || '';
+      $('omniModal').classList.add('show');
+      omniRefresh();
+      // 等弹窗显示后再聚焦，iOS Safari 对 display:none 元素的 focus 会被忽略。
+      requestAnimationFrame(() => { input.focus(); input.select(); });
+    }
+    function closeOmni() { $('omniModal').classList.remove('show'); }
+
+    // Shift+Enter：不打开网址，改为跳到它所在的分组页面，方便接着编辑 / 排序。
+    function omniOpen(item, jumpToGroup) {
+      if (!item) return;
+      if (jumpToGroup || item.kind === 'group') {
+        if (item.groupId) { closeOmni(); switchView('bookmarks'); openLibPage(item.groupId); return; }
+      }
+      if (item.kind === 'bookmark' && jumpToGroup) { closeOmni(); switchView('bookmarks'); openLibPage('monitor'); return; }
+      if (item.kind === 'config') { closeOmni(); switchView('configs'); return; }
+      const safe = safeUrl(item.url);
+      if (!safe) { toast('这条没有可打开的网址', 'err'); return; }
+      window.open(safe, '_blank', 'noopener');
+      closeOmni();
+    }
+
+    // 标签点击：卡片整体是个 <a>，必须阻止默认跳转，改为打开标签筛选。
+    function filterByTag(event, tag) {
+      event.preventDefault();
+      event.stopPropagation();
+      openOmni('#' + tag);
+    }
+
+    $('omniOpen').addEventListener('click', () => openOmni());
+    $('omniInput').addEventListener('input', omniRefresh);
+    $('omniList').addEventListener('click', (e) => {
+      const row = e.target.closest('[data-omni]');
+      if (!row) return;
+      omniOpen(omniResults[Number(row.dataset.omni)], e.shiftKey);
+    });
+    $('omniInput').addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!omniResults.length) return;
+        omniActive = (omniActive + (e.key === 'ArrowDown' ? 1 : omniResults.length - 1)) % omniResults.length;
+        renderOmni();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        omniOpen(omniResults[omniActive], e.shiftKey);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeOmni();
+      }
     });
 
     // ===== 历史 =====
