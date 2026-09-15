@@ -428,6 +428,30 @@ details > summary::-webkit-details-marker { display: none; }
 .link-card .action-menu { align-self: flex-end; }
 .link-card.is-moving { opacity: .5; }
 
+/* ===== 卡片网格拖拽排序 ===== */
+/* 把手必须 touch-action:none，否则触摸端的拖动会被页面滚动抢走。 */
+/* 把手与复制按钮同属顶部一组，让 .link-tools 的 space-between 仍只分配两端。 */
+.link-tools-top { display: flex; flex-direction: column; gap: 4px; }
+.card-grip { cursor: grab; touch-action: none; color: var(--text-3); }
+.card-grip:hover:not(:disabled) { color: var(--text); }
+.card-grip:disabled { opacity: .3; cursor: default; }
+.card-grip:active:not(:disabled) { cursor: grabbing; }
+.bookmark-top .card-grip { flex: 0 0 auto; width: 26px; height: 26px; margin: -2px -2px 0 0; border-radius: 8px; }
+.bookmark-top .card-grip svg { width: 15px; height: 15px; }
+/* 桌面端默认淡出，指针移到卡片上才显形，免得静态页面被一排点点噪音填满。
+   触摸端没有 hover，保持常显。 */
+@media (hover: hover) {
+  .card-grip { opacity: 0; transition: opacity .15s ease, color .15s ease; }
+  .bookmark-card:hover .card-grip, .link-card:hover .card-grip,
+  .card-grip:focus-visible { opacity: 1; }
+}
+.bookmark-grid.is-sorting, .link-grid.is-sorting { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.bookmark-grid.is-sorting .bookmark-card, .link-grid.is-sorting .link-card { transition: none; }
+.bookmark-card.is-dragging, .link-card.is-dragging {
+  opacity: .6; transform: none;
+  border-color: var(--tone, var(--accent)); box-shadow: 0 0 0 1px var(--tone, var(--accent));
+}
+
 /* ---------- 空状态 ---------- */
 .empty { padding: 48px 20px; color: var(--text-3); text-align: center; font-size: 12.5px; }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 24px; text-align: center; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); background: var(--surface); }

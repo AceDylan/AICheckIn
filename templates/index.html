@@ -412,6 +412,7 @@
       lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
       unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
       search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+      grip: '<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
     };
     const GROUP_ICONS = ['folder', 'server', 'globe', 'sparkles', 'code', 'book', 'play', 'chat', 'wrench', 'star', 'cloud', 'shield'];
     const GROUP_COLORS = ['mint', 'sky', 'violet', 'amber', 'rose', 'slate'];
@@ -934,6 +935,124 @@
       container.addEventListener('pointercancel', () => endSort(true));
       container.addEventListener('keydown', onSortKeyDown);
     });
+    // ===== 卡片网格拖拽排序（站点看板 / 分组内的网址）=====
+    // 只有把手 [data-card-grip] 能发起拖拽：卡片本体是个 <a>，整卡可拖会和点击打架。
+    // 把手上 touch-action:none，所以触摸端也能拖，不会被页面滚动抢走。
+    // 搜索过滤时把手禁用——此时看到的只是子集，按可见顺序写回会打乱被过滤掉的那些。
+    const CARD_SORT = { el: null, list: null, start: null, active: false, pointerId: null };
+
+    function cardsIn(list) { return Array.from(list.querySelectorAll('[data-card-id]')); }
+
+    // 网格里的插入点：按 DOM 顺序找第一个「在指针之后」的卡片。
+    // 先比行（指针在这张卡上沿之上），同一行再比列（指针在这张卡左半边）。
+    function cardInsertBefore(list, dragged, x, y) {
+      for (const other of cardsIn(list)) {
+        if (other === dragged) continue;
+        const r = other.getBoundingClientRect();
+        if (y < r.top) return other;
+        if (y <= r.bottom && x < r.left + r.width / 2) return other;
+      }
+      return null;
+    }
+
+    // 把当前 DOM 顺序写回后端。看板用下标数组，网址用 id 数组，两套接口在这里收口。
+    async function persistCardOrder(list, ids) {
+      if (list.id === 'bmList') {
+        const order = ids.map(Number);
+        const bms = STATE.bookmarks || [];
+        const data = await linkApi('/api/bookmarks/reorder', 'POST', { order });
+        if (!data.ok) { toast(data.error || '排序失败', 'err'); renderBookmarks(); return false; }
+        STATE.bookmarks = order.map(k => bms[k]);
+        renderBookmarks();
+        return true;
+      }
+      const data = await linkApi(`/api/link_groups/${LIB.page}/links/reorder`, 'POST', { order: ids });
+      renderLibrary();
+      if (!data.ok) { toast(data.error || '排序失败', 'err'); return false; }
+      return true;
+    }
+
+    function endCardSort(restore) {
+      const el = CARD_SORT.el;
+      if (!el) return;
+      if (CARD_SORT.pointerId !== null) { try { el.releasePointerCapture(CARD_SORT.pointerId); } catch (_) {} }
+      el.classList.remove('is-dragging');
+      CARD_SORT.list.classList.remove('is-sorting');
+      const wasActive = CARD_SORT.active;
+      CARD_SORT.el = null; CARD_SORT.list = null; CARD_SORT.pointerId = null; CARD_SORT.active = false;
+      if (restore && wasActive) renderLibrary();
+    }
+
+    function onCardPointerDown(e) {
+      if (e.button !== 0 || !canEdit()) return;
+      const grip = e.target.closest('[data-card-grip]');
+      if (!grip || grip.disabled) return;
+      const list = e.currentTarget;
+      const el = grip.closest('[data-card-id]');
+      if (!el || cardsIn(list).length < 2) return;
+      e.preventDefault();
+      CARD_SORT.el = el;
+      CARD_SORT.list = list;
+      CARD_SORT.start = { x: e.clientX, y: e.clientY };
+      CARD_SORT.active = false;
+      CARD_SORT.pointerId = e.pointerId;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+
+    function onCardPointerMove(e) {
+      if (!CARD_SORT.el || e.pointerId !== CARD_SORT.pointerId) return;
+      if (!CARD_SORT.active) {
+        const moved = Math.hypot(e.clientX - CARD_SORT.start.x, e.clientY - CARD_SORT.start.y);
+        if (moved < 6) return;  // 小幅抖动仍算点击
+        CARD_SORT.active = true;
+        CARD_SORT.el.classList.add('is-dragging');
+        CARD_SORT.list.classList.add('is-sorting');
+      }
+      e.preventDefault();
+      const before = cardInsertBefore(CARD_SORT.list, CARD_SORT.el, e.clientX, e.clientY);
+      CARD_SORT.list.insertBefore(CARD_SORT.el, before);
+    }
+
+    async function onCardPointerUp(e) {
+      if (!CARD_SORT.el || e.pointerId !== CARD_SORT.pointerId) return;
+      const list = CARD_SORT.list, moved = CARD_SORT.active;
+      const ids = cardsIn(list).map(x => x.dataset.cardId);
+      endCardSort(false);
+      if (!moved) return;
+      const current = list.id === 'bmList'
+        ? (STATE.bookmarks || []).map((_, i) => String(i))
+        : ((findGroup(LIB.page) || {}).links || []).map(l => l.id);
+      if (ids.length !== current.length || ids.every((id, i) => id === current[i])) {
+        // 顺序没变（或 DOM 与 STATE 对不上）：重绘一次回到权威顺序，不打接口。
+        if (list.id === 'bmList') renderBookmarks(); else renderLibrary();
+        return;
+      }
+      if (await persistCardOrder(list, ids)) toast('顺序已保存', 'ok');
+    }
+
+    // Alt+↑/↓（或 ←/→）：键盘同样能排序，不依赖指针设备。
+    function onCardKeyDown(e) {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const dir = (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? 'up'
+        : (e.key === 'ArrowDown' || e.key === 'ArrowRight') ? 'down' : '';
+      if (!dir) return;
+      const grip = e.target.closest('[data-card-grip]');
+      if (!grip || grip.disabled) return;
+      const el = grip.closest('[data-card-id]');
+      if (!el) return;
+      e.preventDefault();
+      if (e.currentTarget.id === 'bmList') moveBm(Number(el.dataset.cardId), dir);
+      else moveLink(LIB.page, el.dataset.cardId, dir);
+    }
+
+    [$('bmList'), $('linkList')].forEach(list => {
+      list.addEventListener('pointerdown', onCardPointerDown);
+      list.addEventListener('pointermove', onCardPointerMove);
+      list.addEventListener('pointerup', onCardPointerUp);
+      list.addEventListener('pointercancel', () => endCardSort(true));
+      list.addEventListener('keydown', onCardKeyDown);
+    });
+
     function openLibPage(page) {
       LIB.page = page;
       history.replaceState(null, '', libHash());
@@ -1102,10 +1221,11 @@
         const safe = safeUrl(b.url);
         const host = siteHost(b.url) || '未设置域名';
         return `
-        <article class="bookmark-card" data-bm-index="${i}" style="--hue:${hueOf(host)}">
+        <article class="bookmark-card" data-bm-index="${i}" data-card-id="${i}" style="--hue:${hueOf(host)}">
           <div class="bookmark-top">
             ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
             <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
+            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${query ? ' disabled' : ''}>${icon('grip')}</button>
           </div>
           ${fieldsBlockHtml(b)}
           <div class="bookmark-actions">
@@ -1463,7 +1583,7 @@
       const others = libGroups().filter(o => o.id !== g.id);
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
       const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon);
-      return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}" data-link-id="${lid}" style="--hue:${hueOf(host)}">
+      return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}" data-link-id="${lid}" data-card-id="${lid}" style="--hue:${hueOf(host)}">
         <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? 'target="_blank" rel="noopener noreferrer"' : ''} title="${escapeHtml(l.url)}">
           ${avatar}
           <div class="link-body">
@@ -1474,7 +1594,10 @@
           </div>
         </a>
         <div class="link-tools">
-          <button type="button" class="icon-btn" title="复制网址" aria-label="复制 ${escapeHtml(l.name)} 的网址" onclick="copyLinkUrl('${gid}','${lid}')">${icon('copy')}</button>
+          <span class="link-tools-top">
+            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(l.name)}"${searching ? ' disabled' : ''}>${icon('grip')}</button>
+            <button type="button" class="icon-btn" title="复制网址" aria-label="复制 ${escapeHtml(l.name)} 的网址" onclick="copyLinkUrl('${gid}','${lid}')">${icon('copy')}</button>
+          </span>
           <details class="action-menu">
             <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(l.name)} 的更多操作">···</summary>
             <div class="menu-popover">
