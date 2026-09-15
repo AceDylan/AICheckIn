@@ -23,7 +23,8 @@ import string
 import sys
 import threading
 import time
-from urllib.parse import urlparse
+import urllib.request
+from urllib.parse import urljoin, urlparse
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -2023,6 +2024,316 @@ def api_link_reorder(gid):
     if err:
         return err
     return _link_groups_response(store)
+
+
+# =========================
+# 站点图标（favicon）：抓取 → 本地缓存 → 失败由前端回退首字母
+# =========================
+# 只为「已经出现在配置里」的 origin 抓取图标：本接口必须开放访问（未解锁的只读访客也要看到
+# 图标），若允许任意 URL 就等于对外开放一个转发器，因此用 store 里的 origin 白名单兜住。
+# 白名单里的地址都是管理员自己添加的（含内网自建服务），故不额外拦私有网段。
+
+FAVICON_DIR = DATA_DIR / "favicons"
+FAVICON_OK_TTL = 7 * 24 * 3600        # 抓到图标后的缓存有效期
+FAVICON_FAIL_TTL = 6 * 3600           # 失败的负缓存有效期，避免反复抓死站
+FAVICON_MAX_BYTES = 256 * 1024        # 单个图标体积上限
+FAVICON_HTML_MAX_BYTES = 256 * 1024   # 首页 HTML 只读前若干字节用于找 <link rel=icon>
+FAVICON_TIMEOUT = 5                   # 单次请求超时（秒）
+FAVICON_BUDGET = 12                   # 单个 origin 的总抓取时间预算（秒）
+FAVICON_MAX_CANDIDATES = 4
+FAVICON_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
+# 同时向外抓取的上限：gunicorn 线程数有限，抓图标不能把线程全占满。
+_favicon_fetch_slots = threading.BoundedSemaphore(3)
+_favicon_locks = {}
+_favicon_locks_guard = threading.Lock()
+# origin 白名单按 config.json 的 mtime 缓存，避免每个图标请求都解析一遍配置。
+_favicon_ctx = {"stamp": object(), "origins": frozenset(), "proxy": ""}
+
+_FAVICON_LINK_RE = re.compile(r"<link\b([^>]*)>", re.I)
+_FAVICON_BASE_RE = re.compile(r"<base\b([^>]*)>", re.I)
+_FAVICON_ATTR_RE = re.compile(r"""([a-zA-Z][\w:.-]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'`=<>]+)""")
+_FAVICON_SIZE_RE = re.compile(r"(\d+)\s*[xX]\s*\d+")
+
+
+class _FaviconRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """只跟随 http(s) 跳转，挡掉 ftp/file 等协议。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlparse(newurl).scheme not in ("http", "https"):
+            return None
+        return urllib.request.HTTPRedirectHandler.redirect_request(
+            self, req, fp, code, msg, headers, newurl
+        )
+
+
+def favicon_origin(url):
+    """把任意站点地址归一化为 scheme://host[:port]；非 http(s) 或无主机名返回空串。"""
+    try:
+        parts = urlparse(str(url if url is not None else "").strip())
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return ""
+    netloc = parts.hostname.lower()
+    try:
+        port = parts.port
+    except ValueError:
+        return ""
+    if port and port != (443 if parts.scheme == "https" else 80):
+        netloc = "{0}:{1}".format(netloc, port)
+    return "{0}://{1}".format(parts.scheme, netloc)
+
+
+def _favicon_context():
+    """返回 (允许抓取的 origin 集合, 代理地址)，按 config.json 的 mtime 缓存。"""
+    try:
+        stamp = Path(CONFIG_FILE).stat().st_mtime_ns
+    except OSError:
+        stamp = None
+    if stamp is not None and _favicon_ctx["stamp"] == stamp:
+        return _favicon_ctx["origins"], _favicon_ctx["proxy"]
+    try:
+        store = read_store()
+    except RuntimeError:
+        return frozenset(), ""
+    origins = set()
+    for bookmark in store.get("bookmarks") or []:
+        origins.add(favicon_origin(bookmark.get("url")))
+    for group in store.get("link_groups") or []:
+        for link in group.get("links") or []:
+            origins.add(favicon_origin(link.get("url")))
+    for cfg in store.get("configs") or []:
+        origins.add(favicon_origin(cfg.get("base_url")))
+    origins.discard("")
+    proxy = str(store.get("proxy_url") or "").strip()
+    _favicon_ctx.update({"stamp": stamp, "origins": frozenset(origins), "proxy": proxy})
+    return _favicon_ctx["origins"], proxy
+
+
+def sniff_image_mime(data):
+    """按魔数判断图片类型；不是已知图片（例如站点用 200 返回了一个 HTML 错误页）返回空串。"""
+    if not data:
+        return ""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] in (b"\x00\x00\x01\x00", b"\x00\x00\x02\x00"):
+        return "image/x-icon"
+    if data[:2] == b"BM":
+        return "image/bmp"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    head = data[:512].lstrip().lower()
+    if head.startswith(b"<?xml") or head.startswith(b"<!doctype svg") or b"<svg" in head:
+        return "image/svg+xml"
+    return ""
+
+
+def _favicon_http_get(url, proxy, timeout, max_bytes):
+    """抓取单个 URL，最多读 max_bytes 字节。返回 (data, content_type, final_url)，失败为 (None, "", "")。"""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": FAVICON_UA,
+        "Accept": "text/html,image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    })
+    handlers = [_FaviconRedirectHandler()]
+    # urllib 的 ProxyHandler 不支持 socks；配的是 socks 时直连抓取（图标不涉敏感数据）。
+    if proxy and not proxy.lower().startswith("socks"):
+        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    opener = urllib.request.build_opener(*handlers)
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            if int(getattr(resp, "status", None) or resp.getcode() or 0) != 200:
+                return None, "", ""
+            data = resp.read(max_bytes + 1)
+            if not data or len(data) > max_bytes:
+                return None, "", ""
+            ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            return data, ctype, resp.geturl() or url
+    except Exception:
+        return None, "", ""
+
+
+def _favicon_attrs(chunk):
+    attrs = {}
+    for name, value in _FAVICON_ATTR_RE.findall(chunk or ""):
+        attrs[name.lower()] = value.strip("\"'").strip()
+    return attrs
+
+
+def _favicon_link_score(attrs):
+    """rel / sizes / type 综合打分：优先常规 icon，其次 apple-touch-icon；尺寸偏好 32~192px 与矢量图。"""
+    rel = (attrs.get("rel") or "").lower()
+    if "apple-touch-icon" in rel:
+        score = 30
+    elif "mask-icon" in rel:
+        score = 5
+    else:
+        score = 40
+    sizes = (attrs.get("sizes") or "").lower()
+    if sizes == "any" or (attrs.get("type") or "").lower() == "image/svg+xml":
+        score += 25
+    else:
+        nums = [int(n) for n in _FAVICON_SIZE_RE.findall(sizes)]
+        if nums:
+            best = max(nums)
+            score += 20 if 32 <= best <= 192 else (12 if best > 192 else 6)
+    return score
+
+
+def favicon_candidates(html, page_url):
+    """从首页 HTML 抽出图标候选，按可用性排序。相对路径 / 协议相对路径 / <base href> 都会解析为绝对地址。"""
+    head = html.split("</head>", 1)[0] if "</head>" in html else html
+    base = page_url
+    base_tag = _FAVICON_BASE_RE.search(head)
+    if base_tag:
+        href = _favicon_attrs(base_tag.group(1)).get("href")
+        if href:
+            try:
+                base = urljoin(page_url, href)
+            except ValueError:
+                base = page_url
+    found = []
+    for match in _FAVICON_LINK_RE.finditer(head):
+        attrs = _favicon_attrs(match.group(1))
+        if "icon" not in (attrs.get("rel") or "").lower():
+            continue
+        href = attrs.get("href") or ""
+        if not href or href.lower().startswith(("javascript:", "about:", "data:")):
+            continue
+        try:
+            url = urljoin(base, href)
+        except ValueError:
+            continue
+        if urlparse(url).scheme not in ("http", "https"):
+            continue
+        found.append((_favicon_link_score(attrs), len(found), url))
+    found.sort(key=lambda item: (-item[0], item[1]))
+    urls, seen = [], set()
+    for _, _, url in found:
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
+def _favicon_fetch(origin, proxy):
+    """按候选顺序抓取图标，返回 (data, mime)；全部失败返回 (None, "")。"""
+    deadline = time.monotonic() + FAVICON_BUDGET
+    candidates = []
+    page, ctype, final_url = _favicon_http_get(origin + "/", proxy, FAVICON_TIMEOUT, FAVICON_HTML_MAX_BYTES)
+    if page and (not ctype or "html" in ctype or "xml" in ctype):
+        candidates = favicon_candidates(page.decode("utf-8", errors="replace"), final_url or origin + "/")
+    # 站点没有声明 <link rel=icon>（或首页就抓不到）时回落到约定俗成的 /favicon.ico。
+    fallback = origin + "/favicon.ico"
+    if fallback not in candidates:
+        candidates.append(fallback)
+    for url in candidates[:FAVICON_MAX_CANDIDATES]:
+        if time.monotonic() >= deadline:
+            break
+        data, _, _ = _favicon_http_get(url, proxy, FAVICON_TIMEOUT, FAVICON_MAX_BYTES)
+        mime = sniff_image_mime(data)
+        if mime:
+            return data, mime
+    return None, ""
+
+
+def _favicon_key(origin):
+    return hashlib.sha1(origin.encode("utf-8")).hexdigest()
+
+
+def _favicon_cache_read(origin):
+    """命中且未过期返回 {'ok': bool, 'data':, 'mime':}；未命中/过期返回 None。"""
+    key = _favicon_key(origin)
+    try:
+        meta = json.loads((FAVICON_DIR / (key + ".json")).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(meta, dict) or meta.get("origin") != origin:
+        return None
+    try:
+        age = time.time() - float(meta.get("fetched_at") or 0)
+    except (TypeError, ValueError):
+        return None
+    ok = bool(meta.get("ok"))
+    if age < 0 or age > (FAVICON_OK_TTL if ok else FAVICON_FAIL_TTL):
+        return None
+    if not ok:
+        return {"ok": False, "data": None, "mime": ""}
+    try:
+        data = (FAVICON_DIR / (key + ".bin")).read_bytes()
+    except OSError:
+        return None
+    return {"ok": True, "data": data, "mime": str(meta.get("mime") or "image/png")}
+
+
+def _favicon_cache_write(origin, data, mime):
+    """写入缓存；失败（例如数据目录只读）只影响命中率，不影响接口可用性。"""
+    key = _favicon_key(origin)
+    try:
+        FAVICON_DIR.mkdir(parents=True, exist_ok=True)
+        if data:
+            (FAVICON_DIR / (key + ".bin")).write_bytes(data)
+        (FAVICON_DIR / (key + ".json")).write_text(
+            json.dumps({"origin": origin, "ok": bool(data), "mime": mime, "fetched_at": time.time()},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _favicon_origin_lock(key):
+    with _favicon_locks_guard:
+        if len(_favicon_locks) > 512:
+            _favicon_locks.clear()
+        lock = _favicon_locks.get(key)
+        if lock is None:
+            lock = _favicon_locks[key] = threading.Lock()
+        return lock
+
+
+def _favicon_missing():
+    """抓不到图标：返回 404（带短期缓存），前端据此稳定回退到首字母。"""
+    resp = jsonify({"ok": False, "error": "未找到站点图标"})
+    resp.headers["Cache-Control"] = "public, max-age=1800"
+    return resp, 404
+
+
+@app.get("/api/favicon")
+def api_favicon():
+    """返回站点图标（磁盘缓存优先）。开放访问，但只接受配置里已存在的 origin。"""
+    origin = favicon_origin(request.args.get("u", ""))
+    if not origin:
+        return jsonify({"ok": False, "error": "网址无效"}), 400
+    allowed, proxy = _favicon_context()
+    if origin not in allowed:
+        return _favicon_missing()
+    hit = _favicon_cache_read(origin)
+    if hit is None:
+        with _favicon_origin_lock(_favicon_key(origin)):
+            hit = _favicon_cache_read(origin)  # 等锁期间可能已被同批请求抓好
+            if hit is None:
+                with _favicon_fetch_slots:
+                    data, mime = _favicon_fetch(origin, proxy)
+                _favicon_cache_write(origin, data, mime)
+                hit = {"ok": bool(data), "data": data, "mime": mime}
+    if not hit.get("ok"):
+        return _favicon_missing()
+    resp = app.response_class(hit["data"], mimetype=hit["mime"])
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    # 内容来自第三方（SVG 可内嵌脚本）：直接访问该地址时用 CSP 关死脚本与外部加载。
+    resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    resp.headers["Content-Disposition"] = "inline"
+    return resp
 
 
 @app.get("/api/configs/export")

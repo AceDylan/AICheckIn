@@ -206,7 +206,7 @@
         <div class="field"><label>描述</label><input class="input" id="lk_desc" placeholder="一句话说明用途（可选）" maxlength="160"></div>
         <div class="row-2">
           <div class="field"><label>标签</label><input class="input" id="lk_tags" placeholder="逗号分隔，最多 8 个"></div>
-          <div class="field"><label>图标（可选 emoji）</label><input class="input" id="lk_icon" placeholder="如 🚀，留空用首字母" maxlength="8"></div>
+          <div class="field"><label>图标（可选 emoji，覆盖自动图标）</label><input class="input" id="lk_icon" placeholder="如 🚀，留空自动取网站图标" maxlength="8"></div>
         </div>
         <div class="row-2">
           <div class="field"><label>所在分组</label><select class="input" id="lk_group"></select></div>
@@ -286,6 +286,72 @@
       let h = 0;
       for (const ch of String(s || '')) h = (h * 31 + ch.codePointAt(0)) % 360;
       return h;
+    }
+
+    // ===== 站点图标（favicon） =====
+    // 图标由后端 /api/favicon 抓取并缓存；前端只负责「拿到才显示、拿不到就保持首字母」：
+    // <img> 绝对定位盖在回退层之上，加载成功才淡入，失败直接 remove()，因此既不会出现破图，
+    // 也不会因为图标缺失或尺寸不一而改变卡片布局。
+    const FAVICON_MEMO = new Map();     // origin -> 'ok' | 'fail'，避免重绘时反复请求同一站点
+    const FAVICON_QUEUE = [];
+    const FAVICON_INFLIGHT = new Set();
+    const FAVICON_PARALLEL = 3;         // 与后端抓取并发对齐，别让一屏卡片把请求全堆上去
+    const FAVICON_TIMEOUT_MS = 20000;   // 兜底：请求卡死时也要把并发额度还回来
+    function siteOrigin(u) {
+      try { return new URL(safeUrl(u)).origin; } catch (_) { return ''; }
+    }
+    function faviconSrc(origin) { return '/api/favicon?u=' + encodeURIComponent(origin); }
+    // 头像 HTML：底层永远是 emoji / 首字母。emoji 是用户显式设置的，优先级高于自动抓取的图标。
+    function siteAvatarHtml(name, url, cls, emoji) {
+      const text = emoji ? escapeHtml(emoji) : escapeHtml(siteInitial(name, url));
+      const origin = emoji ? '' : siteOrigin(url);
+      // 不用 loading="lazy"：未激活的视图是 display:none，浏览器会把里面的懒加载图片无限期挂起，
+      // 反而卡死下面的限流队列。并发由 drainFavicons 自己控制。
+      const img = (origin && FAVICON_MEMO.get(origin) !== 'fail')
+        ? `<img class="avatar-img" data-favicon="${escapeHtml(origin)}" alt="" decoding="async">`
+        : '';
+      return `<span class="${cls || 'site-avatar'}${emoji ? ' is-emoji' : ''}" aria-hidden="true">${img}<span class="avatar-text">${text}</span></span>`;
+    }
+    function startFavicon(img) {
+      const origin = img.dataset.favicon;
+      let settled = false;
+      const done = (state) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (state) FAVICON_MEMO.set(origin, state);
+        if (state === 'ok') img.classList.add('is-ready'); else img.remove();
+        FAVICON_INFLIGHT.delete(img);
+        drainFavicons();
+      };
+      const timer = setTimeout(() => done(img.isConnected ? 'fail' : ''), FAVICON_TIMEOUT_MS);
+      img.addEventListener('load', () => done('ok'), { once: true });
+      img.addEventListener('error', () => done('fail'), { once: true });
+      img.src = faviconSrc(origin);
+    }
+    function drainFavicons() {
+      // 重绘会把还在加载的 <img> 从文档里摘掉，被摘掉的元素 load/error 可能永远不触发。
+      // 先清掉这些「僵尸」，否则它们会一直占着并发额度，后面排队的图标永远发不出去。
+      for (const img of FAVICON_INFLIGHT) if (!img.isConnected) FAVICON_INFLIGHT.delete(img);
+      while (FAVICON_INFLIGHT.size < FAVICON_PARALLEL && FAVICON_QUEUE.length) {
+        const img = FAVICON_QUEUE.shift();
+        if (!img.isConnected) continue;
+        FAVICON_INFLIGHT.add(img);
+        startFavicon(img);
+      }
+    }
+    // 每次重绘后调用：已知可用的直接取（走浏览器缓存，无闪烁），未知的排队限流请求。
+    function pumpFavicons() {
+      const hidden = [];
+      document.querySelectorAll('img.avatar-img[data-favicon]:not([data-favicon-queued])').forEach(img => {
+        img.dataset.faviconQueued = '1';
+        // 已知可用的直接发（命中浏览器缓存，不占限流额度，也就不会有可见的闪烁）。
+        if (FAVICON_MEMO.get(img.dataset.favicon) === 'ok') startFavicon(img);
+        else if (img.offsetParent) FAVICON_QUEUE.push(img);   // 当前可见的视图优先
+        else hidden.push(img);
+      });
+      FAVICON_QUEUE.push(...hidden);
+      drainFavicons();
     }
     function parseNum(s) { const n = parseFloat(String(s == null ? '' : s).replace(/,/g, '')); return isFinite(n) ? n : 0; }
     function fmtNum(n) { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
@@ -443,9 +509,9 @@
         ? { label: r.status_label, color: r.color }
         : (c.checked_in_today ? { label: '今日已签', color: 'green' } : { label: '未签到', color: 'gray' });
       const stamp = (!r && m.updated_at) ? `<div class="stamp">↻ 上次获取 ${escapeHtml(m.updated_at)}</div>` : '';
-      return `<div class="card ${badge.color}" data-idx="${i}">
+      return `<div class="card ${badge.color}" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
         <div class="card-head">
-          <span class="card-name">${escapeHtml(c.name)}</span>
+          <span class="card-title">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}<span class="card-name">${escapeHtml(c.name)}</span></span>
           <span class="badge ${badge.color}">${escapeHtml(badge.label)}</span>
         </div>
         ${urlLink(c.base_url)}
@@ -471,9 +537,9 @@
       const goBtn = safe
         ? `<a class="btn sm" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">去签到 ↗</a>`
         : `<button class="btn sm" disabled>无网址</button>`;
-      return `<div class="dcard" data-idx="${i}">
+      return `<div class="dcard" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
         <div class="dcard-main">
-          <div class="card-name">${escapeHtml(c.name)} <span class="badge gray">禁用</span></div>
+          <div class="card-name">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}${escapeHtml(c.name)} <span class="badge gray">禁用</span></div>
           ${urlLink(c.base_url)}
           <div class="dmetrics">余额 ${escapeHtml(m.wallet_balance)} · 已用 ${escapeHtml(m.used_quota)} · 请求 ${escapeHtml(m.request_count)}${stamp}</div>
         </div>
@@ -519,6 +585,7 @@
         $('disabledWrap').style.display = 'none';
       }
       renderOverview();
+      pumpFavicons();
     }
 
     // ===== 签到动作 =====
@@ -606,8 +673,9 @@
       if (!STATE.configs.length) { list.innerHTML = ''; showEmpty(empty, { icon: 'shield', title: '暂无签到配置', text: '点击右上角「新增」添加第一组账户，或导入之前导出的 JSON。', actions: [{ label: '＋ 新增配置', onclick: "$('addCfg').click()" }] }); return; }
       hideEmpty(empty);
       list.innerHTML = STATE.configs.map((c, i) => `
-        <div class="cfg-row ${c.enabled ? '' : 'disabled'}">
+        <div class="cfg-row ${c.enabled ? '' : 'disabled'}" style="--hue:${hueOf(siteHost(c.base_url))}">
           <label class="switch" title="启用/禁用"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCfg(${i}, this.checked)"><span class="slider"></span></label>
+          ${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}
           <div class="cfg-main">
             <div class="cfg-name">${escapeHtml(c.name)}</div>
             <div class="cfg-sub">${urlLink(c.base_url)} <span>· uid ${escapeHtml(c.user_id)} ·</span> <span class="cfg-token" id="tok-${i}">${escapeHtml(c.token_masked)}</span></div>
@@ -618,6 +686,7 @@
             <button class="btn sm danger" onclick="deleteCfg(${i})">删除</button>
           </div>
         </div>`).join('');
+      pumpFavicons();
     }
 
     function guardAdmin() {
@@ -713,14 +782,17 @@
     function renderLibNav() {
       const pages = libPages();
       $('bmNavCount').textContent = (STATE.bookmarks || []).length + totalLinks();
+      // 分组项可拖动排序（站点看板固定在首位，不参与排序）。
+      const sortHint = (p) => p.id === 'monitor' ? '' : ` data-sortable="1" title="${escapeHtml(p.name)}｜按住拖动可调整顺序（Alt+↑/↓）"`;
       $('libSubnav').innerHTML = pages.map(p =>
-        `<button type="button" class="subnav-item tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}" aria-current="${LIB.page === p.id ? 'page' : 'false'}"><span class="sub-ic">${icon(p.icon)}</span><span class="sub-text">${escapeHtml(p.name)}</span><span class="nav-count">${p.count}</span></button>`
+        `<button type="button" class="subnav-item tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)} aria-current="${LIB.page === p.id ? 'page' : 'false'}"><span class="sub-ic">${icon(p.icon)}</span><span class="sub-text">${escapeHtml(p.name)}</span><span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="subnav-item is-add" data-act="add-group"><span class="sub-ic">${icon('plus')}</span><span class="sub-text">新建分组</span></button>`;
       $('libChips').innerHTML = pages.map(p =>
-        `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}">${escapeHtml(p.name)}<span class="nav-count">${p.count}</span></button>`
+        `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
     }
     function onLibNavClick(e) {
+      if (Date.now() < SORT.blockClickUntil) return;  // 拖拽结束后浏览器仍会补一次 click
       const btn = e.target.closest('[data-lib],[data-act="add-group"]');
       if (!btn) return;
       if (btn.dataset.act === 'add-group') { if (guardAdmin()) openGroupModal(null); return; }
@@ -729,6 +801,103 @@
     }
     $('libSubnav').addEventListener('click', onLibNavClick);
     $('libChips').addEventListener('click', onLibNavClick);
+
+    // ===== 收藏库：分组自定义排序 =====
+    // 顺序就是 link_groups 数组顺序，落盘在 config.json，刷新后自然恢复；写回走既有的
+    // /api/link_groups/reorder。侧栏为纵向、移动端 chips 为横向，共用同一套拖拽逻辑。
+    // 触摸指针不参与拖拽（会和滚动、点击打架），触摸端仍可用「编辑分组」里的上移 / 下移。
+    const SORT = { el: null, container: null, axis: 'y', start: 0, active: false, pointerId: null, blockClickUntil: 0 };
+    function sortableItems(container) {
+      return Array.from(container.querySelectorAll('[data-sortable]'));
+    }
+    async function applyGroupOrder(ids) {
+      const data = await linkApi('/api/link_groups/reorder', 'POST', { order: ids });
+      renderLibrary();  // 成功按服务端返回重绘，失败则把乐观调整过的 DOM 复原
+      if (!data.ok) { toast(data.error || '排序失败', 'err'); return false; }
+      return true;
+    }
+    async function moveGroup(gid, dir) {
+      if (!guardAdmin()) return;
+      const ids = libGroups().map(g => g.id);
+      const i = ids.indexOf(gid), j = dir === 'up' ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= ids.length) return;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      if (!await applyGroupOrder(ids)) return;
+      const again = document.querySelector(`#libSubnav [data-lib="${gid}"], #libChips [data-lib="${gid}"]`);
+      if (again) again.focus();
+    }
+    function endSort(restore) {
+      const el = SORT.el;
+      if (!el) return;
+      if (SORT.pointerId !== null) { try { el.releasePointerCapture(SORT.pointerId); } catch (_) {} }
+      el.classList.remove('is-dragging');
+      SORT.container.classList.remove('is-sorting');
+      SORT.el = null; SORT.pointerId = null; SORT.active = false;
+      if (restore) renderLibrary();
+    }
+    function onSortPointerDown(e) {
+      // 只接管鼠标 / 触控笔的主键按下，且必须有编辑权限（排序接口需要管理密码）。
+      if (e.pointerType === 'touch' || e.button !== 0 || !canEdit()) return;
+      const container = e.currentTarget;
+      const el = e.target.closest('[data-sortable]');
+      if (!el || sortableItems(container).length < 2) return;
+      SORT.el = el;
+      SORT.container = container;
+      SORT.axis = container.id === 'libChips' ? 'x' : 'y';
+      SORT.start = SORT.axis === 'x' ? e.clientX : e.clientY;
+      SORT.active = false;
+      SORT.pointerId = e.pointerId;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    function onSortPointerMove(e) {
+      if (!SORT.el || e.pointerId !== SORT.pointerId) return;
+      const pos = SORT.axis === 'x' ? e.clientX : e.clientY;
+      if (!SORT.active) {
+        if (Math.abs(pos - SORT.start) < 6) return;  // 小幅抖动仍算点击，不误触发排序
+        SORT.active = true;
+        SORT.el.classList.add('is-dragging');
+        SORT.container.classList.add('is-sorting');
+      }
+      e.preventDefault();
+      // 越过相邻项中线即就地插入，给出即时的视觉反馈；「新建分组」永远排在最后。
+      const tail = SORT.container.querySelector('[data-act="add-group"]');
+      let before = null;
+      for (const other of sortableItems(SORT.container)) {
+        if (other === SORT.el) continue;
+        const rect = other.getBoundingClientRect();
+        const mid = SORT.axis === 'x' ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
+        if (pos < mid) { before = other; break; }
+      }
+      SORT.container.insertBefore(SORT.el, before || tail);
+    }
+    async function onSortPointerUp(e) {
+      if (!SORT.el || e.pointerId !== SORT.pointerId) return;
+      const container = SORT.container, moved = SORT.active;
+      const ids = sortableItems(container).map(x => x.dataset.lib);
+      endSort(false);
+      if (!moved) return;
+      SORT.blockClickUntil = Date.now() + 400;
+      const current = libGroups().map(g => g.id);
+      if (ids.length !== current.length || ids.every((id, i) => id === current[i])) { renderLibrary(); return; }
+      if (await applyGroupOrder(ids)) toast('分组顺序已保存', 'ok');
+    }
+    function onSortKeyDown(e) {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const dir = (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? 'up'
+        : (e.key === 'ArrowDown' || e.key === 'ArrowRight') ? 'down' : '';
+      if (!dir) return;
+      const el = e.target.closest('[data-sortable]');
+      if (!el) return;
+      e.preventDefault();
+      moveGroup(el.dataset.lib, dir);
+    }
+    [$('libSubnav'), $('libChips')].forEach(container => {
+      container.addEventListener('pointerdown', onSortPointerDown);
+      container.addEventListener('pointermove', onSortPointerMove);
+      container.addEventListener('pointerup', onSortPointerUp);
+      container.addEventListener('pointercancel', () => endSort(true));
+      container.addEventListener('keydown', onSortKeyDown);
+    });
     function openLibPage(page) {
       LIB.page = page;
       history.replaceState(null, '', libHash());
@@ -893,7 +1062,7 @@
         return `
         <article class="bookmark-card" data-bm-index="${i}" style="--hue:${hueOf(host)}">
           <div class="bookmark-top">
-            <div class="site-avatar" aria-hidden="true">${escapeHtml(siteInitial(b.name, b.url))}</div>
+            ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
             <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
           </div>
           ${fieldsBlockHtml(b)}
@@ -914,6 +1083,7 @@
           </div>
         </article>`;
       }).join('');
+      pumpFavicons();
     }
 
     $('refreshAllBm').addEventListener('click', async () => {
@@ -1241,7 +1411,7 @@
       const host = siteHost(l.url) || '未设置域名';
       const others = libGroups().filter(o => o.id !== g.id);
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
-      const avatar = l.icon ? `<div class="link-avatar is-emoji" aria-hidden="true">${escapeHtml(l.icon)}</div>` : `<div class="link-avatar" aria-hidden="true">${escapeHtml(siteInitial(l.name, l.url))}</div>`;
+      const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon);
       return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}" data-link-id="${lid}" style="--hue:${hueOf(host)}">
         <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? 'target="_blank" rel="noopener noreferrer"' : ''} title="${escapeHtml(l.url)}">
           ${avatar}
@@ -1289,6 +1459,7 @@
       }
       hideEmpty(empty);
       list.innerHTML = visible.map(({ l, i }) => linkCardHtml(l, i, g, links.length, !!query)).join('');
+      pumpFavicons();
     }
     async function copyLinkUrl(gid, lid) {
       const g = findGroup(gid); const l = g && (g.links || []).find(x => x.id === lid);
@@ -1516,9 +1687,7 @@
       const i = ids.indexOf(groupEdit.gid), j = dir === 'up' ? i - 1 : i + 1;
       if (i < 0 || j < 0 || j >= ids.length) return;
       [ids[i], ids[j]] = [ids[j], ids[i]];
-      const data = await linkApi('/api/link_groups/reorder', 'POST', { order: ids });
-      if (!data.ok) { toast(data.error || '排序失败', 'err'); return; }
-      renderLibrary();
+      if (!await applyGroupOrder(ids)) return;
       const pos = ids.indexOf(groupEdit.gid);
       $('groupUp').disabled = pos <= 0;
       $('groupDown').disabled = pos >= ids.length - 1;

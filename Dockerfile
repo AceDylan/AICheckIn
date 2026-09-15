@@ -29,5 +29,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # entrypoint 以 root 修正 /app/data 属主，再用 gosu 降权到 appuser 执行下方 CMD。
 # 单 worker + 多线程：签到是短时阻塞 IO，无需多进程。
+# 线程数从 4 提到 8：/api/favicon 首次抓取站点图标时会阻塞若干秒（有磁盘缓存，只在冷启动出现），
+# 一屏卡片最多并发 3 个，留足余量给页面自身的接口调用。
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "-b", "0.0.0.0:5525", "--workers", "1", "--threads", "4", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:5525", "--workers", "1", "--threads", "8", "--timeout", "120", "app:app"]

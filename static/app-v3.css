@@ -174,6 +174,11 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 .subnav-item .sub-ic svg { width: 13px; height: 13px; }
 .subnav-item .sub-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subnav-item .nav-count { font-size: 10px; }
+/* 分组自定义排序：拖拽中的项淡出跟随，容器内禁选文本，避免拖出选区。 */
+.subnav.is-sorting, .chip-row.is-sorting { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.subnav-item.is-dragging, .chip.is-dragging { opacity: .55; cursor: grabbing; }
+.subnav-item.is-dragging { background: var(--surface-2); }
+.chip.is-dragging { border-color: var(--tone, var(--accent)); }
 .subnav-item.is-add { color: var(--text-3); font-weight: 600; }
 .subnav-item.is-add:hover { color: var(--accent); }
 .subnav-item.is-add .sub-ic { background: transparent; color: inherit; border: 1px dashed var(--border-strong); }
@@ -319,12 +324,31 @@ details > summary::-webkit-details-marker { display: none; }
 .bookmark-card:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: var(--shadow-2); }
 .bookmark-top { display: flex; align-items: flex-start; gap: 12px; }
 .site-avatar {
+  position: relative; overflow: hidden;
   display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px;
   border-radius: 12px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
   color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
   font-size: 14px; font-weight: 820; text-transform: uppercase; letter-spacing: -.02em;
 }
+/* 名称旁的小号站点头像：服务配置行、签到卡片、禁用行共用。 */
+.mini-avatar {
+  position: relative; overflow: hidden;
+  display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px;
+  border-radius: 8px;
+  background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
+  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
+  font-size: 9.5px; font-weight: 820; text-transform: uppercase; letter-spacing: -.02em;
+}
+/* 站点图标（/api/favicon）：盖在首字母之上，加载成功才淡入并隐藏回退层。
+   抓取失败时脚本会移除 <img>，所以永远不会出现破图，尺寸也固定在头像框内不影响布局。 */
+.avatar-img {
+  position: absolute; inset: 0; width: 100%; height: 100%; padding: 14%;
+  object-fit: contain; opacity: 0; transition: opacity .18s ease;
+}
+.avatar-img.is-ready { opacity: 1; }
+.avatar-img.is-ready ~ .avatar-text { opacity: 0; }
+.avatar-text { position: relative; line-height: 1; transition: opacity .18s ease; }
 .site-copy { min-width: 0; flex: 1; }
 .site-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 730; letter-spacing: -.01em; }
 .site-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; color: var(--text-3); font-size: 11.5px; }
@@ -382,6 +406,7 @@ details > summary::-webkit-details-marker { display: none; }
 .link-card.is-pinned { border-color: color-mix(in srgb, var(--tone, var(--accent)) 45%, transparent); }
 .link-main { flex: 1; min-width: 0; display: flex; gap: 11px; padding: 13px 8px 13px 13px; text-decoration: none; color: inherit; border-radius: 14px 0 0 14px; }
 .link-avatar {
+  position: relative; overflow: hidden;
   display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px; border-radius: 11px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
   color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
@@ -430,7 +455,9 @@ details > summary::-webkit-details-marker { display: none; }
 .card { padding: 16px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-1); transition: border-color .15s ease; }
 .card:hover { border-color: var(--border-strong); }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 9px; margin-bottom: 7px; }
+.card-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .card-name { font-size: 14px; font-weight: 710; }
+.card-title .card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kvs { margin-top: 11px; }
 .kv { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 11.5px; }
 .kv:last-child { border-bottom: 0; }
