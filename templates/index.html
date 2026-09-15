@@ -143,6 +143,7 @@
             <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
             <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus" style="margin-top:0"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" name="gyqd-admin-password" type="password" placeholder="管理密码" autocomplete="current-password"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
             <div class="panel"><div class="panel-title">部署自检 <button class="btn sm ghost" id="runDiag" style="float:right;margin-top:-4px">重新检查</button></div><div class="note" style="margin-top:0">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
+            <div class="panel"><div class="panel-title">配置恢复 <button class="btn sm ghost" id="loadBackups" style="float:right;margin-top:-4px">查看备份</button></div><div class="note" style="margin-top:0">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
             <div class="panel"><div class="panel-title">快速收藏</div><div class="note" style="margin-top:0">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
             <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
           </div>
@@ -738,7 +739,14 @@
       try {
         const resp = await fetch('/api/configs', { headers: adminHeaders() });
         const data = await resp.json();
-        if (!data.ok) { toast(data.error || '加载配置失败', 'err'); return; }
+        if (!data.ok) {
+          // 多半是 config.json 读不出来了。别只丢一句「加载失败」就不管，
+          // 直接把人带到能救命的那个面板。
+          toast((data.error || '加载配置失败') + ' —— 可在「系统设置 → 配置恢复」里从备份回退', 'err');
+          switchView('settings');
+          loadBackups();
+          return;
+        }
         STATE = data;
         STATE.link_groups = Array.isArray(STATE.link_groups) ? STATE.link_groups : [];
         STATE_LOADED = true;
@@ -2304,6 +2312,48 @@
       }
       renderLockPill();
     }
+
+    // ===== 配置恢复 =====
+    // 刻意不自动加载：这个面板是「出事了才用」的，平时拉一串备份清单只是噪音。
+    async function loadBackups() {
+      const box = $('backupList');
+      if (!canEdit()) { box.innerHTML = '<div class="note">解锁后可查看备份。</div>'; return; }
+      box.innerHTML = '<div class="note">读取中…</div>';
+      try {
+        const resp = await fetch('/api/backups', { headers: adminHeaders() });
+        const data = await resp.json();
+        if (!Array.isArray(data.backups)) { box.innerHTML = `<div class="note">${escapeHtml(data.error || '读取失败')}</div>`; return; }
+        if (!data.backups.length) { box.innerHTML = '<div class="note">还没有备份（第一次保存配置后就会有）。</div>'; return; }
+        box.innerHTML = data.backups.map(b => `<div class="backup-row${b.valid ? '' : ' is-bad'}">
+            <span class="backup-when">${escapeHtml(b.at)}</span>
+            <span class="backup-label">${escapeHtml(b.label)}</span>
+            <span class="backup-sum">${escapeHtml(b.summary)}</span>
+            ${b.valid
+              ? `<button type="button" class="btn sm ghost" data-restore="${escapeHtml(b.id)}">恢复</button>`
+              : '<span class="backup-bad">不可用</span>'}
+          </div>`).join('');
+      } catch (e) { box.innerHTML = `<div class="note">读取失败：${escapeHtml(e.message)}</div>`; }
+    }
+    $('loadBackups').addEventListener('click', loadBackups);
+    $('backupList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-restore]');
+      if (!btn || !guardAdmin()) return;
+      const id = btn.dataset.restore;
+      // 覆盖全部配置是不可逆操作（虽然被覆盖的那份会留证），必须确认。
+      if (!confirm(`确认用「${id}」这份备份覆盖当前配置？\n当前配置会被另存为 .corrupt-<时间戳>。`)) return;
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/api/configs/restore', {
+          method: 'POST', headers: adminHeaders(), body: JSON.stringify({ source: id }),
+        });
+        const data = await resp.json();
+        if (!data.ok) { toast(data.error || '恢复失败', 'err'); return; }
+        toast('已恢复：' + (data.summary || ''), 'ok');
+        loadConfigs();
+        loadBackups();
+      } catch (err) { toast('网络错误：' + err.message, 'err'); }
+      finally { btn.disabled = false; }
+    });
 
     // ===== 部署自检 =====
     const DIAG_ICON = { ok: '✅', warn: '⚠️', error: '⛔' };

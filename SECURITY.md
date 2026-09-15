@@ -73,6 +73,7 @@
 | 导出 / 导入整份配置（`/api/configs/export`、`/api/configs/import`） | ❌ | ✅ |
 | 部署自检（`/api/diagnostics`） | ❌ | ✅ |
 | 死链检查（`/api/link_groups/<id>/check`） | ❌ | ✅ |
+| 查看 / 恢复配置备份（`/api/backups`、`/api/configs/restore`） | ❌ | ✅ |
 
 **未设置 `GYQD_ADMIN_PASSWORD` 时上表整列放开**——这是给本地 / 内网部署留的口子，
 公网部署务必设置。
@@ -97,6 +98,9 @@
 - 字段错误文案会去掉附带的上游响应片段（`public_error`），避免上游返回体被转发到公开页面。
 - 死链检查只在管理员点击时才跑，且只探测库里已有的网址（不接受任意 URL 参数）；
   单次有并发上限与时间预算，不会被拿来当端口扫描器或流量放大器。
+- 配置恢复的备份标识只接受 `bak` 或 `YYYY-MM-DD` 两种形态，绝不把请求里的字符串
+  拼进路径——否则就是一个任意文件读取、以及用任意文件覆盖 `config.json` 的洞。
+  恢复前会校验备份本身能否解析，被覆盖的那份另存为 `config.json.corrupt-<时间戳>`。
 - 管理密码失败按「客户端 IP + 全局」双桶计数，窗口内超限回 `429` + `Retry-After`；
   全局桶用于兜底伪造 `X-Forwarded-For` 换头重试的情况。
 - 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，https 下加 `Secure`；令牌是服务端 HMAC 签名，

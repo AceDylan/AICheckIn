@@ -275,6 +275,74 @@ def write_store(store):
             )
 
 
+# =========================
+# 配置恢复
+# =========================
+#
+# config.json 读不出来时（磁盘故障、手工编辑写坏了）整个服务就是一堆 500，
+# 而能救命的备份就躺在同一个目录里。这里把「有哪些备份、恢复哪一个」做成接口，
+# 免得非得 SSH 上去手动 cp。
+
+_BACKUP_LATEST_ID = "bak"
+
+
+def _backup_path(backup_id):
+    """备份 id → 文件路径。
+
+    id 只接受 "bak" 或 YYYY-MM-DD —— **绝不能**把用户给的字符串拼进路径，
+    否则就是一个任意文件读取（以及用任意文件覆盖 config.json）的洞。
+    """
+    path = Path(CONFIG_FILE)
+    if backup_id == _BACKUP_LATEST_ID:
+        return path.with_name(path.name + ".bak")
+    if _STAMP_DAY_RE.match(str(backup_id or "")):
+        return _daily_backup_name(path, backup_id)
+    return None
+
+
+def _describe_backup(path):
+    """读一眼备份，回报它是否可用以及里面大概有什么。不含任何凭据。"""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        return False, "无法解析：{0}".format(exc)
+    if isinstance(raw, list):
+        return True, "签到 {0} 组（旧版数组格式）".format(len(raw))
+    if not isinstance(raw, dict):
+        return False, "格式不是数组或对象"
+    groups = raw.get("link_groups") or []
+    links = sum(len(g.get("links") or []) for g in groups if isinstance(g, dict))
+    return True, "签到 {0} 组 · 看板 {1} 个 · 分组 {2} 个 · 网址 {3} 条".format(
+        len(raw.get("configs") or []), len(raw.get("bookmarks") or []), len(groups), links)
+
+
+def list_config_backups():
+    """列出可用备份，最新的在前。"""
+    path = Path(CONFIG_FILE)
+    found = []
+    candidates = [(_BACKUP_LATEST_ID, path.with_name(path.name + ".bak"), "上一次写入前")]
+    try:
+        prefix, suffix = path.name + ".", ".bak"
+        for snap in sorted(path.parent.glob(path.name + ".*.bak"), reverse=True):
+            day = snap.name[len(prefix):-len(suffix)]
+            if _STAMP_DAY_RE.match(day or ""):
+                candidates.append((day, snap, "{0} 当天首次改动前".format(day)))
+    except OSError:
+        pass
+    for backup_id, snap, label in candidates:
+        try:
+            stat_result = snap.stat()
+        except OSError:
+            continue
+        valid, summary = _describe_backup(snap)
+        found.append({
+            "id": backup_id, "label": label, "valid": valid, "summary": summary,
+            "size": stat_result.st_size,
+            "at": datetime.datetime.fromtimestamp(stat_result.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+        })
+    return found
+
+
 def clean_config(payload, existing=None):
     """校验并规整单组配置；只保留允许字段。token 留空且有 existing 时沿用旧值。"""
     name = str(payload.get("name") or "").strip()
@@ -1718,7 +1786,10 @@ def collect_diagnostics(request_is_https=None):
         store = read_store()
     except RuntimeError as exc:
         store = None
-        checks.append(_check("error", "配置文件", "读取失败：{0}".format(exc)))
+        usable = [b for b in list_config_backups() if b["valid"]]
+        hint = ("；可在「系统设置 → 配置恢复」里用 {0} 份可用备份中的一份恢复".format(len(usable))
+                if usable else "；且没有找到可用备份")
+        checks.append(_check("error", "配置文件", "读取失败：{0}{1}".format(exc, hint)))
     if store is not None:
         links = sum(len(g.get("links") or []) for g in store.get("link_groups") or [])
         checks.append(_check("ok", "配置文件", "签到 {0} 组 · 看板 {1} 个 · 分组 {2} 个 · 网址 {3} 条".format(
@@ -3454,6 +3525,57 @@ def api_import():
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify({"ok": True, "count": len(cleaned)})
+
+
+@app.get("/api/backups")
+def api_backups():
+    """列出可恢复的配置备份；需管理密码。
+
+    刻意不读 store —— config.json 正是坏掉的那个文件时，这个接口必须还能用。
+    """
+    guard = _guard_admin()
+    if guard:
+        return guard
+    return jsonify({"ok": True, "backups": list_config_backups()})
+
+
+@app.post("/api/configs/restore")
+def api_restore():
+    """用指定备份覆盖 config.json；需管理密码。
+
+    覆盖前把当前文件另存为 .corrupt-<时间戳>，这样即使恢复错了备份也还有回头路。
+    """
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    backup_id = str(payload.get("source") or "").strip()
+    source = _backup_path(backup_id)
+    if source is None:
+        return jsonify({"ok": False, "error": "备份标识无效"}), 400
+    if not source.is_file():
+        return jsonify({"ok": False, "error": "该备份不存在"}), 404
+
+    valid, summary = _describe_backup(source)
+    if not valid:
+        # 拿一份坏备份去覆盖，只会把一个问题变成两个。
+        return jsonify({"ok": False, "error": "这份备份本身也读不出来：{0}".format(summary)}), 400
+
+    path = Path(CONFIG_FILE)
+    try:
+        text = source.read_text(encoding="utf-8")
+        with _store_lock:
+            if path.is_file():
+                stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                keep = path.with_name("{0}.corrupt-{1}".format(path.name, stamp))
+                _write_text_atomic(keep, path.read_text(encoding="utf-8", errors="replace"))
+            _write_text_atomic(path, text)
+    except OSError as exc:
+        return jsonify({"ok": False, "error": "恢复失败：{0}".format(exc)}), 500
+
+    # 图标缓存按 config.json 的 mtime 判定失效，恢复后强制重算一次。
+    _favicon_ctx["stamp"] = None
+    return jsonify({"ok": True, "restored": backup_id, "summary": summary})
 
 
 # =========================
