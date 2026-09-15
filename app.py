@@ -2195,7 +2195,7 @@ def _favicon_curl_get(url, proxy, timeout, max_bytes):
     """用 curl_cffi 的 Chrome 指纹重试；同时是 socks 代理下唯一能走通的路径。"""
     curl_requests = _favicon_curl_requests()
     if curl_requests is None:
-        return None, "", ""
+        return None, "", "", 0
     kwargs = {
         "method": "GET", "url": url, "headers": dict(_FAVICON_HEADERS),
         "timeout": timeout, "impersonate": gyqd.CURL_IMPERSONATE_BROWSER,
@@ -2205,24 +2205,28 @@ def _favicon_curl_get(url, proxy, timeout, max_bytes):
         kwargs["proxies"] = proxies
     try:
         resp = curl_requests.request(**kwargs)
-        if int(resp.status_code) != 200:
-            return None, "", ""
+        status = int(resp.status_code)
+        if status != 200:
+            return None, "", "", status
         data = resp.content or b""
         if not data or len(data) > max_bytes:
-            return None, "", ""
+            return None, "", "", status
         ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        return data, ctype, str(resp.url or url)
+        return data, ctype, str(resp.url or url), status
     except Exception:  # noqa: BLE001 - 可选路径，失败即放弃该候选
-        return None, "", ""
+        return None, "", "", 0
 
 
 def _favicon_http_get(url, proxy, timeout, max_bytes):
-    """抓取单个 URL，最多读 max_bytes 字节。返回 (data, content_type, final_url)，失败为 (None, "", "")。"""
+    """抓取单个 URL，最多读 max_bytes 字节。
+
+    返回 (data, content_type, final_url, status)；status=0 表示连都没连上（DNS / 超时 / TLS）。
+    """
     socks = bool(proxy) and proxy.lower().startswith("socks")
     if not socks:
         data, ctype, final_url, status = _favicon_urllib_get(url, proxy, timeout, max_bytes)
         if data is not None or status not in _FAVICON_WAF_STATUSES:
-            return data, ctype, final_url
+            return data, ctype, final_url, status
     return _favicon_curl_get(url, proxy, timeout, max_bytes)
 
 
@@ -2294,7 +2298,11 @@ def _favicon_fetch(origin, proxy):
     """按候选顺序抓取图标，返回 (data, mime)；全部失败返回 (None, "")。"""
     deadline = time.monotonic() + FAVICON_BUDGET
     candidates = []
-    page, ctype, final_url = _favicon_http_get(origin + "/", proxy, FAVICON_TIMEOUT, FAVICON_HTML_MAX_BYTES)
+    page, ctype, final_url, status = _favicon_http_get(origin + "/", proxy, FAVICON_TIMEOUT, FAVICON_HTML_MAX_BYTES)
+    # 首页连都连不上（内网地址、域名不存在、端口关闭）时，同 origin 的 /favicon.ico 也一定连不上，
+    # 再试一次只是让整个请求多等一个超时；HTTP 错误码（403/404…）则说明服务活着，值得继续试。
+    if page is None and status == 0:
+        return None, ""
     if page and (not ctype or "html" in ctype or "xml" in ctype):
         candidates = favicon_candidates(page.decode("utf-8", errors="replace"), final_url or origin + "/")
     # 站点没有声明 <link rel=icon>（或首页就抓不到）时回落到约定俗成的 /favicon.ico。
@@ -2304,7 +2312,7 @@ def _favicon_fetch(origin, proxy):
     for url in candidates[:FAVICON_MAX_CANDIDATES]:
         if time.monotonic() >= deadline:
             break
-        data, _, _ = _favicon_http_get(url, proxy, FAVICON_TIMEOUT, FAVICON_MAX_BYTES)
+        data = _favicon_http_get(url, proxy, FAVICON_TIMEOUT, FAVICON_MAX_BYTES)[0]
         mime = sniff_image_mime(data)
         if mime:
             return data, mime

@@ -124,7 +124,7 @@ class FaviconApiTest(unittest.TestCase):
         def fake(url, proxy, timeout, max_bytes):
             calls.append(url)
             hit = mapping.get(url)
-            return (hit[0], hit[1], url) if hit else (None, "", "")
+            return (hit[0], hit[1], url, 200) if hit else (None, "", "", 404)
 
         app_module._favicon_http_get = fake
         self.addCleanup(setattr, app_module, "_favicon_http_get", real)
@@ -189,7 +189,8 @@ class FaviconApiTest(unittest.TestCase):
 
         def fake_curl(url, proxy, timeout, max_bytes):
             curl_calls.append(url)
-            return (PNG, "image/png", url) if url.endswith("/favicon.ico") else (b"<html></html>", "text/html", url)
+            body = (PNG, "image/png") if url.endswith("/favicon.ico") else (b"<html></html>", "text/html")
+            return body[0], body[1], url, 200
 
         app_module._favicon_urllib_get = fake_urllib
         app_module._favicon_curl_get = fake_curl
@@ -206,7 +207,7 @@ class FaviconApiTest(unittest.TestCase):
         real_urllib = app_module._favicon_urllib_get
         real_curl = app_module._favicon_curl_get
         app_module._favicon_urllib_get = lambda *a: (None, "", "", 0)
-        app_module._favicon_curl_get = lambda url, *a: curl_calls.append(url) or (None, "", "")
+        app_module._favicon_curl_get = lambda url, *a: curl_calls.append(url) or (None, "", "", 0)
         self.addCleanup(setattr, app_module, "_favicon_urllib_get", real_urllib)
         self.addCleanup(setattr, app_module, "_favicon_curl_get", real_curl)
         self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").status_code, 404)
@@ -222,6 +223,15 @@ class FaviconApiTest(unittest.TestCase):
         resp = self.client.get("/api/favicon?u=https://demo.example/dash")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.get_data()), len(PNG) + 300 * 1024)
+
+    def test_unreachable_origin_is_not_probed_twice(self):
+        # 连不上的 origin（内网地址 / 域名不存在）不该再去试 /favicon.ico，否则要多等一个超时。
+        calls = self.calls
+        real = app_module._favicon_http_get
+        app_module._favicon_http_get = lambda url, *a: calls.append(url) or (None, "", "", 0)
+        self.addCleanup(setattr, app_module, "_favicon_http_get", real)
+        self.assertEqual(self.client.get("/api/favicon?u=http://self.example:8080/panel").status_code, 404)
+        self.assertEqual(calls, ["http://self.example:8080/"])
 
     def test_failure_is_negatively_cached(self):
         self._patch_http({})
