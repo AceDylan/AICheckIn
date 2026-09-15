@@ -131,6 +131,10 @@
   proxy_set_header X-Forwarded-Proto $scheme;
   ```
 
+- **不要在没有 `.dockerignore` 的情况下构建镜像**。Dockerfile 里是 `COPY . .`，
+  仓库内已提供 `.dockerignore` 把 `data/`、`.env`、`.git` 挡在构建上下文之外；
+  缺了它，装着全部凭据的 `data/config.json` 和存管理密码的 `.env` 会被烘进镜像层
+  （运行时被 bind mount 盖住，看不出异常，但镜像一旦导出或推送就是明文泄漏）。
 - `data/` 目录含明文凭据，备份时按机密处理（加密存放，不要传到公开位置）。
 - `data/config.json.bak` 是写入前的自动备份，同样含明文凭据。
 - 配置落盘走「同目录临时文件 + fsync + 原子替换」，写到一半被中断也不会留下半截

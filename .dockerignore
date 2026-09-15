@@ -1,0 +1,29 @@
+# 构建上下文排除项。
+#
+# 最要紧的两条是 data/ 与 .env：Dockerfile 里是 `COPY . .`，没有这个文件时，
+# 部署目录下装着全部凭据的 data/config.json 和存管理密码的 .env 会被原样烘进
+# 镜像层。运行时 bind mount 会把 /app/data 盖住，所以平时看不出异常——但凭据
+# 确实留在镜像里了，镜像一旦被导出或推送就是明文泄漏。
+
+# 凭据
+.env
+.env.*
+data/
+
+# 版本控制与本地工具产物
+.git
+.gitignore
+.dockerignore
+.claude/
+.agents/
+docs/
+.venv/
+venv/
+
+# Python 缓存
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# 作业报告等临时文件
+result*.md
