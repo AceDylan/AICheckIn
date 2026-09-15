@@ -95,6 +95,7 @@
             <span class="toolbar-meta" id="bmVisibleCount"></span>
           </div>
           <div id="bmPage">
+            <div class="alert-strip" id="bmAlerts" hidden aria-label="站点数据预警"></div>
             <div id="bmList" class="bookmark-grid"></div>
             <div id="bmEmpty" class="empty-state" style="display:none"></div>
           </div>
@@ -1215,16 +1216,70 @@
       return `<div class="bm-fields-block">${html}</div>`;
     }
 
+    // ===== 站点看板预警 =====
+    // 看板的价值在于「有事要管的时候能一眼看见」，而不是让人逐张卡片找红字。
+    // 三类需要处理的状态：取数失败、已过期、即将到期（默认 7 天内）。
+    const SOON_DAYS = 7;
+    let bmAlertFilter = '';   // '' | 'error' | 'expired' | 'soon'
+
+    function fieldAlert(f) {
+      if (f.error) return 'error';
+      if ((f.type || 'amount') !== 'time') return '';
+      const t = Number(f.raw);
+      if (!isFinite(t) || t <= 0) return '';
+      const diff = t - Date.now() / 1000;
+      if (diff < 0) return 'expired';
+      if (diff < SOON_DAYS * 86400) return 'soon';
+      return '';
+    }
+    // 一个站点归到哪一类：按严重程度取最高的那类（失败 > 已过期 > 即将到期）。
+    function bookmarkAlert(b) {
+      const kinds = enabledFields(b).map(fieldAlert);
+      for (const kind of ['error', 'expired', 'soon']) if (kinds.includes(kind)) return kind;
+      return '';
+    }
+
+    const ALERT_META = {
+      error: { icon: '⚠️', label: '取数失败', cls: 'is-error' },
+      expired: { icon: '⛔', label: '已过期', cls: 'is-expired' },
+      soon: { icon: '⏳', label: `${SOON_DAYS} 天内到期`, cls: 'is-soon' },
+    };
+    function renderBmAlerts(counts) {
+      const strip = $('bmAlerts');
+      const kinds = ['error', 'expired', 'soon'].filter(k => counts[k]);
+      if (!kinds.length) { strip.hidden = true; strip.innerHTML = ''; bmAlertFilter = ''; return; }
+      strip.hidden = false;
+      strip.innerHTML = kinds.map(k => {
+        const m = ALERT_META[k];
+        const on = bmAlertFilter === k;
+        return `<button type="button" class="alert-chip ${m.cls}${on ? ' active' : ''}" data-alert="${k}"
+          aria-pressed="${on}" title="${on ? '点击取消筛选' : '只看这些站点'}">${m.icon} ${counts[k]} 个${m.label}</button>`;
+      }).join('');
+    }
+    $('bmAlerts').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-alert]');
+      if (!btn) return;
+      bmAlertFilter = bmAlertFilter === btn.dataset.alert ? '' : btn.dataset.alert;
+      renderBookmarks();
+    });
+
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
       const bms = STATE.bookmarks || [];
       const query = (($('bmSearch') && $('bmSearch').value) || '').trim().toLowerCase();
+      // 预警计数基于全部站点，不受搜索 / 筛选影响——否则筛完数字就跟着变了，没法当仪表盘看。
+      const counts = { error: 0, expired: 0, soon: 0 };
+      for (const b of bms) { const k = bookmarkAlert(b); if (k) counts[k]++; }
+      if (bmAlertFilter && !counts[bmAlertFilter]) bmAlertFilter = '';
+      renderBmAlerts(counts);
       const visible = bms.map((b, i) => ({ b, i })).filter(({ b }) =>
-        !query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)} ${(b.fields || []).map(f => f.label || '').join(' ')}`.toLowerCase().includes(query));
-      $('bmVisibleCount').textContent = query ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`;
+        (!query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)} ${(b.fields || []).map(f => f.label || '').join(' ')}`.toLowerCase().includes(query))
+        && (!bmAlertFilter || bookmarkAlert(b) === bmAlertFilter));
+      const filtering = !!(query || bmAlertFilter);
+      $('bmVisibleCount').textContent = filtering ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`;
       if (!visible.length) {
         list.innerHTML = '';
-        if (bms.length) showEmpty(empty, { icon: 'search', title: '没有匹配的站点', text: '换个关键词试试，或清空搜索框。' });
+        if (bms.length) showEmpty(empty, { icon: 'search', title: '没有匹配的站点', text: bmAlertFilter ? '再点一次上方的预警标签即可取消筛选。' : '换个关键词试试，或清空搜索框。' });
         else showEmpty(empty, { icon: 'pulse', title: '还没有监控站点', text: '添加站点并配置接口字段，余额与到期时间会显示在这里。', actions: [{ label: '＋ 新增站点', onclick: "$('addBm').click()" }] });
         return;
       }
@@ -1233,12 +1288,13 @@
         const hasFields = enabledFields(b).length > 0;
         const safe = safeUrl(b.url);
         const host = siteHost(b.url) || '未设置域名';
+        const alert = bookmarkAlert(b);
         return `
-        <article class="bookmark-card" data-bm-index="${i}" data-card-id="${i}" style="--hue:${hueOf(host)}">
+        <article class="bookmark-card${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" data-card-id="${i}" style="--hue:${hueOf(host)}">
           <div class="bookmark-top">
             ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
             <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
-            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${query ? ' disabled' : ''}>${icon('grip')}</button>
+            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${filtering ? ' disabled' : ''}>${icon('grip')}</button>
           </div>
           ${fieldsBlockHtml(b)}
           <div class="bookmark-actions">

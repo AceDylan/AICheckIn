@@ -45,9 +45,9 @@ class CardSortUiTest(unittest.TestCase):
         self.assertIn("data-card-grip", self.html)
 
     def test_grip_is_disabled_while_filtering(self):
-        # 网址卡片看 searching，看板卡片看 query；两处都要在过滤时禁用。
+        # 网址卡片看 searching，看板卡片看 filtering（搜索或预警筛选）；两处都要禁用。
         self.assertIn("${searching ? ' disabled' : ''}>${icon('grip')}", self.html)
-        self.assertIn("${query ? ' disabled' : ''}>${icon('grip')}", self.html)
+        self.assertIn("${filtering ? ' disabled' : ''}>${icon('grip')}", self.html)
 
     def test_touch_drag_is_possible(self):
         grip_rule = re.search(r"\.card-grip \{[^}]*\}", self.css).group(0)

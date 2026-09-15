@@ -443,6 +443,25 @@ details > summary::-webkit-details-marker { display: none; }
 .link-card .action-menu { align-self: flex-end; }
 .link-card.is-moving { opacity: .5; }
 
+/* ===== 站点看板预警条 ===== */
+/* 看板的价值是「有事要管时一眼看见」，所以把待处理状态汇总到列表顶部，
+   点一下就只看这一类。 */
+.alert-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.alert-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: 1px solid transparent; border-radius: 999px;
+  font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  transition: filter .15s ease, border-color .15s ease;
+}
+.alert-chip:hover { filter: brightness(1.12); }
+.alert-chip.is-error { background: var(--danger-soft); color: var(--danger); }
+.alert-chip.is-expired { background: var(--danger-soft); color: var(--danger); }
+.alert-chip.is-soon { background: var(--warning-soft); color: var(--warning); }
+.alert-chip.active { border-color: currentColor; }
+/* 卡片上的同色提示条：只占左边一道，不喧宾夺主。 */
+.bookmark-card.alert-error, .bookmark-card.alert-expired { box-shadow: inset 3px 0 0 var(--danger), var(--shadow-1); }
+.bookmark-card.alert-soon { box-shadow: inset 3px 0 0 var(--warning), var(--shadow-1); }
+
 /* ===== 卡片网格拖拽排序 ===== */
 /* 把手必须 touch-action:none，否则触摸端的拖动会被页面滚动抢走。 */
 /* 把手与复制按钮同属顶部一组，让 .link-tools 的 space-between 仍只分配两端。 */
