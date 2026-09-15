@@ -2407,6 +2407,12 @@ def clean_link(payload, existing=None, taken=()):
         pinned = bool(payload.get("pinned"))
     else:
         pinned = bool((existing or {}).get("pinned"))
+    # 内网服务从容器里本来就连不通，检查结果会一直是「不可达」。
+    # 给用户一个开关把这类链接排除在死链检查之外，免得告警栏永远消不掉。
+    if "skip_check" in payload:
+        skip_check = bool(payload.get("skip_check"))
+    else:
+        skip_check = bool((existing or {}).get("skip_check"))
     if existing:
         lid = existing["id"]
     else:
@@ -2418,10 +2424,16 @@ def clean_link(payload, existing=None, taken=()):
     if not created:
         raw_created = str(payload.get("created_at") or "").strip()
         created = raw_created if _STAMP_RE.match(raw_created) else now
-    return {
+    out = {
         "id": lid, "name": name, "url": url, "desc": desc, "icon": icon,
-        "tags": tags, "pinned": pinned, "created_at": created, "updated_at": now,
+        "tags": tags, "pinned": pinned, "skip_check": skip_check,
+        "created_at": created, "updated_at": now,
     }
+    # 探测快照：网址没变才沿用，否则旧结论对新地址毫无意义。
+    previous = (existing or {}).get("check")
+    if isinstance(previous, dict) and (existing or {}).get("url") == url:
+        out["check"] = previous
+    return out
 
 
 def clean_link_group(payload, existing=None, taken=(), with_links=False):
@@ -2484,9 +2496,13 @@ def _coerce_link_group(raw, taken):
             "icon": _squash_text(item.get("icon"), 8),
             "tags": [str(t).strip() for t in tags if isinstance(t, str) and str(t).strip()][:MAX_LINK_TAGS],
             "pinned": bool(item.get("pinned")),
+            "skip_check": bool(item.get("skip_check")),
             "created_at": str(item.get("created_at") or ""),
             "updated_at": str(item.get("updated_at") or ""),
         })
+        # 探测结果是可选的：没有就别写出一个 null 键来。
+        if isinstance(item.get("check"), dict):
+            links[-1]["check"] = item["check"]
         if len(links) >= MAX_LINKS_PER_GROUP:
             break
     return {
@@ -2560,6 +2576,131 @@ def find_duplicate_links(store, url, skip_id=None):
                     "link_id": link.get("id"), "name": link.get("name"), "url": link.get("url"),
                 })
     return hits
+
+
+# =========================
+# 死链检查
+# =========================
+#
+# 收藏库放久了总会烂几条链接。这里只做「用户点一下才跑」的显式检查：
+# 后台定期扫全部收藏等于拿自己的服务器去周期性敲打别人的站点，不合适，
+# 也容易把内网服务的探测流量放大。
+
+LINK_CHECK_TIMEOUT = 8          # 单次请求超时（秒）
+LINK_CHECK_WORKERS = 6          # 并发数：够快，又不至于把小站打疼
+LINK_CHECK_BUDGET = 45          # 单次请求的总时间预算（秒），留足余量给 gunicorn 的 120s
+# 服务器有响应、只是不给匿名探测——这类不算死链。
+_LINK_ALIVE_BUT_GUARDED = frozenset({401, 403, 405, 406, 429, 503})
+# 有些站点不实现 HEAD，用 GET 再试一次。
+_LINK_RETRY_WITH_GET = frozenset({0, 400, 405, 501})
+
+LINK_CHECK_STATUSES = ("ok", "blocked", "missing", "error", "unreachable")
+
+
+def _link_probe_once(url, proxy, method, timeout):
+    """发一次请求，只要状态码。返回 int，0 表示根本没连上。
+
+    注意 urllib.request.Request() 本身就会对畸形网址抛 ValueError，所以构造也要
+    放进 try 里——否则一条坏数据就能让整个分组的检查以 500 收场。
+    """
+    handlers = []
+    # urllib 的 ProxyHandler 不支持 socks；配的是 socks 时直接放弃代理走直连，
+    # 探测结果仍然有参考价值（比把它一律报成不可达要好）。
+    if proxy and not proxy.lower().startswith("socks"):
+        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    opener = urllib.request.build_opener(*handlers)
+    try:
+        req = urllib.request.Request(url, headers=dict(_FAVICON_HEADERS), method=method)
+        with opener.open(req, timeout=timeout) as resp:
+            if method == "GET":
+                resp.read(2048)  # 读一点点就够确认连通，别把整页拉下来
+            return int(getattr(resp, "status", None) or resp.getcode() or 0)
+    except urllib.error.HTTPError as exc:
+        try:
+            exc.read()
+        except Exception:  # noqa: BLE001 - 只是为了尽快释放连接
+            pass
+        return int(getattr(exc, "code", 0) or 0)
+    except Exception:  # noqa: BLE001 - DNS / 超时 / TLS 失败都归为「没连上」
+        return 0
+
+
+def classify_link_code(code):
+    """把状态码翻译成用户能据以行动的结论。"""
+    if code == 0:
+        # 可能真的没了，也可能只是容器访问不到内网——文案上要留这个余地。
+        return "unreachable"
+    if code in _LINK_ALIVE_BUT_GUARDED:
+        return "blocked"
+    if code in (404, 410):
+        return "missing"
+    if 200 <= code < 400:
+        return "ok"
+    return "error"
+
+
+def probe_link(url, proxy="", timeout=LINK_CHECK_TIMEOUT):
+    """探测单个网址。返回 (status, code)。
+
+    先 HEAD（省流量），遇到不支持 HEAD 的站点再用 GET 重试一次。
+    """
+    code = _link_probe_once(url, proxy, "HEAD", timeout)
+    if code in _LINK_RETRY_WITH_GET:
+        code = _link_probe_once(url, proxy, "GET", timeout)
+    return classify_link_code(code), code
+
+
+def check_group_links(group, proxy="", budget=LINK_CHECK_BUDGET, now=None):
+    """并发探测分组内的链接。返回 {link_id: {status, code, at}}。
+
+    超出时间预算后剩下的链接不再探测（结果里不出现），由调用方报告为「本次未检查」——
+    宁可分几次跑完，也不要把一个请求拖到超时。
+    """
+    from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415 - 只有这条路径用得到
+
+    links = [l for l in group.get("links") or [] if not l.get("skip_check")]
+    if not links:
+        return {}
+    stamp = now or _now_str()
+    deadline = time.time() + budget
+    results = {}
+
+    def probe(link):
+        if time.time() >= deadline:
+            return None
+        status, code = probe_link(link.get("url") or "", proxy)
+        return link["id"], {"status": status, "code": code, "at": stamp}
+
+    workers = max(1, min(LINK_CHECK_WORKERS, len(links)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for item in pool.map(probe, links):
+            if item:
+                results[item[0]] = item[1]
+    return results
+
+
+def persist_link_checks(gid, results):
+    """把探测结果合并回**最新的** store。
+
+    探测可能跑几十秒，其间用户完全可能改过这个分组。重新读一次，只按 link id 贴回
+    结果；期间被删掉或换了网址的链接直接跳过。
+    """
+    try:
+        store = read_store()
+    except RuntimeError:
+        return None
+    _, group = _find_group(store, gid)
+    if group is None:
+        return None
+    for link in group.get("links") or []:
+        found = results.get(link.get("id"))
+        if found:
+            link["check"] = found
+    try:
+        write_store(store)
+    except RuntimeError:
+        return None
+    return store
 
 
 def _find_group(store, gid):
@@ -2742,7 +2883,8 @@ def api_link_update(gid, lid):
     if target is None:
         return jsonify({"ok": False, "error": "目标分组不存在"}), 404
     merged = dict(link)
-    merged.update({k: v for k, v in payload.items() if k in ("name", "url", "desc", "icon", "tags", "pinned")})
+    merged.update({k: v for k, v in payload.items()
+                   if k in ("name", "url", "desc", "icon", "tags", "pinned", "skip_check")})
     try:
         updated = clean_link(merged, existing=link)
     except ValueError as exc:
@@ -2783,6 +2925,39 @@ def api_link_delete(gid, lid):
     if err:
         return err
     return _link_groups_response(store)
+
+
+@app.post("/api/link_groups/<gid>/check")
+def api_link_group_check(gid):
+    """检查一个分组内的链接是否还活着；需管理密码。
+
+    只在用户点击时才跑：后台定期扫全部收藏等于拿自己的服务器周期性敲打别人的站点。
+    单次有时间预算，没跑完的下次再点一次即可。
+    """
+    guard = _guard_admin()
+    if guard:
+        return guard
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    _, group = _find_group(store, gid)
+    if group is None:
+        return jsonify({"ok": False, "error": "分组不存在"}), 404
+
+    links = group.get("links") or []
+    skipped = sum(1 for l in links if l.get("skip_check"))
+    results = check_group_links(group, store.get("proxy_url", ""))
+    fresh = persist_link_checks(gid, results)
+    if fresh is None:
+        return jsonify({"ok": False, "error": "检查结果保存失败"}), 500
+
+    summary = {name: 0 for name in LINK_CHECK_STATUSES}
+    for item in results.values():
+        summary[item["status"]] = summary.get(item["status"], 0) + 1
+    summary["skipped"] = skipped
+    # 预算用完时会剩下一些没探测的，说清楚才不会让人以为「检查过了、没问题」。
+    summary["pending"] = max(0, len(links) - skipped - len(results))
+    return _link_groups_response(fresh, group_id=gid, checked=len(results), summary=summary)
 
 
 @app.post("/api/link_groups/<gid>/links/reorder")

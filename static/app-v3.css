@@ -462,6 +462,14 @@ details > summary::-webkit-details-marker { display: none; }
 .bookmark-card.alert-error, .bookmark-card.alert-expired { box-shadow: inset 3px 0 0 var(--danger), var(--shadow-1); }
 .bookmark-card.alert-soon { box-shadow: inset 3px 0 0 var(--warning), var(--shadow-1); }
 
+/* ===== 死链检查的角标 ===== */
+/* 只给「需要处理」的三类上色；blocked（401/403…）不上色——服务器答了话就说明它还在。 */
+.check-badge { flex: 0 0 auto; font-size: 11px; line-height: 1; cursor: help; }
+.check-muted { margin-left: 5px; color: var(--text-3); font-size: 10px; }
+.link-card.check-missing { border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+.link-card.check-error { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.link-card.check-unreachable { border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+
 /* ===== 卡片网格拖拽排序 ===== */
 /* 把手必须 touch-action:none，否则触摸端的拖动会被页面滚动抢走。 */
 /* 把手与复制按钮同属顶部一组，让 .link-tools 的 space-between 仍只分配两端。 */

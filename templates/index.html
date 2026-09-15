@@ -85,7 +85,7 @@
           <div class="view-header" id="libHeader">
             <div><div class="eyebrow" id="libEyebrow">收藏库</div><h1 id="libTitle">站点看板</h1><p id="libDesc"></p></div>
             <div class="header-actions" id="libActionsMonitor"><button class="btn ghost" id="refreshAllBm">刷新所有数据</button><button class="btn" id="addBm">＋ 新增站点</button></div>
-            <div class="header-actions" id="libActionsGroup" hidden><button class="btn ghost" id="editGroupBtn">编辑分组</button><button class="btn" id="addLinkBtn">＋ 添加网址</button></div>
+            <div class="header-actions" id="libActionsGroup" hidden><button class="btn ghost" id="checkLinksBtn" title="逐条探测本分组的网址是否还能打开">检查链接</button><button class="btn ghost" id="editGroupBtn">编辑分组</button><button class="btn" id="addLinkBtn">＋ 添加网址</button></div>
           </div>
           <div class="toolbar">
             <label class="search-box" for="bmSearch">
@@ -101,6 +101,7 @@
             <div id="bmEmpty" class="empty-state" style="display:none"></div>
           </div>
           <div id="linkPage" hidden>
+            <div class="alert-strip" id="linkAlerts" hidden aria-label="链接检查结果"></div>
             <div id="linkList" class="link-grid"></div>
             <div id="linkEmpty" class="empty-state" style="display:none"></div>
           </div>
@@ -1719,12 +1720,13 @@
       const others = libGroups().filter(o => o.id !== g.id);
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
       const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon);
-      return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}" data-link-id="${lid}" data-card-id="${lid}" style="--hue:${hueOf(host)}">
+      const alert = linkCheckState(l);
+      return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}${alert ? ' check-' + alert : ''}" data-link-id="${lid}" data-card-id="${lid}" style="--hue:${hueOf(host)}">
         <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? 'target="_blank" rel="noopener noreferrer"' : ''} title="${escapeHtml(l.url)}">
           ${avatar}
           <div class="link-body">
-            <div class="link-name"><span>${escapeHtml(l.name)}</span>${l.pinned ? icon('pin', 'pin') : ''}</div>
-            <div class="link-host">${escapeHtml(host)}</div>
+            <div class="link-name"><span>${escapeHtml(l.name)}</span>${l.pinned ? icon('pin', 'pin') : ''}${alert ? `<span class="check-badge ${escapeHtml(LINK_CHECK_META[alert].cls)}" title="${escapeHtml(linkCheckTitle(l))}">${LINK_CHECK_META[alert].icon}</span>` : ''}</div>
+            <div class="link-host">${escapeHtml(host)}${l.skip_check ? '<span class="check-muted" title="已设为忽略死链检查">· 不检查</span>' : ''}</div>
             ${l.desc ? `<div class="link-desc">${escapeHtml(l.desc)}</div>` : ''}
             ${(l.tags || []).length ? `<div class="link-tags">${l.tags.map(t => `<button type="button" class="tag tag-btn" title="按标签「${escapeHtml(t)}」搜索全部分组" onclick="filterByTag(event, '${escapeHtml(t).replace(/'/g, "\\'")}')">${escapeHtml(t)}</button>`).join('')}</div>` : ''}
           </div>
@@ -1739,6 +1741,7 @@
             <div class="menu-popover">
               <button onclick="togglePinLink('${gid}','${lid}')">${l.pinned ? '取消置顶' : '置顶'}</button>
               <button onclick="editLink('${gid}','${lid}')">编辑</button>
+              <button onclick="toggleSkipCheck('${gid}','${lid}')">${l.skip_check ? '恢复死链检查' : '忽略死链检查'}</button>
               <button onclick="moveLink('${gid}','${lid}','up')" ${idx === 0 || searching ? 'disabled' : ''}>上移</button>
               <button onclick="moveLink('${gid}','${lid}','down')" ${idx === total - 1 || searching ? 'disabled' : ''}>下移</button>
               ${others.length ? '<div class="sep"></div>' + others.map(o => `<button onclick="moveLinkTo('${gid}','${lid}','${escapeHtml(o.id)}')">移到「${escapeHtml(o.name)}」</button>`).join('') : ''}
@@ -1749,18 +1752,102 @@
         </div>
       </article>`;
     }
+    // ===== 死链检查 =====
+    // 「blocked」（401/403/429…）不算问题：服务器答了话就说明它还在，
+    // 报成死链只会淹没真正坏掉的那几条。
+    const LINK_CHECK_META = {
+      missing: { icon: '⛔', label: '打不开', cls: 'is-error' },
+      error: { icon: '⚠️', label: '响应异常', cls: 'is-expired' },
+      unreachable: { icon: '🌐', label: '连不上', cls: 'is-soon' },
+    };
+    let linkAlertFilter = '';
+
+    function linkCheckState(l) {
+      if (!l || l.skip_check) return '';
+      const st = (l.check || {}).status;
+      return LINK_CHECK_META[st] ? st : '';
+    }
+    function linkCheckTitle(l) {
+      const c = l.check || {};
+      const meta = LINK_CHECK_META[c.status];
+      if (!meta) return '';
+      const code = c.code ? `HTTP ${c.code}` : '没有响应';
+      const hint = c.status === 'unreachable' ? '（内网服务从容器里本来就连不通，可在菜单里设为忽略检查）' : '';
+      return `${meta.label}：${code} · 检查于 ${c.at || '未知时间'}${hint}`;
+    }
+
+    function renderLinkAlerts(counts) {
+      const strip = $('linkAlerts');
+      const kinds = Object.keys(LINK_CHECK_META).filter(k => counts[k]);
+      if (!kinds.length) { strip.hidden = true; strip.innerHTML = ''; linkAlertFilter = ''; return; }
+      strip.hidden = false;
+      strip.innerHTML = kinds.map(k => {
+        const m = LINK_CHECK_META[k];
+        const on = linkAlertFilter === k;
+        return `<button type="button" class="alert-chip ${m.cls}${on ? ' active' : ''}" data-link-alert="${k}"
+          aria-pressed="${on}" title="${on ? '点击取消筛选' : '只看这些网址'}">${m.icon} ${counts[k]} 个${m.label}</button>`;
+      }).join('');
+    }
+    $('linkAlerts').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-link-alert]');
+      if (!btn) return;
+      linkAlertFilter = linkAlertFilter === btn.dataset.linkAlert ? '' : btn.dataset.linkAlert;
+      renderLinks();
+    });
+
+    $('checkLinksBtn').addEventListener('click', async () => {
+      if (!guardAdmin()) return;
+      const g = findGroup(LIB.page);
+      if (!g) return;
+      const total = (g.links || []).filter(l => !l.skip_check).length;
+      if (!total) { toast('这个分组没有需要检查的网址', 'err'); return; }
+      const btn = $('checkLinksBtn');
+      btn.disabled = true;
+      btn.textContent = `检查中…（${total} 条）`;
+      try {
+        const data = await linkApi(`/api/link_groups/${g.id}/check`, 'POST');
+        if (!data.ok) { toast(data.error || '检查失败', 'err'); return; }
+        const s = data.summary || {};
+        const bad = (s.missing || 0) + (s.error || 0) + (s.unreachable || 0);
+        let msg = bad ? `${bad} 条需要处理` : `${data.checked} 条全部正常`;
+        if (s.skipped) msg += ` · 跳过 ${s.skipped} 条`;
+        if (s.pending) msg += ` · 还剩 ${s.pending} 条没检查完，可再点一次`;
+        toast(msg, bad ? 'err' : 'ok');
+        renderLibrary();
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+      finally { btn.disabled = false; btn.textContent = '检查链接'; }
+    });
+
+    async function toggleSkipCheck(gid, lid) {
+      if (!guardAdmin()) return;
+      const g = findGroup(gid); const l = g && (g.links || []).find(x => x.id === lid);
+      if (!l) return;
+      const next = !l.skip_check;
+      const data = await linkApi(`/api/link_groups/${gid}/links/${lid}`, 'PUT', { skip_check: next });
+      if (!data.ok) { toast(data.error || '操作失败', 'err'); return; }
+      renderLibrary();
+      toast(next ? '已设为忽略检查' : '已恢复检查', 'ok');
+    }
+
     function renderLinks() {
       const list = $('linkList'), empty = $('linkEmpty');
       const g = findGroup(LIB.page);
       if (!g) { list.innerHTML = ''; hideEmpty(empty); return; }
       const links = g.links || [];
       const query = ($('bmSearch').value || '').trim().toLowerCase();
+      // 计数基于全部网址，不受搜索 / 筛选影响——否则一筛数字就跟着变。
+      const counts = {};
+      for (const l of links) { const k = linkCheckState(l); if (k) counts[k] = (counts[k] || 0) + 1; }
+      if (linkAlertFilter && !counts[linkAlertFilter]) linkAlertFilter = '';
+      renderLinkAlerts(counts);
       const visible = links.map((l, i) => ({ l, i })).filter(({ l }) =>
-        !query || `${l.name || ''} ${l.url || ''} ${siteHost(l.url)} ${l.desc || ''} ${(l.tags || []).join(' ')}`.toLowerCase().includes(query));
-      $('bmVisibleCount').textContent = query ? `${visible.length} / ${links.length} 个网址` : `${links.length} 个网址`;
+        (!query || `${l.name || ''} ${l.url || ''} ${siteHost(l.url)} ${l.desc || ''} ${(l.tags || []).join(' ')}`.toLowerCase().includes(query))
+        && (!linkAlertFilter || linkCheckState(l) === linkAlertFilter));
+      const filtering = !!(query || linkAlertFilter);
+      $('bmVisibleCount').textContent = filtering ? `${visible.length} / ${links.length} 个网址` : `${links.length} 个网址`;
       if (!visible.length) {
         list.innerHTML = '';
-        if (links.length) showEmpty(empty, { icon: 'search', title: '没有匹配的网址', text: '换个关键词试试，或清空搜索框。' });
+        if (links.length) showEmpty(empty, { icon: 'search', title: '没有匹配的网址', text: linkAlertFilter ? '再点一次上方的标签即可取消筛选。' : '换个关键词试试，或清空搜索框。' });
         else showEmpty(empty, { icon: g.icon, title: `「${g.name}」还是空的`, text: '把常用网址收进来：单条添加，或一次粘贴多行批量导入。', actions: [
           { label: '＋ 添加网址', onclick: `openLinkModal('${escapeHtml(g.id)}', null, 'single')` },
           { label: '批量粘贴', ghost: true, onclick: `openLinkModal('${escapeHtml(g.id)}', null, 'bulk')` },
@@ -1768,7 +1855,7 @@
         return;
       }
       hideEmpty(empty);
-      list.innerHTML = visible.map(({ l, i }) => linkCardHtml(l, i, g, links.length, !!query)).join('');
+      list.innerHTML = visible.map(({ l, i }) => linkCardHtml(l, i, g, links.length, filtering)).join('');
       pumpFavicons();
     }
     async function copyLinkUrl(gid, lid) {
