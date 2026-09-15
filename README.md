@@ -97,6 +97,9 @@ docker compose logs --tail=50 aicheckin
 curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5525/api/health
 ```
 
+升级后打开「系统设置 → 部署自检」（或解锁后 `GET /api/diagnostics`）确认
+管理密码、数据目录、后台调度、定时签到这些项都是绿的。
+
 ---
 
 ## 安全

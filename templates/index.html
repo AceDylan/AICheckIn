@@ -141,6 +141,7 @@
             <div class="panel"><div class="panel-title">站点数据自动刷新</div><div class="note" style="margin-top:0">让站点看板的余额 / 到期时间不必手点也保持新鲜。仅刷新配置了接口字段的收藏。</div><div class="controls" style="margin-top:10px;align-items:flex-end"><label class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></label><div class="field" style="max-width:160px"><label>刷新间隔</label><select class="input" id="refreshInterval"></select></div><button class="btn sm" id="saveRefresh">保存刷新</button></div><div class="note" id="refreshStatus"></div></div>
             <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
             <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus" style="margin-top:0"></div><div class="controls" style="margin-top:10px;align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>输入管理密码以解锁配置编辑</label><input class="input" id="adminPwd" name="gyqd-admin-password" type="password" placeholder="管理密码" autocomplete="current-password"></div><button class="btn sm" id="unlockBtn">解锁</button><button class="btn sm ghost" id="lockBtn" style="display:none">锁定</button></div></div>
+            <div class="panel"><div class="panel-title">部署自检 <button class="btn sm ghost" id="runDiag" style="float:right;margin-top:-4px">重新检查</button></div><div class="note" style="margin-top:0">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
             <div class="panel"><div class="panel-title">快速收藏</div><div class="note" style="margin-top:0">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
             <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
           </div>
@@ -498,6 +499,7 @@
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
       if (updateHash) history.replaceState(null, '', name === 'bookmarks' ? libHash() : '#' + name);
       if (name === 'history') loadHistory();
+      if (name === 'settings') loadDiagnostics();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => switchView(tab.dataset.view)));
@@ -2141,6 +2143,27 @@
       }
       renderLockPill();
     }
+
+    // ===== 部署自检 =====
+    const DIAG_ICON = { ok: '✅', warn: '⚠️', error: '⛔' };
+    async function loadDiagnostics() {
+      const box = $('diagList');
+      if (!canEdit()) { box.innerHTML = '<div class="note">解锁后可查看部署自检。</div>'; return; }
+      box.innerHTML = '<div class="note">检查中…</div>';
+      try {
+        const resp = await fetch('/api/diagnostics', { headers: adminHeaders() });
+        const data = await resp.json();
+        if (!Array.isArray(data.checks)) { box.innerHTML = `<div class="note">${escapeHtml(data.error || '检查失败')}</div>`; return; }
+        const bad = data.checks.filter(c => c.status !== 'ok').length;
+        box.innerHTML = `<div class="diag-head ${data.ok ? 'is-ok' : 'is-bad'}">${data.ok ? '✅ 未发现阻断性问题' : '⛔ 存在需要处理的问题'}${bad ? ` · ${bad} 项待关注` : ''}<span class="diag-time">${escapeHtml(data.generated_at || '')}</span></div>`
+          + data.checks.map(c => `<div class="diag-row is-${escapeHtml(c.status)}">
+              <span class="diag-mark">${DIAG_ICON[c.status] || '•'}</span>
+              <span class="diag-label">${escapeHtml(c.label)}</span>
+              <span class="diag-detail">${escapeHtml(c.detail)}</span>
+            </div>`).join('');
+      } catch (e) { box.innerHTML = `<div class="note">检查失败：${escapeHtml(e.message)}</div>`; }
+    }
+    $('runDiag').addEventListener('click', loadDiagnostics);
 
     function intervalLabel(minutes) {
       const m = Number(minutes) || 60;

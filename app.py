@@ -1612,7 +1612,143 @@ def service_worker():
 
 @app.get("/api/health")
 def health():
+    """容器 HEALTHCHECK 用的轻量探针。
+
+    永远只回 {ok: true}，不带任何状态——它是未鉴权可达的（私密模式下也是），
+    多一个字段就多一分信息泄漏。需要细节看 /api/diagnostics（需管理密码）。
+    """
     return jsonify({"ok": True})
+
+
+def _check(status, label, detail):
+    return {"status": status, "label": label, "detail": detail}
+
+
+def _data_dir_writable():
+    """真的试着写一下，而不是看权限位——只读挂载、磁盘写满都只有写了才知道。"""
+    try:
+        fd, tmp = tempfile.mkstemp(dir=str(DATA_DIR), prefix=".healthcheck-", suffix=".tmp")
+        os.close(fd)
+        os.unlink(tmp)
+        return True, ""
+    except OSError as exc:
+        return False, str(exc)
+
+
+def collect_diagnostics(request_is_https=None):
+    """部署后自检：把「装好了没有、会不会按时跑」这些问题一次性答清楚。
+
+    只输出名称、计数与布尔值——不含任何 token、Cookie、密码或完整网址。
+
+    request_is_https 由调用方显式传入（而不是在这里读 request），这样本函数不依赖
+    请求上下文，可以在任何地方调用；传 None 表示「无从判断」，跳过传输安全那一项。
+    """
+    checks = []
+
+    # 1. 管理密码
+    if not ADMIN_PASSWORD:
+        checks.append(_check("error", "管理密码", "未设置：任何访问者都能编辑配置、查看真实 token、执行签到"))
+    elif len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
+        checks.append(_check("warn", "管理密码", "已设置，但短于 {0} 位，公网上容易被爆破".format(MIN_ADMIN_PASSWORD_LEN)))
+    else:
+        checks.append(_check("ok", "管理密码", "已设置（{0} 位）".format(len(ADMIN_PASSWORD))))
+
+    # 2. 私密模式
+    if PRIVATE_MODE and not ADMIN_PASSWORD:
+        checks.append(_check("error", "私密模式", "GYQD_PRIVATE=1 但没有管理密码，未生效"))
+    elif private_mode_active():
+        checks.append(_check("ok", "私密模式", "已开启：未解锁时整站不可浏览"))
+    else:
+        checks.append(_check("ok", "私密模式", "未开启：收藏库可被公开浏览（凭据始终不下发）"))
+
+    # 3. 传输安全
+    if request_is_https is True:
+        checks.append(_check("ok", "传输", "https" + ("（已下发 HSTS）" if HSTS_ENABLED else "")))
+    elif request_is_https is False:
+        checks.append(_check("warn", "传输", "当前请求不是 https：反代需转发 X-Forwarded-Proto，否则会话 Cookie 不带 Secure"))
+
+    # 4. 数据目录
+    writable, why = _data_dir_writable()
+    checks.append(_check("ok", "数据目录", "可写") if writable
+                  else _check("error", "数据目录", "不可写，所有编辑都会失败：{0}".format(why)))
+
+    # 5. 配置文件
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        store = None
+        checks.append(_check("error", "配置文件", "读取失败：{0}".format(exc)))
+    if store is not None:
+        links = sum(len(g.get("links") or []) for g in store.get("link_groups") or [])
+        checks.append(_check("ok", "配置文件", "签到 {0} 组 · 看板 {1} 个 · 分组 {2} 个 · 网址 {3} 条".format(
+            len(store.get("configs") or []), len(store.get("bookmarks") or []),
+            len(store.get("link_groups") or []), links)))
+
+    # 6. 会话密钥
+    try:
+        exists = SESSION_SECRET_FILE.is_file()
+        mode = stat.S_IMODE(os.stat(str(SESSION_SECRET_FILE)).st_mode) if exists else None
+    except OSError:
+        exists, mode = False, None
+    if not exists:
+        checks.append(_check("warn", "会话密钥", "尚未落盘（还没人解锁过）；重启后需重新解锁"))
+    elif mode & 0o077:
+        checks.append(_check("warn", "会话密钥", "权限为 {0}，建议 600".format(oct(mode))))
+    else:
+        checks.append(_check("ok", "会话密钥", "已持久化，权限 600"))
+
+    # 7. 后台调度
+    alive = bool(_sched_thread and _sched_thread.is_alive())
+    schedule = (store or {}).get("schedule") or {}
+    refresh = (store or {}).get("refresh") or {}
+    wants_background = bool(schedule.get("enabled") or refresh.get("enabled"))
+    if not SCHEDULER_ENABLED:
+        checks.append(_check("error" if wants_background else "ok", "后台调度",
+                             "已被 GYQD_SCHEDULER=0 关闭" + ("，但定时签到 / 自动刷新是开着的，不会执行" if wants_background else "")))
+    elif not alive:
+        checks.append(_check("error", "后台调度", "线程未在运行，定时任务不会执行"))
+    else:
+        checks.append(_check("ok", "后台调度", "运行中"))
+
+    # 8. 定时签到 / 补签
+    if store is not None:
+        if not schedule.get("enabled"):
+            checks.append(_check("ok", "定时签到", "未启用"))
+        else:
+            pending = len(pending_configs(store))
+            detail = "每天 {0}".format(schedule.get("time") or "--:--")
+            if schedule.get("last_run_time"):
+                detail += " · 上次 {0}".format(schedule["last_run_time"])
+            if pending:
+                left = max(0, SCHEDULE_RETRY_LIMIT - int(schedule.get("retry_count") or 0))
+                detail += " · 今日 {0} 个未签成（剩 {1} 次补签）".format(pending, left)
+                checks.append(_check("warn" if left else "error", "定时签到", detail))
+            else:
+                checks.append(_check("ok", "定时签到", detail + " · 今日已全部签成"))
+
+        # 9. 自动刷新
+        if refresh.get("enabled"):
+            detail = "每 {0} 分钟".format(refresh.get("interval_minutes"))
+            if refresh.get("last_run_time"):
+                detail += " · 上次 {0}".format(refresh["last_run_time"])
+            checks.append(_check("ok", "站点数据自动刷新", detail))
+        else:
+            checks.append(_check("ok", "站点数据自动刷新", "未启用"))
+
+    return {
+        "ok": not any(c["status"] == "error" for c in checks),
+        "checks": checks,
+        "generated_at": _now_str(),
+    }
+
+
+@app.get("/api/diagnostics")
+def api_diagnostics():
+    """部署自检明细；需管理密码（内容虽不含凭据，但足以描摹部署形态）。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    return jsonify(collect_diagnostics(request_is_https=_request_is_https()))
 
 
 # =========================

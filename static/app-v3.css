@@ -660,6 +660,22 @@ details.hist-item[open] .hist-toggle { color: var(--accent); }
   background: var(--surface); color: var(--text-3); font-family: var(--mono); font-size: 10px; line-height: 1.5;
 }
 
+/* 部署自检列表 */
+.diag-list { margin-top: 10px; display: grid; gap: 6px; }
+.diag-head {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; margin-bottom: 4px;
+  border-radius: 10px; font-size: 12px; font-weight: 700;
+}
+.diag-head.is-ok { background: var(--accent-soft); color: var(--accent); }
+.diag-head.is-bad { background: var(--danger-soft); color: var(--danger); }
+.diag-time { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; opacity: .75; }
+.diag-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.diag-mark { flex: 0 0 auto; }
+.diag-label { flex: 0 0 96px; font-weight: 650; }
+.diag-detail { flex: 1; min-width: 0; color: var(--text-2); }
+.diag-row.is-warn .diag-detail { color: var(--warning); }
+.diag-row.is-error .diag-detail { color: var(--danger); }
+
 /* 书签小工具：是个要被拖到书签栏的链接，给它一点「可拖拽」的暗示。 */
 .bookmarklet { cursor: grab; user-select: none; -webkit-user-select: none; }
 .bookmarklet:active { cursor: grabbing; }
@@ -777,6 +793,9 @@ details.hist-item[open] .hist-toggle { color: var(--accent); }
   .toast-wrap { left: 12px; right: 12px; top: 12px; }
   .toast { max-width: none; }
   .omni-trigger, .keys-hint { display: none; }   /* 移动端没有物理键盘 */
+  .diag-row { flex-wrap: wrap; }
+  .diag-label { flex-basis: auto; }
+  .diag-detail { flex-basis: 100%; padding-left: 22px; }
   .keys-combo { flex-basis: 110px; }
   .omni-mask { align-items: flex-start; padding: 0; }
   .omni { width: 100%; max-height: 100vh; height: 100vh; border: 0; border-radius: 0; }
