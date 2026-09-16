@@ -2662,8 +2662,8 @@ LINK_CHECK_WORKERS = 6          # 并发数：够快，又不至于把小站打�
 LINK_CHECK_BUDGET = 45          # 单次请求的总时间预算（秒），留足余量给 gunicorn 的 120s
 # 服务器有响应、只是不给匿名探测——这类不算死链。
 _LINK_ALIVE_BUT_GUARDED = frozenset({401, 403, 405, 406, 429, 503})
-# 有些站点不实现 HEAD，用 GET 再试一次。
-_LINK_RETRY_WITH_GET = frozenset({0, 400, 405, 501})
+# 有些站点对 HEAD 会返回认证/不存在/不支持；用 GET 再确认一次，避免误判。
+_LINK_RETRY_WITH_GET = frozenset({0, 400, 401, 404, 405, 410, 501})
 
 LINK_CHECK_STATUSES = ("ok", "blocked", "missing", "error", "unreachable")
 

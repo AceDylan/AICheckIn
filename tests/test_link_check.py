@@ -21,17 +21,21 @@ PASSWORD = "link-check-unit-test-4f81"
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """按路径返回约定的状态码；/head-405 只对 HEAD 报 405，用来验证 GET 重试。"""
+    """按路径返回约定的状态码；/head-<code> 对 HEAD 返回该状态，GET 返回 200。"""
 
     def _code(self):
         path = self.path.split("?")[0]
+        if path.startswith("/head-"):
+            try:
+                head_code = int(path.rsplit("-", 1)[1])
+            except ValueError:
+                head_code = 200
+            return head_code if self.command == "HEAD" else 200
         if path.startswith("/status/"):
             try:
                 return int(path.rsplit("/", 1)[1])
             except ValueError:
                 return 200
-        if path == "/head-405":
-            return 405 if self.command == "HEAD" else 200
         return 200
 
     def do_HEAD(self):
@@ -95,9 +99,10 @@ class ProbeTest(unittest.TestCase):
     def test_server_error(self):
         self.assertEqual(probe_link(self.base + "/status/500"), ("error", 500))
 
-    def test_head_only_405_is_retried_with_get(self):
-        # 不少站点不实现 HEAD；不重试就会把一堆活链接误判成 blocked。
-        self.assertEqual(probe_link(self.base + "/head-405"), ("ok", 200))
+    def test_head_method_specific_failures_are_retried_with_get(self):
+        # 有些站点对 HEAD 返回认证/不存在/不支持，但正常 GET 实际可访问。
+        for code in (401, 404, 405, 410):
+            self.assertEqual(probe_link(self.base + "/head-%d" % code), ("ok", 200), code)
 
     def test_unreachable_host(self):
         status, code = probe_link("http://127.0.0.1:1/nothing-here", timeout=2)
