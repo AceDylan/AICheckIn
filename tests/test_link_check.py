@@ -264,6 +264,13 @@ class LinkCheckUiTest(unittest.TestCase):
             self.assertIn(kind, meta)
         self.assertNotIn("blocked", meta)
 
+    def test_server_error_uses_neutral_wording(self):
+        # 5xx 只说明自动探测结果需要确认，不把网站直接标成“响应异常”。
+        start = self.html.index("const LINK_CHECK_META")
+        meta = self.html[start:self.html.index("let linkAlertFilter")]
+        self.assertIn("label: '待确认'", meta)
+        self.assertNotIn("label: '响应异常'", meta)
+
     def test_skipped_links_never_show_a_badge(self):
         start = self.html.index("function linkCheckState")
         self.assertIn("l.skip_check", self.html[start:start + 200])
