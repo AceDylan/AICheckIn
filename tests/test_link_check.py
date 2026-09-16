@@ -99,9 +99,9 @@ class ProbeTest(unittest.TestCase):
     def test_server_error(self):
         self.assertEqual(probe_link(self.base + "/status/500"), ("error", 500))
 
-    def test_head_method_specific_failures_are_retried_with_get(self):
-        # 有些站点对 HEAD 返回认证/不存在/不支持，但正常 GET 实际可访问。
-        for code in (401, 404, 405, 410):
+    def test_non_success_head_is_confirmed_with_get(self):
+        # HEAD 可能被 WAF/站点特殊处理成 4xx/5xx；只要 GET 正常，就不应误判。
+        for code in (401, 403, 404, 405, 410, 418, 429, 500, 502, 503):
             self.assertEqual(probe_link(self.base + "/head-%d" % code), ("ok", 200), code)
 
     def test_unreachable_host(self):

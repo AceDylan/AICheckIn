@@ -2662,8 +2662,7 @@ LINK_CHECK_WORKERS = 6          # 并发数：够快，又不至于把小站打�
 LINK_CHECK_BUDGET = 45          # 单次请求的总时间预算（秒），留足余量给 gunicorn 的 120s
 # 服务器有响应、只是不给匿名探测——这类不算死链。
 _LINK_ALIVE_BUT_GUARDED = frozenset({401, 403, 405, 406, 429, 503})
-# 有些站点对 HEAD 会返回认证/不存在/不支持；用 GET 再确认一次，避免误判。
-_LINK_RETRY_WITH_GET = frozenset({0, 400, 401, 404, 405, 410, 501})
+# HEAD 只是轻量快速探测；非 2xx/3xx 必须再用 GET 确认，避免方法差异/WAF 误判。
 
 LINK_CHECK_STATUSES = ("ok", "blocked", "missing", "error", "unreachable")
 
@@ -2713,10 +2712,11 @@ def classify_link_code(code):
 def probe_link(url, proxy="", timeout=LINK_CHECK_TIMEOUT):
     """探测单个网址。返回 (status, code)。
 
-    先 HEAD（省流量），遇到不支持 HEAD 的站点再用 GET 重试一次。
+    先 HEAD（省流量）；只有 2xx/3xx 才直接采信。其余状态统一用 GET 再确认，
+    避免站点/WAF 对 HEAD 返回 4xx/5xx、但正常 GET 实际可访问时产生误判。
     """
     code = _link_probe_once(url, proxy, "HEAD", timeout)
-    if code in _LINK_RETRY_WITH_GET:
+    if not (200 <= code < 400):
         code = _link_probe_once(url, proxy, "GET", timeout)
     return classify_link_code(code), code
 
