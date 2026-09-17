@@ -90,7 +90,7 @@ class ScriptBootTest(unittest.TestCase):
 
     def test_boots_cleanly_for_every_entry_hash(self):
         for hash_value in ("", "#bookmarks", "#checkin", "#configs", "#history",
-                           "#settings", "#links/daily"):
+                           "#settings", "#links/monitor", "#links/daily"):
             out = self.boot(hash_value)
             self.assertEqual(out["errors"], [], "%s 启动时抛异常：%s" % (hash_value or "/", out["errors"]))
             self.assertEqual(out["rejections"], [],

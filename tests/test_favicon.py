@@ -253,7 +253,7 @@ class FaviconUiTest(unittest.TestCase):
             self.assertIn("siteAvatarHtml(", self.html)
             self.assertIn(cls_name, self.html)
         self.assertEqual(self.html.count("siteAvatarHtml(b.name, b.url, 'site-avatar')"), 1)
-        self.assertEqual(self.html.count("siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon)"), 1)
+        self.assertEqual(self.html.count("siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, l.custom_icon)"), 1)
         self.assertEqual(self.html.count("siteAvatarHtml(c.name, c.base_url, 'mini-avatar')"), 3)
         # 旧的「只有首字母」写法不应残留。
         self.assertNotIn('<div class="site-avatar" aria-hidden="true">', self.html)
@@ -285,8 +285,8 @@ class FaviconUiTest(unittest.TestCase):
         self.assertIn('data-favicon="${escapeHtml(origin)}" alt="" decoding="async"', self.html)
         self.assertIn("else if (img.offsetParent) FAVICON_QUEUE.push(img);", self.html)
 
-    def test_user_emoji_still_wins_over_fetched_icon(self):
-        self.assertIn("const origin = emoji ? '' : siteOrigin(url);", self.html)
+    def test_auto_icon_is_tried_even_with_a_text_fallback(self):
+        self.assertIn("const origin = siteOrigin(url);", self.html)
 
     def test_icon_overlay_cannot_disturb_layout(self):
         rule = re.search(r"\.avatar-img\s*\{([^}]*)\}", self.css).group(1)

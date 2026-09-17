@@ -11,6 +11,8 @@ gyqd 签到逻辑的 Web 封装。
 - 内置每日定时自动签到 + 运行历史，做到无人值守。
 """
 
+import base64
+import binascii
 import datetime
 import hashlib
 import hmac
@@ -2465,6 +2467,37 @@ def _clean_tags(raw):
     return tags
 
 
+# 上传图标随配置一起备份/导出；浏览器先缩为 128px，服务端限制格式与体积。
+CUSTOM_ICON_MAX_BYTES = 64 * 1024
+_CUSTOM_ICON_RE = re.compile(r"^data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$")
+
+
+def clean_custom_icon(value):
+    if value in (None, ""):
+        return ""
+    if not isinstance(value, str) or len(value) > CUSTOM_ICON_MAX_BYTES * 4 // 3 + 64:
+        raise ValueError("上传图标过大（最多 64 KB）")
+    match = _CUSTOM_ICON_RE.fullmatch(value)
+    if not match:
+        raise ValueError("上传图标需为 PNG、JPEG、GIF 或 WebP 图片")
+    try:
+        data = base64.b64decode(match[2], validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("上传图标编码无效")
+    if len(data) > CUSTOM_ICON_MAX_BYTES:
+        raise ValueError("上传图标过大（最多 64 KB）")
+    if sniff_image_mime(data) != match[1]:
+        raise ValueError("上传图标内容与图片格式不符")
+    return "data:" + match[1] + ";base64," + base64.b64encode(data).decode("ascii")
+
+
+def _coerce_custom_icon(value):
+    try:
+        return clean_custom_icon(value)
+    except ValueError:
+        return ""
+
+
 def clean_link(payload, existing=None, taken=()):
     """校验并规整单条链接。existing 存在时沿用 id / created_at；否则分配新 id。"""
     if not isinstance(payload, dict):
@@ -2498,6 +2531,8 @@ def clean_link(payload, existing=None, taken=()):
     out = {
         "id": lid, "name": name, "url": url, "desc": desc, "icon": icon,
         "tags": tags, "pinned": pinned, "skip_check": skip_check,
+        "show_on_home": bool(payload.get("show_on_home", (existing or {}).get("show_on_home", False))),
+        "custom_icon": clean_custom_icon(payload.get("custom_icon", (existing or {}).get("custom_icon"))),
         "created_at": created, "updated_at": now,
     }
     # 探测快照：网址没变才沿用，否则旧结论对新地址毫无意义。
@@ -2567,6 +2602,8 @@ def _coerce_link_group(raw, taken):
             "icon": _squash_text(item.get("icon"), 8),
             "tags": [str(t).strip() for t in tags if isinstance(t, str) and str(t).strip()][:MAX_LINK_TAGS],
             "pinned": bool(item.get("pinned")),
+            "show_on_home": bool(item.get("show_on_home")),
+            "custom_icon": _coerce_custom_icon(item.get("custom_icon")),
             "skip_check": bool(item.get("skip_check")),
             "created_at": str(item.get("created_at") or ""),
             "updated_at": str(item.get("updated_at") or ""),
@@ -2809,6 +2846,37 @@ def _save_store_or_error(store):
     return None
 
 
+@app.put("/api/library/home")
+def api_library_home():
+    """一次保存首页选择；以分组 + 链接 id 定位，不复制链接数据。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True)
+    selections = payload.get("links") if isinstance(payload, dict) else None
+    if not isinstance(selections, list):
+        return jsonify({"ok": False, "error": "请选择首页网址"}), 400
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    known = {(g["id"], l["id"]) for g in store["link_groups"] for l in g["links"]}
+    selected = set()
+    for item in selections:
+        if not isinstance(item, dict) or not all(isinstance(item.get(k), str) for k in ("group", "id")):
+            return jsonify({"ok": False, "error": "首页网址格式无效"}), 400
+        key = (item["group"], item["id"])
+        if key not in known:
+            return jsonify({"ok": False, "error": "网址已移动或删除，请刷新后重新选择"}), 409
+        selected.add(key)
+    for group in store["link_groups"]:
+        for link in group["links"]:
+            link["show_on_home"] = (group["id"], link["id"]) in selected
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _link_groups_response(store)
+
+
 @app.post("/api/link_groups")
 def api_link_group_create():
     guard = _guard_admin()
@@ -2955,7 +3023,7 @@ def api_link_update(gid, lid):
         return jsonify({"ok": False, "error": "目标分组不存在"}), 404
     merged = dict(link)
     merged.update({k: v for k, v in payload.items()
-                   if k in ("name", "url", "desc", "icon", "tags", "pinned", "skip_check")})
+                   if k in ("name", "url", "desc", "icon", "tags", "pinned", "skip_check", "show_on_home", "custom_icon")})
     try:
         updated = clean_link(merged, existing=link)
     except ValueError as exc:

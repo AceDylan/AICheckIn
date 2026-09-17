@@ -6,6 +6,7 @@
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -75,7 +76,9 @@ class ServiceWorkerShareTest(unittest.TestCase):
         self.assertIn("caches.match('/')", self.source)
 
     def test_cache_version_was_bumped(self):
-        self.assertIn("bh-shell-v2", self.source)
+        version = re.search(r"bh-shell-v(\d+)", self.source)
+        self.assertIsNotNone(version)
+        self.assertGreaterEqual(int(version.group(1)), 2)
 
     @unittest.skipIf(NODE is None, "未安装 node，跳过语法检查")
     def test_parses(self):

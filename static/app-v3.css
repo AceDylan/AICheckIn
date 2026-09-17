@@ -362,6 +362,7 @@ details > summary::-webkit-details-marker { display: none; }
   object-fit: contain; opacity: 0; transition: opacity .18s ease;
 }
 .avatar-img.is-ready { opacity: 1; }
+.avatar-img[data-favicon].is-ready ~ .avatar-upload { opacity: 0; }
 .avatar-img.is-ready ~ .avatar-text { opacity: 0; }
 .avatar-text { position: relative; line-height: 1; transition: opacity .18s ease; }
 .site-copy { min-width: 0; flex: 1; }
@@ -412,6 +413,16 @@ details > summary::-webkit-details-marker { display: none; }
 
 /* ---------- 链接分组页面卡片 ---------- */
 .link-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 10px; }
+.home-section + .home-section { margin-top: 24px; }
+.home-choice-group { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.home-choice-group legend { padding: 0 6px; color: var(--text-2); }
+.home-check { display: flex; align-items: center; gap: 10px; padding: 9px 0; cursor: pointer; }
+.home-check input { flex: 0 0 auto; width: 17px; height: 17px; accent-color: var(--accent); }
+.home-check span { min-width: 0; }
+.home-check b { font-size: 13px; }
+.home-check small { display: block; color: var(--text-3); overflow-wrap: anywhere; margin-top: 3px; }
+.icon-upload-preview { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+.icon-upload-preview img { width: 48px; height: 48px; object-fit: contain; border: 1px solid var(--border); border-radius: 10px; }
 .link-card {
   position: relative; min-width: 0; display: flex; align-items: stretch;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-1);

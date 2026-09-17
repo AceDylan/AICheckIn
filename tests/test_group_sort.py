@@ -75,8 +75,8 @@ class GroupSortUiTest(unittest.TestCase):
         cls.css = client.get("/static/app-v3.css").get_data(as_text=True)
 
     def test_only_groups_are_marked_sortable(self):
-        # 「站点看板」固定首位，不带 data-sortable；分组项都带。
-        self.assertIn("p.id === 'monitor' ? '' : ` data-sortable=\"1\"", self.html)
+        # 「收藏首页」与「站点看板」固定，不带 data-sortable；分组项都带。
+        self.assertIn("['@home', 'monitor'].includes(p.id) ? '' : ` data-sortable=\"1\"", self.html)
         self.assertIn("querySelectorAll('[data-sortable]')", self.html)
 
     def test_drag_handlers_are_bound_to_both_navs(self):
