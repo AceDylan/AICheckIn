@@ -46,7 +46,7 @@ function el(id) {
 }
 
 // 视图与 tab：选择器里出现的那几种形态给出可用的替身。
-const VIEWS = ['bookmarks', 'checkin', 'configs', 'history', 'settings'];
+const VIEWS = ['bookmarks', 'checkin', 'settings'];
 let activeView = 'bookmarks';
 
 globalThis.document = {

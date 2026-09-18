@@ -32,7 +32,7 @@
   <div class="app-shell">
     <aside class="sidebar" aria-label="主导航">
       <div class="brand">
-        <div class="brand-mark">BH</div>
+        <div class="brand-mark" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.5L6 21z"/><path d="M9 7h6"/></svg></div>
         <div><div class="brand-name">Bookmark Hub</div><div class="brand-sub">收藏库 · AI 服务工作台</div></div>
       </div>
       <button class="omni-trigger" id="omniOpen" type="button" aria-label="全局搜索">
@@ -50,14 +50,6 @@
         <button class="tab" data-view="checkin" aria-label="签到中心">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg>
           <span class="tab-text">签到中心</span>
-        </button>
-        <button class="tab" data-view="configs" aria-label="服务配置">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>
-          <span class="tab-text">服务配置</span>
-        </button>
-        <button class="tab" data-view="history" aria-label="运行记录">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-          <span class="tab-text">运行记录</span>
         </button>
         <button class="tab" data-view="settings" aria-label="系统设置">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7.7 7.7 0 0 0 14.8 6L14.5 3h-5l-.3 3a7.7 7.7 0 0 0-1.7 1L5.1 6.1l-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.7 7.7 0 0 0 1.7 1l.3 3h5l.3-3a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/></svg>
@@ -109,31 +101,42 @@
           </div>
         </section>
 
-        <!-- ===== 签到 ===== -->
+        <!-- ===== 签到中心：概览、服务配置和运行记录共用一个工作区 ===== -->
         <section class="view" id="view-checkin">
-          <div class="view-header"><div><div class="eyebrow">辅助工具</div><h1>签到中心</h1><p>只在需要时运行；日常工作保持在收藏库。</p></div><div class="header-actions"><button class="btn" onclick="runCheckin()">运行全部签到</button></div></div>
-          <div id="overview" class="overview" style="display:none"></div>
-          <div class="run-meta"><span class="meta" id="meta"></span></div>
-          <div id="error" class="error" style="display:none"></div>
-          <div id="disabledWrap" style="display:none"><div class="section-label">需手动签到 <span class="count" id="disabledCount"></span></div><div class="disabled-group"><div id="disabledCards" class="dlist"></div></div></div>
-          <div class="section-label" id="enabledLabel" style="display:none">启用配置 <span class="count" id="enabledCount"></span></div>
-          <div id="cards" class="cards"></div>
-          <div id="empty" class="empty-state" style="display:none"></div>
-        </section>
-
-        <!-- ===== 配置管理 ===== -->
-        <section class="view" id="view-configs">
-          <div class="view-header"><div><div class="eyebrow">签到账户</div><h1>服务配置</h1><p>管理签到账户、连接凭证与可用状态。</p></div><div class="header-actions"><button class="btn ghost sm" id="exportCfg">导出 JSON</button><button class="btn ghost sm" id="importCfg">导入</button><button class="btn sm" id="addCfg">＋ 新增</button></div></div>
-          <div class="panel">
-            <div class="panel-title">配置组 <span class="sub" id="cfgCount"></span></div>
-            <div id="cfgList" class="cfg-list"></div><div id="cfgEmpty" class="empty-state" style="display:none"></div>
+          <div class="view-header checkin-header">
+            <div><div class="eyebrow">日常维护</div><h1>签到中心</h1><p>管理签到账户，查看执行结果，让日常维护更轻松。</p></div>
+            <div class="header-actions checkin-actions" aria-label="签到中心工具">
+              <button type="button" class="btn ghost checkin-tool" data-checkin-page="configs" aria-controls="view-configs" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>服务配置</button>
+              <button type="button" class="btn ghost checkin-tool" data-checkin-page="history" aria-controls="view-history" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>运行记录</button>
+              <button type="button" class="btn" id="runAllCheckin" onclick="runCheckin()"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 10 7-10 7z"/></svg>运行全部签到</button>
+            </div>
           </div>
-        </section>
-
-        <!-- ===== 历史 ===== -->
-        <section class="view" id="view-history">
-          <div class="view-header"><div><div class="eyebrow">活动</div><h1>运行记录</h1><p>最近 50 次手动或定时任务执行结果。</p></div><div class="header-actions"><button class="btn ghost" id="refreshHist">刷新记录</button></div></div>
-          <div class="panel"><div id="histList"></div><div id="histEmpty" class="empty">暂无历史记录。</div></div>
+          <section class="checkin-panel" id="checkinOverview" aria-label="签到概览">
+            <div id="overview" class="overview" style="display:none"></div>
+            <div class="run-meta"><span class="meta" id="meta"></span></div>
+            <div id="error" class="error" style="display:none"></div>
+            <div id="disabledWrap" style="display:none"><div class="section-label">需手动签到 <span class="count" id="disabledCount"></span></div><div class="disabled-group"><div id="disabledCards" class="dlist"></div></div></div>
+            <div class="section-label" id="enabledLabel" style="display:none">启用配置 <span class="count" id="enabledCount"></span></div>
+            <div id="cards" class="cards"></div>
+            <div id="empty" class="empty-state" style="display:none"></div>
+          </section>
+          <section class="checkin-panel" id="view-configs" aria-label="服务配置" hidden>
+            <div class="workspace-subheader">
+              <div><button type="button" class="back-link" data-checkin-page="overview">← 返回签到概览</button><h2>服务配置</h2><p>管理签到账户、连接凭证与可用状态。</p></div>
+              <div class="header-actions"><button class="btn ghost sm" id="exportCfg">导出 JSON</button><button class="btn ghost sm" id="importCfg">导入</button><button class="btn sm" id="addCfg">＋ 新增</button></div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">配置组 <span class="sub" id="cfgCount"></span></div>
+              <div id="cfgList" class="cfg-list"></div><div id="cfgEmpty" class="empty-state" style="display:none"></div>
+            </div>
+          </section>
+          <section class="checkin-panel" id="view-history" aria-label="运行记录" hidden>
+            <div class="workspace-subheader">
+              <div><button type="button" class="back-link" data-checkin-page="overview">← 返回签到概览</button><h2>运行记录</h2><p>最近 50 次手动或定时任务执行结果。</p></div>
+              <div class="header-actions"><button class="btn ghost" id="refreshHist">刷新记录</button></div>
+            </div>
+            <div class="panel"><div id="histList"></div><div id="histEmpty" class="empty">暂无历史记录。</div></div>
+          </section>
         </section>
 
         <!-- ===== 设置 ===== -->
@@ -467,6 +470,11 @@
       unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
       search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
       grip: '<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
+      wallet: '<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M17 12h4v4h-4a2 2 0 0 1 0-4z"/>',
+      check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+      clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/>',
+      eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     };
     const GROUP_ICONS = ['folder', 'server', 'globe', 'sparkles', 'code', 'book', 'play', 'chat', 'wrench', 'star', 'cloud', 'shield'];
     const GROUP_COLORS = ['mint', 'sky', 'violet', 'amber', 'rose', 'slate'];
@@ -512,10 +520,22 @@
 
     // ===== 工作区导航 =====
     const LIB = { page: '@home' };  // @ 不允许出现在分组 id 中，避免与用户分组重名。
+    const CHECKIN = { page: 'overview' };
+    const CHECKIN_PAGES = ['overview', 'configs', 'history'];
+    const MAIN_VIEWS = ['bookmarks', 'checkin', 'settings'];
     function libHash() { return LIB.page === '@home' ? '#bookmarks' : '#links/' + LIB.page; }
     function switchView(name, updateHash = true) {
-      const tab = document.querySelector(`.tab[data-view="${name}"]`);
-      const view = $('view-' + name);
+      // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
+      let section = '';
+      if (name === 'checkin') section = 'overview';
+      else if (CHECKIN_PAGES.includes(name) && name !== 'overview') section = name;
+      else if (name.startsWith('checkin/')) section = name.slice(8);
+      if (section && !CHECKIN_PAGES.includes(section)) return;
+      const mainName = section ? 'checkin' : name;
+      if (!MAIN_VIEWS.includes(mainName)) return;
+      if (mainName === 'checkin' && STATE_LOADED && !canEdit()) { switchView('bookmarks'); return; }
+      const tab = document.querySelector(`.tab[data-view="${mainName}"]`);
+      const view = $('view-' + mainName);
       if (!tab || !view) return;
       document.querySelectorAll('.tab').forEach(t => {
         const active = t === tab;
@@ -523,13 +543,30 @@
         t.setAttribute('aria-current', active ? 'page' : 'false');
       });
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
-      if (updateHash) history.replaceState(null, '', name === 'bookmarks' ? libHash() : '#' + name);
+      $('libSubnav').hidden = mainName !== 'bookmarks';
+      if (section) {
+        CHECKIN.page = section;
+        $('checkinOverview').hidden = section !== 'overview';
+        $('view-configs').hidden = section !== 'configs';
+        $('view-history').hidden = section !== 'history';
+        $('runAllCheckin').hidden = section !== 'overview';
+        document.querySelectorAll('.checkin-tool').forEach(btn => {
+          const active = btn.dataset.checkinPage === section;
+          btn.classList.toggle('active', active);
+          btn.setAttribute('aria-pressed', String(active));
+        });
+      }
+      if (updateHash) {
+        const hash = mainName === 'bookmarks' ? libHash()
+          : section && section !== 'overview' ? '#checkin/' + section : '#' + mainName;
+        history.replaceState(null, '', hash);
+      }
       // 仅在数据就绪后才触发页面自带的加载动作。initRoute() 在脚本顶部就会调用
       // switchView，那时 STATE 还是默认值（canEdit() 恒为 true），而且下方的
       // 常量都还没初始化——直接调 loadHistory / loadDiagnostics 会读到未初始化的
       // const（TDZ ReferenceError），或者用错误的解锁状态发出请求。
       // 首次加载由 loadConfigs() 结束时的 refreshActiveView() 统一补上。
-      if (STATE_LOADED) refreshActiveView(name);
+      if (STATE_LOADED) refreshActiveView(currentViewName());
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     // 切到某个页面时它自己要拉的数据。集中在这里，免得 switchView 直接引用
@@ -540,18 +577,34 @@
     }
     function currentViewName() {
       const view = document.querySelector('.view.active');
-      return view ? view.id.replace('view-', '') : '';
+      const name = view ? view.id.replace('view-', '') : '';
+      return name === 'checkin' && CHECKIN.page !== 'overview' ? CHECKIN.page : name;
     }
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
       switchView(tab.dataset.view);
       if (tab.dataset.view === 'bookmarks') openLibPage('@home');
     }));
-    (function initRoute() {
+    document.querySelectorAll('[data-checkin-page]').forEach(btn => btn.addEventListener('click', () => {
+      switchView('checkin/' + btn.dataset.checkinPage);
+    }));
+    function initRoute() {
       const hash = location.hash.slice(1);
       const m = /^links\/([A-Za-z0-9_-]{1,32})$/.exec(hash);
-      if (m) { LIB.page = m[1]; switchView('bookmarks', false); return; }
-      switchView(document.querySelector(`.tab[data-view="${hash}"]`) ? hash : 'bookmarks', false);
-    })();
+      if (m) {
+        LIB.page = m[1];
+        switchView('bookmarks', false);
+        if (STATE_LOADED) renderLibrary();
+        return;
+      }
+      // 旧书签继续有效；刷新新子页面地址时恢复同一个面板。
+      if (hash === 'configs' || hash === 'history') { switchView(hash); return; }
+      if (/^checkin\/(overview|configs|history)$/.test(hash)) { switchView(hash, false); return; }
+      if (!hash || hash === 'bookmarks' || !MAIN_VIEWS.includes(hash)) LIB.page = '@home';
+      switchView(MAIN_VIEWS.includes(hash) ? hash : 'bookmarks', false);
+      if (STATE_LOADED && currentViewName() === 'bookmarks') renderLibrary();
+    }
+    window.addEventListener('hashchange', initRoute);
+    initRoute();
 
     // ===== 签到视图渲染 =====
     // 取某配置的展示指标：优先本次签到结果，其次持久化快照，最后占位 “-”。
@@ -594,14 +647,14 @@
       const runBox =
         `<div class="kpi kpi-run" id="runBox" role="button" tabindex="0" onclick="runCheckin()"` +
         ` onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();runCheckin();}">` +
-        `<div class="kpi-icon">🚀</div><div class="kpi-body">` +
+        `<div class="kpi-icon">${icon('play')}</div><div class="kpi-body">` +
         `<div class="kpi-num" id="runBoxNum">一键签到</div>` +
         `<div class="kpi-label" id="runBoxLabel">点击立即签到</div></div></div>`;
       el.innerHTML = [
-        kpi('💰', fmtNum(walletSum), '钱包余额合计'),
-        kpi('✅', `${signed}/${enabled}`, '今日已签 / 启用'),
-        kpi('🕒', disabled ? `${pending} · ${disabled}` : `${pending}`, disabled ? '待签到 · 已禁用' : '待签到'),
-        kpi('⏰', next, '下次定时'),
+        kpi(icon('wallet'), fmtNum(walletSum), '钱包余额合计'),
+        kpi(icon('check'), `${signed}/${enabled}`, '今日已签 / 启用'),
+        kpi(icon('clock'), disabled ? `${pending} · ${disabled}` : `${pending}`, disabled ? '待签到 · 已禁用' : '待签到'),
+        kpi(icon('calendar'), next, '下次定时'),
         runBox,
       ].join('');
       el.style.display = 'grid';
@@ -800,7 +853,7 @@
 
     function canEdit() { return !STATE.admin_required || STATE.admin_unlocked; }
 
-    // 签到中心 / 服务配置 / 运行记录都是纯管理功能，未解锁时整页都点不动，
+    // 签到概览和两个管理内页共用签到中心入口，未解锁时整个入口隐藏，
     // 留在导航里只会让人白点一遍再看见「请先解锁」。直接收起来，
     // 未解锁的首页就是一个干净的收藏库。
     const ADMIN_VIEWS = ['checkin', 'configs', 'history'];
@@ -828,7 +881,7 @@
             <div class="cfg-sub">${urlLink(c.base_url)} <span>· uid ${escapeHtml(c.user_id)} ·</span> <span class="cfg-token" id="tok-${i}">${escapeHtml(c.token_masked)}</span></div>
           </div>
           <div class="cfg-actions">
-            <button class="btn sm ghost" onclick="revealToken(${i})" title="临时显示 token">👁</button>
+            <button class="btn sm ghost" onclick="revealToken(${i})" title="临时显示 token" aria-label="临时显示 ${escapeHtml(c.name)} 的 token">${icon('eye')}</button>
             <button class="btn sm ghost" onclick="editCfg(${i})">编辑</button>
             <button class="btn sm danger" onclick="deleteCfg(${i})">删除</button>
           </div>
@@ -2852,7 +2905,7 @@
       // 有失败项时默认展开——这正是打开运行记录想看的东西。
       const failed = results.filter(r => r.status === 'failed').length;
       return `<details class="hist-item"${failed ? ' open' : ''}>
-        <summary class="hist-summary">${head}
+        <summary class="hist-summary"><div class="hist-summary-main">${head}</div>
           <span class="hist-toggle">${failed ? `${failed} 项失败` : `${results.length} 项`} ▾</span>
         </summary>
         <div class="hist-results">${results.map(histResultHtml).join('')}</div>
