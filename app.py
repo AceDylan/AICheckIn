@@ -16,6 +16,7 @@ import binascii
 import datetime
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import random
@@ -286,17 +287,26 @@ def write_store(store):
 # 免得非得 SSH 上去手动 cp。
 
 _BACKUP_LATEST_ID = "bak"
+# 批量导入（WeTab 备份）之前另存的那一份：`.bak` 会被后续任何一次写入冲掉，
+# 而「导入了一百条、过两天想整体撤回」需要一个不会被日常改动覆盖的回溯点。
+_BACKUP_PRE_IMPORT_ID = "pre-import"
+
+
+def _pre_import_backup_path(path):
+    return path.with_name(path.name + ".pre-import.bak")
 
 
 def _backup_path(backup_id):
     """备份 id → 文件路径。
 
-    id 只接受 "bak" 或 YYYY-MM-DD —— **绝不能**把用户给的字符串拼进路径，
+    id 只接受 "bak"、"pre-import" 或 YYYY-MM-DD —— **绝不能**把用户给的字符串拼进路径，
     否则就是一个任意文件读取（以及用任意文件覆盖 config.json）的洞。
     """
     path = Path(CONFIG_FILE)
     if backup_id == _BACKUP_LATEST_ID:
         return path.with_name(path.name + ".bak")
+    if backup_id == _BACKUP_PRE_IMPORT_ID:
+        return _pre_import_backup_path(path)
     if _STAMP_DAY_RE.match(str(backup_id or "")):
         return _daily_backup_name(path, backup_id)
     return None
@@ -322,7 +332,8 @@ def list_config_backups():
     """列出可用备份，最新的在前。"""
     path = Path(CONFIG_FILE)
     found = []
-    candidates = [(_BACKUP_LATEST_ID, path.with_name(path.name + ".bak"), "上一次写入前")]
+    candidates = [(_BACKUP_LATEST_ID, path.with_name(path.name + ".bak"), "上一次写入前"),
+                  (_BACKUP_PRE_IMPORT_ID, _pre_import_backup_path(path), "最近一次批量导入前")]
     try:
         prefix, suffix = path.name + ".", ".bak"
         for snap in sorted(path.parent.glob(path.name + ".*.bak"), reverse=True):
@@ -2029,6 +2040,7 @@ def api_configs():
             "admin_required": True, "admin_unlocked": False, "scheduler_running": SCHEDULER_ENABLED,
             # 未解锁时 /api/wallpaper 同样被挡住，这里如实说「没有」，页面回落到内置壁纸。
             "wallpaper": {"custom": False, "v": "", "lum": None},
+            "todos": [], "todos_locked": True,
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -2047,6 +2059,13 @@ def api_configs():
     # 已经没有任何用处——留着只是白白暴露平台名、base_url、user_id 与额度。
     # 未设管理密码时不生效，本地 / 内网部署行为不变。
     configs_hidden = bool(ADMIN_PASSWORD) and not unlocked
+    # 待办比收藏更私人：未解锁时不下发。todos.json 读坏了也不该拖垮整个页面，只把原因带给首页组件。
+    todos, todos_error = [], ""
+    if unlocked:
+        try:
+            todos = read_todos()
+        except RuntimeError as exc:
+            todos_error = str(exc)
     return jsonify({
         "ok": True,
         "configs": [] if configs_hidden else configs_out,
@@ -2079,6 +2098,7 @@ def api_configs():
         "private": private_mode_active(),
         "locked": False,
         "wallpaper": public_wallpaper(),
+        "todos": todos, "todos_locked": not unlocked, "todos_error": todos_error,
     })
 
 
@@ -3775,6 +3795,204 @@ def api_wallpaper_delete():
     return jsonify({"ok": True, "wallpaper": public_wallpaper()})
 
 
+# =========================
+# 首页待办
+# =========================
+#
+# 待办单独存一个 data/todos.json，不进 config.json：
+# - 勾一下就是一次写入。放进 config.json 的话，「写入前留 .bak」会被勾选动作刷掉，
+#   误删分组之后再勾一条待办，能救命的那份 .bak 就没了；
+# - config.json 装着全部凭据，后台的定时刷新也在写它，没必要让高频的小改动去凑这个热闹。
+# 这里的读改写全程持锁（gunicorn 单进程多线程），自己留一份 .bak；
+# 「导出 JSON」会带上 todos 键，导入时有这个键才覆盖，所以整份备份照样带得走。
+#
+# 待办比收藏更私人：设了管理密码时读写都要解锁，开放的 /api/configs 也不会下发。
+MAX_TODOS = 200
+TODO_TEXT_MAX = 200
+_todos_lock = threading.Lock()
+
+
+def _todos_path():
+    # 每次现取 DATA_DIR：测试会把它重定向到逐用例的临时目录。
+    return Path(DATA_DIR) / "todos.json"
+
+
+def _clean_todo_text(value):
+    if not isinstance(value, str):
+        raise ValueError("待办内容需为文字")
+    text = re.sub(r"\s+", " ", value).strip()
+    if not text:
+        raise ValueError("待办内容不能为空")
+    if len(text) > TODO_TEXT_MAX:
+        raise ValueError("待办内容过长（最多 {0} 字）".format(TODO_TEXT_MAX))
+    return text
+
+
+def _todo_stamp(value, fallback=""):
+    value = str(value or "").strip()
+    return value if _STAMP_RE.match(value) else fallback
+
+
+def _coerce_todos(raw):
+    """读取 / 导入路径的宽松规整：不抛错，丢掉没有内容的项，修好重复或非法的 id。"""
+    items, taken = [], set()
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict):
+            continue
+        text = _squash_text(item.get("text"), TODO_TEXT_MAX)
+        if not text:
+            continue
+        tid = str(item.get("id") or "").strip()
+        if not _LINK_ID_RE.match(tid) or tid in taken:
+            tid = _gen_link_id(taken)
+        taken.add(tid)
+        done = bool(item.get("done"))
+        created = _todo_stamp(item.get("created_at"))
+        items.append({
+            "id": tid, "text": text, "done": done,
+            "created_at": created,
+            "updated_at": _todo_stamp(item.get("updated_at"), created),
+            "done_at": _todo_stamp(item.get("done_at")) if done else "",
+        })
+        if len(items) >= MAX_TODOS:
+            break
+    return items
+
+
+def read_todos():
+    path = _todos_path()
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise RuntimeError("读取待办失败：{0}".format(exc))
+    return _coerce_todos(raw.get("todos") if isinstance(raw, dict) else raw)
+
+
+def _write_todos_locked(items):
+    """调用方须已持有 _todos_lock。"""
+    path = _todos_path()
+    text = json.dumps({"todos": items}, ensure_ascii=False, indent=2)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            try:
+                _write_text_atomic(path.with_name(path.name + ".bak"), path.read_text(encoding="utf-8"))
+            except OSError:
+                pass  # 备份失败不该挡住正常保存
+        _write_text_atomic(path, text)
+    except OSError as exc:
+        raise RuntimeError("待办写入失败（请检查数据目录是否可写）：{0}".format(exc))
+
+
+def mutate_todos(change):
+    """锁内「读 → 改 → 写」。change(items) 就地修改列表，可抛 ValueError / LookupError；返回写入后的列表。"""
+    with _todos_lock:
+        items = read_todos()
+        change(items)
+        _write_todos_locked(items)
+        return items
+
+
+def _todos_call(change):
+    """待办写接口的公共骨架：鉴权 → 锁内修改 → 统一的错误映射。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        items = mutate_todos(change)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "todos": items})
+
+
+def _find_todo(items, tid):
+    for pos, item in enumerate(items):
+        if item["id"] == tid:
+            return pos
+    raise LookupError("这条待办已不存在，请刷新")
+
+
+@app.get("/api/todos")
+def api_todos():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        return jsonify({"ok": True, "todos": read_todos()})
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.post("/api/todos")
+def api_todo_create():
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(items):
+        text = _clean_todo_text(payload.get("text"))
+        if len(items) >= MAX_TODOS:
+            raise ValueError("待办最多 {0} 条，先清掉一些已完成的吧".format(MAX_TODOS))
+        now = _now_str()
+        # 新待办放最前面：刚记下的事通常就是接下来要做的事。
+        items.insert(0, {"id": _gen_link_id({t["id"] for t in items}), "text": text, "done": False,
+                         "created_at": now, "updated_at": now, "done_at": ""})
+    return _todos_call(change)
+
+
+@app.put("/api/todos/<tid>")
+def api_todo_update(tid):
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(items):
+        if "text" not in payload and "done" not in payload:
+            raise ValueError("缺少 text 或 done")
+        if "done" in payload and not isinstance(payload["done"], bool):
+            raise ValueError("done 需为布尔值")
+        text = _clean_todo_text(payload["text"]) if "text" in payload else None
+        item = items[_find_todo(items, tid)]
+        now = _now_str()
+        if text is not None:
+            item["text"] = text
+        if "done" in payload and payload["done"] != item["done"]:
+            item["done"] = payload["done"]
+            item["done_at"] = now if item["done"] else ""
+        item["updated_at"] = now
+    return _todos_call(change)
+
+
+@app.delete("/api/todos/<tid>")
+def api_todo_delete(tid):
+    return _todos_call(lambda items: items.pop(_find_todo(items, tid)))
+
+
+@app.post("/api/todos/clear_done")
+def api_todos_clear_done():
+    def change(items):
+        items[:] = [t for t in items if not t["done"]]
+    return _todos_call(change)
+
+
+@app.post("/api/todos/reorder")
+def api_todos_reorder():
+    """按 id 列表重排；order 须恰好为现有全部待办 id 的一个排列。"""
+    payload = request.get_json(silent=True)
+    order = payload.get("order") if isinstance(payload, dict) else None
+
+    def change(items):
+        by_id = {t["id"]: t for t in items}
+        if not isinstance(order, list) or sorted(map(str, order)) != sorted(by_id):
+            raise ValueError("排序参数无效，请刷新后重试")
+        items[:] = [by_id[str(tid)] for tid in order]
+    return _todos_call(change)
+
+
 @app.get("/api/configs/export")
 def api_export():
     guard = _guard_admin()
@@ -3782,6 +4000,8 @@ def api_export():
         return guard
     try:
         store = read_store()
+        # 待办存在单独的 todos.json 里，导出时并进来，一份文件带走全部数据。
+        store["todos"] = read_todos()
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify(store)
@@ -3857,11 +4077,275 @@ def api_import():
         if cleaned_groups is not None:
             store["link_groups"] = cleaned_groups
         write_store(store)
+        # 待办同样是可选项：导入数据带了 todos 数组才覆盖（旧版导出的文件没有这个键）。
+        if isinstance(payload, dict) and isinstance(payload.get("todos"), list):
+            imported_todos = _coerce_todos(payload["todos"])
+            mutate_todos(lambda items: items.__setitem__(slice(None), imported_todos))
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify({"ok": True, "count": len(cleaned)})
+
+
+# =========================
+# 从 WeTab 备份导入
+# =========================
+#
+# WeTab「设置 → 备份与恢复 → 导出」得到的是一个 JSON 文件（扩展名 .data）：
+#   data.store-icon.icons[分页].children[]   type=site 是网址（网址在 target），folder-icon 再套一层 children，widget 是小组件
+#   data.store-todo.todos[清单].children[]   {content, finished, updateTime(毫秒)}
+# 同一份文件里还有便签、天气城市、壁纸、AI 对话设置等——这里**只按白名单取上面列出的几个字段**，
+# 其余一概不读、不存、不回显。网址统一收进名为「WeTab」的分组（分页 / 文件夹名转成标签，方便以后再拆），
+# 图标不搬：WeTab 的图标是它 CDN 上的外链，本站 CSP 只许同源图片，导入后照常走本站的图标抓取。
+WETAB_GROUP_NAME = "WeTab"
+WETAB_MAX_DEPTH = 4        # 分页 → 文件夹 → 网址 实际只有三层，多留一层余量
+WETAB_MAX_NODES = 5000     # 防御畸形 / 恶意文件：节点再多就不往下走了
+
+
+def _wetab_tag(name):
+    """分页 / 文件夹名 → 标签：标签里不能有空白和分隔符（编辑框按它们切分），最多 20 字。"""
+    return re.sub(r"[\s,，;；#]+", "-", str(name or "").strip()).strip("-")[:20]
+
+
+def _is_private_host(url):
+    """内网 / 本机地址：容器里多半连不通，导入时直接标成「不参与死链检查」。"""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if host == "localhost" or host.endswith((".local", ".lan", ".internal")):
+        return True
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_loopback or addr.is_link_local
+
+
+def _wetab_stamp(ms):
+    """WeTab 的毫秒时间戳 → 本站的 'YYYY-MM-DD HH:MM:SS'；不像话的值返回空串。"""
+    if isinstance(ms, bool) or not isinstance(ms, (int, float)):
+        return ""
+    try:
+        return datetime.datetime.fromtimestamp(ms / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def parse_wetab_backup(payload):
+    """从 WeTab 备份里取出可导入的网址与待办。纯函数，不碰存储；格式完全不对时抛 ValueError。
+
+    返回 {"links": [...], "todos": [...], "pages": [{"name", "count"}], "skipped": {...}}。
+    """
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        raise ValueError("这不是 WeTab 的备份文件（缺少 data）")
+    icon_store, todo_store = data.get("store-icon"), data.get("store-todo")
+    pages = icon_store.get("icons") if isinstance(icon_store, dict) else None
+    lists = todo_store.get("todos") if isinstance(todo_store, dict) else None
+    if not isinstance(pages, list) and not isinstance(lists, list):
+        raise ValueError("备份里没有找到图标页（store-icon）或待办（store-todo）")
+
+    links, seen, page_stats = [], set(), []
+    skipped = {"widgets": 0, "invalid": 0, "credentials": 0, "duplicates": 0}
+    budget = [WETAB_MAX_NODES]
+
+    def take_site(node, trail):
+        raw_url = node.get("target")
+        try:
+            url = _clean_link_url(raw_url)
+            parsed = urlparse(url)
+            if not parsed.hostname:
+                raise ValueError("no host")
+        except ValueError:
+            skipped["invalid"] += 1
+            return False
+        # user:pass@host 这种网址一旦入库，就会随开放的 /api/configs 发给所有访客。
+        if parsed.username or parsed.password:
+            skipped["credentials"] += 1
+            return False
+        key = link_dedupe_key(url)
+        if key in seen:
+            skipped["duplicates"] += 1
+            return False
+        seen.add(key)
+        tags = []
+        for name in trail:
+            tag = _wetab_tag(name)
+            if tag and tag.lower() not in {t.lower() for t in tags}:
+                tags.append(tag)
+        # WeTab 的「纯色 + 文字」图标：那几个字就是用户自己起的文字头像，带过来当回退头像。
+        text_icon = _squash_text(node.get("bgText"), 8) if node.get("bgType") == "color" else ""
+        links.append({
+            "name": _squash_text(node.get("name"), 60) or _name_from_url(url),
+            "url": url, "tags": tags[:MAX_LINK_TAGS], "icon": text_icon,
+            "skip_check": _is_private_host(url),
+        })
+        return True
+
+    def walk(nodes, trail, depth):
+        taken = 0
+        for node in nodes if isinstance(nodes, list) else []:
+            if budget[0] <= 0:
+                break
+            budget[0] -= 1
+            if not isinstance(node, dict):
+                continue
+            kind = node.get("type")
+            if kind == "site":
+                taken += 1 if take_site(node, trail) else 0
+            elif isinstance(node.get("children"), list):
+                if depth < WETAB_MAX_DEPTH:
+                    taken += walk(node["children"], trail + [node.get("name")], depth + 1)
+            elif kind == "widget":
+                skipped["widgets"] += 1
+        return taken
+
+    for page in pages if isinstance(pages, list) else []:
+        if not isinstance(page, dict):
+            continue
+        count = walk(page.get("children"), [page.get("name")], 1)
+        page_stats.append({"name": _squash_text(page.get("name"), 40) or "未命名", "count": count})
+
+    todos, seen_text = [], set()
+    for todo_list in lists if isinstance(lists, list) else []:
+        for item in (todo_list.get("children") if isinstance(todo_list, dict) else None) or []:
+            if not isinstance(item, dict) or len(todos) >= WETAB_MAX_NODES:
+                continue
+            text = _squash_text(item.get("content"), TODO_TEXT_MAX)
+            if not text or text.lower() in seen_text:
+                continue
+            seen_text.add(text.lower())
+            todos.append({"text": text, "done": bool(item.get("finished")), "stamp": _wetab_stamp(item.get("updateTime"))})
+    return {"links": links, "todos": todos, "pages": page_stats, "skipped": skipped}
+
+
+def plan_wetab_import(parsed, store, current_todos, options=None):
+    """把解析结果对着现有数据算成一份「将要发生什么」：预览和真正导入走同一份计划，两边不会对不上。
+
+    options：include_links / include_todos（默认都导）、skip_existing（其他分组里已有的网址要不要跳过，默认不跳）。
+    """
+    options = options or {}
+    include_links = options.get("include_links", True)
+    include_todos = options.get("include_todos", True)
+    skip_existing = bool(options.get("skip_existing"))
+    group = next((g for g in store["link_groups"] if str(g.get("name") or "").strip().lower() == WETAB_GROUP_NAME.lower()), None)
+    in_group = {link_dedupe_key(l.get("url")) for l in (group or {}).get("links") or []}
+    elsewhere_keys = {link_dedupe_key(l.get("url")) for g in store["link_groups"] if g is not group for l in g.get("links") or []}
+    new_links, already, elsewhere = [], 0, 0
+    for link in parsed["links"] if include_links else []:
+        key = link_dedupe_key(link["url"])
+        if key in in_group:
+            already += 1          # 重复导入同一份备份：已经在 WeTab 分组里的不再加一遍
+            continue
+        if key in elsewhere_keys:
+            elsewhere += 1
+            if skip_existing:
+                continue
+        new_links.append(link)
+    have_text = {str(t.get("text") or "").lower() for t in current_todos}
+    new_todos = [t for t in (parsed["todos"] if include_todos else []) if t["text"].lower() not in have_text]
+    return {
+        "group": group, "new_links": new_links, "new_todos": new_todos,
+        "links": {"found": len(parsed["links"]) if include_links else 0, "new": len(new_links),
+                  "already": already, "elsewhere": elsewhere, "skip_existing": bool(skip_existing)},
+        "todos": {"found": len(parsed["todos"]) if include_todos else 0, "new": len(new_todos),
+                  "already": (len(parsed["todos"]) if include_todos else 0) - len(new_todos),
+                  "done": sum(1 for t in new_todos if t["done"])},
+    }
+
+
+def _wetab_capacity_error(plan, store, current_todos):
+    group = plan["group"]
+    if plan["new_links"] and group is None and len(store["link_groups"]) >= MAX_LINK_GROUPS:
+        return "分组数量已达上限（{0}），先删掉一个分组再导入".format(MAX_LINK_GROUPS)
+    if len((group or {}).get("links") or []) + len(plan["new_links"]) > MAX_LINKS_PER_GROUP:
+        return "「{0}」分组放不下：单个分组最多 {1} 条网址".format(WETAB_GROUP_NAME, MAX_LINKS_PER_GROUP)
+    if len(current_todos) + len(plan["new_todos"]) > MAX_TODOS:
+        return "待办放不下：最多 {0} 条，先清掉一些已完成的再导入".format(MAX_TODOS)
+    return ""
+
+
+def _save_pre_import_snapshots():
+    """导入前把 config.json / todos.json 各另存一份 .pre-import.bak；存不下来就不导入。"""
+    for path in (Path(CONFIG_FILE), _todos_path()):
+        if path.is_file():
+            _write_text_atomic(path.with_name(path.name + ".pre-import.bak"), path.read_text(encoding="utf-8"))
+
+
+@app.post("/api/import/wetab")
+def api_import_wetab():
+    """导入 WeTab 备份。请求体 {backup: <备份 JSON>, dry_run, include_links, include_todos, skip_existing}。
+
+    dry_run=true 只回预览、不写任何东西。真正导入前先另存回溯点；网址进「WeTab」分组，待办追加到首页待办。
+    """
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("backup"), dict):
+        return jsonify({"ok": False, "error": "请选择 WeTab 导出的备份文件"}), 400
+    dry_run = bool(payload.get("dry_run"))
+    try:
+        parsed = parse_wetab_backup(payload["backup"])
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    options = {
+        "include_links": payload.get("include_links", True) is not False,
+        "include_todos": payload.get("include_todos", True) is not False,
+        "skip_existing": bool(payload.get("skip_existing")),
+    }
+    try:
+        with _todos_lock:
+            current_todos = read_todos()
+            plan = plan_wetab_import(parsed, store, current_todos, options)
+            problem = _wetab_capacity_error(plan, store, current_todos)
+            summary = {
+                "ok": True, "dry_run": dry_run, "pages": parsed["pages"], "skipped": parsed["skipped"],
+                "links": plan["links"], "todos": plan["todos"],
+                "group": {"name": WETAB_GROUP_NAME, "exists": plan["group"] is not None},
+                # 预览里给几条样例让人确认「读对了文件」；只有名称和域名，不回显完整网址。
+                "sample": [{"name": l["name"], "host": _name_from_url(l["url"])} for l in plan["new_links"][:8]],
+            }
+            if problem:
+                return jsonify({"ok": False, "error": problem}), 400
+            if dry_run or not (plan["new_links"] or plan["new_todos"]):
+                return jsonify(summary)
+            _save_pre_import_snapshots()
+            if plan["new_links"]:
+                group = plan["group"]
+                if group is None:
+                    group = clean_link_group({"name": WETAB_GROUP_NAME, "icon": "cloud", "color": "sky",
+                                              "desc": "从 WeTab 备份导入的网址，整理好后可以挪去别的分组。"},
+                                             None, {g["id"] for g in store["link_groups"]})
+                    store["link_groups"].append(group)
+                taken = {l["id"] for l in group["links"]}
+                for raw in plan["new_links"]:
+                    link = clean_link(raw, None, taken)
+                    taken.add(link["id"])
+                    group["links"].append(link)
+                summary["group"]["id"] = group["id"]
+                write_store(store)
+            if plan["new_todos"]:
+                now = _now_str()
+                ids = {t["id"] for t in current_todos}
+                for raw in plan["new_todos"]:
+                    tid = _gen_link_id(ids)
+                    ids.add(tid)
+                    stamp = raw["stamp"] or now
+                    current_todos.append({"id": tid, "text": raw["text"], "done": raw["done"], "created_at": stamp,
+                                          "updated_at": stamp, "done_at": stamp if raw["done"] else ""})
+                _write_todos_locked(current_todos)
+    except (RuntimeError, OSError) as exc:
+        return jsonify({"ok": False, "error": "导入失败：{0}".format(exc)}), 500
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": "导入失败：{0}".format(exc)}), 400
+    summary.update({"link_groups": store["link_groups"], "todo_items": current_todos})
+    return jsonify(summary)
 
 
 @app.get("/api/backups")

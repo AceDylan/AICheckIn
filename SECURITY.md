@@ -111,6 +111,15 @@
 - 图标底板的明暗判定完全在浏览器里完成：把已经加载好的同源图标（`/api/favicon` 或 `data:` 上传图）缩到 24px
   画到离屏 canvas 上读像素，不发新请求、不落盘、不进 Cookie，也不需要放宽 CSP；读不到像素就保持默认底板。
   导航形态沿用 Cookie `bh_home_nav`（值域白名单 `rail` / `full`），`<head>` 里只对它做固定字符串匹配。
+- 首页待办比收藏更私人：`/api/todos*` 全部要管理权限，开放的 `/api/configs` 只在已解锁（或未设密码）时下发待办，
+  私密模式的空壳里同样没有。内容存在 `data/todos.json`（不进 `config.json`，勾选待办不会重写装着凭据的那个文件），
+  长度 ≤ 200 字、最多 200 条，渲染时一律转义。显示偏好沿用 Cookie `bh_home_todo`（值域白名单 `open` / `closed` / `off`）。
+- WeTab 备份导入（`POST /api/import/wetab`，预览也要管理权限）只按字段白名单取值：网址的 `name` / `target`、
+  文字图标的 `bgText`、分页与文件夹的 `name`、待办的 `content` / `finished` / `updateTime`；备份里的便签、天气城市、
+  搜索与 AI 设置等不读、不存、不回显，浏览器端上传前就已裁掉。只收 `http(s)` 网址，**带 `user:pass@` 的网址直接跳过**
+  （入库就会随开放接口外泄）；嵌套深度与节点数有上限，容量不够时整体拒绝、不留半截数据。预览响应只回名称与域名，
+  不回显完整网址。导入前的回溯点用固定文件名 `config.json.pre-import.bak`，恢复接口的 id 白名单只多了一个字面量
+  `pre-import`，请求里的字符串仍然不会进路径。WeTab 的图标外链不导入，CSP 没有为它放宽。
 - 管理密码失败按「客户端 IP + 全局」双桶计数，窗口内超限回 `429` + `Retry-After`；
   全局桶用于兜底伪造 `X-Forwarded-For` 换头重试的情况。
 - 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，https 下加 `Secure`；令牌是服务端 HMAC 签名，

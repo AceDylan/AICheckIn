@@ -938,7 +938,8 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .omni-foot-meta { display: flex; gap: 8px; margin-left: auto; }
 .omni-hint { color: var(--text-3); }
 .omni-title .check-badge { margin-left: 2px; }
-.tag-btn { border: 0; font: inherit; cursor: pointer; }
+/* 只继承字体族：`font: inherit` 会连字号、字重一起重置，把 .tag 的 10.5px 冲成卡片正文的 14px。 */
+.tag-btn { border: 0; font-family: inherit; cursor: pointer; }
 .tag-btn:hover { filter: brightness(1.18); }
 
 /* ---------- 工作区层次与签到中心内页 ---------- */
@@ -1393,3 +1394,120 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ==========================================================================
+   首页待办
+   和监控小组件同一种卡片（实底 + 细边，不开毛玻璃）。窄屏叠在图标上方；宽屏挪到右侧一列并吸顶，
+   图标仍然留在首屏——起始页的第一件事是点开网站，待办不该把图标挤到折叠线以下。
+   ========================================================================== */
+.home-body { display: flex; flex-direction: column; gap: 26px; }
+.home-main { min-width: 0; }
+.home-todo {
+  width: min(100%, 560px); margin-inline: auto; padding: 14px 16px 12px;
+  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.home-todo[hidden], .todo-body[hidden], .todo-list[hidden], .todo-state[hidden], .todo-form[hidden], .todo-done[hidden] { display: none; }
+.home-todo.is-collapsed { padding-block: 10px; }   /* 收起后只剩标题一行：上下留白对称，别显得头轻脚重 */
+.home-todo.is-busy { cursor: progress; }
+.home-todo.is-busy .todo-list { opacity: .72; }
+.todo-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.todo-title { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .01em; }
+.todo-title .ic { width: 16px; height: 16px; color: var(--accent); }
+.todo-count { flex: 1; min-width: 0; overflow: hidden; color: var(--text-3); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.todo-icon-btn { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); cursor: pointer; transition: background .14s ease, color .14s ease; }
+.todo-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+.todo-icon-btn.is-danger:hover { background: var(--danger-soft); color: var(--danger); }
+.todo-icon-btn .ic { width: 15px; height: 15px; }
+#todoCollapse .ic { transition: transform .2s ease; }
+.home-todo.is-collapsed #todoCollapse .ic { transform: rotate(-90deg); }
+.todo-body { margin-top: 10px; }
+.todo-form { display: flex; gap: 8px; }
+.todo-input, .todo-edit {
+  flex: 1; min-width: 0; min-height: 38px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px;
+  background: var(--surface-input); color: var(--text); font: inherit; font-size: 13px; transition: border-color .14s ease, box-shadow .14s ease;
+}
+.todo-input::placeholder { color: var(--text-3); }
+.todo-input:focus, .todo-edit:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.todo-add { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer; transition: filter .14s ease, transform .14s ease; }
+.todo-add:hover { filter: brightness(1.08); }
+.todo-add:active { transform: scale(.96); }
+.todo-add .ic { width: 17px; height: 17px; stroke-width: 2.4; }
+.todo-state { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; padding: 14px 10px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-3); font-size: 12.5px; text-align: center; }
+.todo-list { max-height: 264px; margin: 8px -6px 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; }
+.todo-item { display: flex; align-items: flex-start; gap: 10px; padding: 7px 6px; border-radius: 10px; transition: background .14s ease; }
+.todo-item:hover, .todo-item:focus-within { background: var(--surface-hover); }
+.todo-item.is-editing { padding: 3px 4px; background: transparent; }
+.todo-check {
+  -webkit-appearance: none; appearance: none; display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; margin: 1px 0 0;
+  border: 1.5px solid var(--border-strong); border-radius: 6px; background: transparent; cursor: pointer; transition: background .14s ease, border-color .14s ease;
+}
+.todo-check:hover { border-color: var(--accent); }
+.todo-check:checked { border-color: var(--accent); background: var(--accent); }
+.todo-check:checked::after { content: ""; width: 9px; height: 5px; border-bottom: 2px solid var(--accent-ink); border-left: 2px solid var(--accent-ink); transform: translateY(-1px) rotate(-45deg); }
+.todo-check:focus-visible, .todo-icon-btn:focus-visible, .todo-add:focus-visible, .todo-clear:focus-visible, .todo-done > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.todo-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; cursor: pointer; }
+.todo-item.is-done .todo-text { color: var(--text-3); text-decoration: line-through; text-decoration-color: color-mix(in srgb, currentColor 55%, transparent); }
+.todo-actions { display: flex; gap: 2px; margin: -5px -2px -5px 0; }
+/* 有鼠标的设备：操作按钮平时不占位（否则每条待办都要为两个看不见的按钮提前换行），悬停 / 键盘聚焦时浮在行尾。
+   浮层用实底，盖住底下的文字；触屏设备没有悬停，按钮常驻在行尾。 */
+@media (hover: hover) {
+  .todo-item { position: relative; }
+  .todo-actions { position: absolute; top: 3px; right: 3px; margin: 0; padding: 1px; border-radius: 9px; background: var(--todo-actions-bg, var(--surface-solid, var(--surface))); box-shadow: 0 0 0 1px var(--border), var(--shadow-1); opacity: 0; pointer-events: none; transition: opacity .14s ease; }
+  .todo-item:hover .todo-actions, .todo-item:focus-within .todo-actions { opacity: 1; pointer-events: auto; }
+}
+html.wall-on .home-todo { --todo-actions-bg: #1a2130; }
+.todo-done { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.todo-done > summary { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-radius: 8px; color: var(--text-3); font-size: 11.5px; font-weight: 650; cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none; }
+.todo-done > summary::-webkit-details-marker { display: none; }
+.todo-done > summary::before { content: ""; width: 6px; height: 6px; margin: 0 4px 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .16s ease; }
+.todo-done[open] > summary::before { transform: rotate(45deg); }
+.todo-clear { margin-left: auto; padding: 3px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.todo-clear:hover { background: var(--danger-soft); color: var(--danger); }
+.todo-done .todo-list { max-height: 176px; margin-top: 2px; }
+/* 强制颜色模式下背景色会被系统抹掉：勾选状态靠那道勾（边框，颜色跟随系统）辨认，边框保持可见即可。 */
+@media (forced-colors: active) { .todo-check { border-color: CanvasText; } .todo-check:checked::after { border-color: CanvasText; } }
+
+/* 右侧一列：图标栏（72px）下 1100px 起就放得下；完整侧栏（252px）要到 1280px。两段规则相同，只是门槛不同。 */
+@media (min-width: 1100px) {
+  html.nav-rail .home-body.has-todo { display: grid; grid-template-columns: minmax(0, 1fr) var(--todo-col, 300px); gap: 0 32px; align-items: start; }
+  html.nav-rail .home-body.has-todo .home-main { grid-column: 1; grid-row: 1; }
+  html.nav-rail .home-body.has-todo .home-todo { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; margin: 0; }
+  html.nav-rail .home-body.has-todo .todo-list { max-height: min(36vh, 420px); }
+  html.nav-rail .home-body.has-todo .todo-done .todo-list { max-height: min(22vh, 220px); }
+}
+@media (min-width: 1280px) {
+  .home-body.has-todo { display: grid; grid-template-columns: minmax(0, 1fr) var(--todo-col, 300px); gap: 0 32px; align-items: start; }
+  .home-body.has-todo .home-main { grid-column: 1; grid-row: 1; }
+  .home-body.has-todo .home-todo { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; margin: 0; }
+  .home-body.has-todo .todo-list { max-height: min(36vh, 420px); }
+  .home-body.has-todo .todo-done .todo-list { max-height: min(22vh, 220px); }
+}
+@media (min-width: 1440px) { .home-body { --todo-col: 320px; } }
+@media (max-width: 760px) {
+  .home-body { gap: 20px; }
+  .home-todo { padding: 12px 12px 10px; border-radius: 16px; }
+  .home-todo.is-collapsed { padding-block: 8px; }
+  .todo-input, .todo-edit { min-height: 42px; font-size: 16px; }   /* 16px：iOS 聚焦输入框时不自动放大页面 */
+  .todo-add { flex-basis: 42px; width: 42px; height: 42px; }
+  .todo-item { gap: 12px; padding: 10px 6px; }
+  .todo-check { flex-basis: 22px; width: 22px; height: 22px; margin-top: 0; border-radius: 7px; }
+  .todo-check:checked::after { width: 11px; height: 6px; }
+  .todo-text { font-size: 14px; }
+  .todo-icon-btn { flex-basis: 32px; width: 32px; height: 32px; }
+  .todo-list { max-height: 252px; }
+}
+@media (prefers-reduced-motion: reduce) { #todoCollapse .ic, .todo-done > summary::before, .todo-add { transition: none; } }
+
+/* ---------- 从 WeTab 导入：预览 ---------- */
+.wetab-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.wetab-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.wetab-stat b { font-size: 24px; font-weight: 780; line-height: 1.15; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.wetab-stat span { color: var(--text-2); font-size: 12px; font-weight: 600; }
+.wetab-stat small { margin-top: 4px; color: var(--text-3); font-size: 11.5px; line-height: 1.45; }
+.wetab-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.wetab-pages .chip { cursor: default; }
+.wetab-preview .note { margin-top: 8px; }
+.wetab-options { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
+.wetab-options[hidden], .wetab-preview[hidden] { display: none; }
+@media (max-width: 480px) { .wetab-stats { grid-template-columns: 1fr; } }
