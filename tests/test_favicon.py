@@ -4,6 +4,7 @@
 import json
 import re
 import shutil
+import time
 import unittest
 
 from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
@@ -62,17 +63,38 @@ class CandidateTest(unittest.TestCase):
         html = '<head><base href="https://base.example/app/"><link rel="icon" href="i.png"></head>'
         self.assertEqual(favicon_candidates(html, "https://demo.example/x/y"), ["https://base.example/app/i.png"])
 
-    def test_prefers_regular_icon_and_reasonable_size(self):
+    def test_prefers_the_sharpest_icon(self):
+        # 首页图标放大到 60px 左右：清晰度优先，180px 的 apple-touch-icon 排在 64px 的常规图标之前，
+        # 16x16 垫底（放大后会糊）。
         html = """<head>
-          <link rel="apple-touch-icon" href="/apple.png" sizes="180x180">
           <link rel="icon" href="/tiny.png" sizes="16x16">
           <link rel="icon" href="/good.png" sizes="64x64">
+          <link rel="apple-touch-icon" href="/apple.png" sizes="180x180">
         </head>"""
         urls = favicon_candidates(html, "https://demo.example/")
-        self.assertEqual(urls[0], "https://demo.example/good.png")
-        # 16x16 太小，排在尺寸合适的 apple-touch-icon 之后。
-        self.assertEqual(urls[-1], "https://demo.example/tiny.png")
-        self.assertEqual(urls[1], "https://demo.example/apple.png")
+        self.assertEqual(urls, ["https://demo.example/apple.png", "https://demo.example/good.png",
+                                "https://demo.example/tiny.png"])
+
+    def test_unsized_touch_icon_counts_as_180px(self):
+        # 多数站点的 apple-touch-icon 不写 sizes，约定就是 180px：必须排在没写尺寸 / 32px 的 favicon 之前。
+        html = """<head>
+          <link rel="shortcut icon" href="/favicon.ico">
+          <link rel="icon" href="/f32.png" sizes="32x32">
+          <link rel="apple-touch-icon" href="/touch.png">
+        </head>"""
+        self.assertEqual(favicon_candidates(html, "https://demo.example/")[0], "https://demo.example/touch.png")
+
+    def test_vector_and_large_bitmaps_outrank_touch_icon_only_when_sharper(self):
+        score = app_module._favicon_link_score
+        touch = score({"rel": "apple-touch-icon"})
+        self.assertGreater(score({"rel": "icon", "type": "image/svg+xml"}), touch)
+        self.assertGreater(score({"rel": "icon", "sizes": "192x192"}), touch)
+        self.assertLess(score({"rel": "icon", "sizes": "96x96"}), touch)
+        self.assertLess(score({"rel": "icon"}), touch)
+        # 超大位图（容易超过体积上限）不如 120~256px 的合适尺寸。
+        self.assertLess(score({"rel": "icon", "sizes": "1024x1024"}), score({"rel": "icon", "sizes": "192x192"}))
+        # 单色 mask-icon 永远垫底。
+        self.assertLess(score({"rel": "mask-icon", "sizes": "any"}), score({"rel": "icon", "sizes": "16x16"}))
 
     def test_skips_unusable_hrefs(self):
         html = """<head>
@@ -228,6 +250,63 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(self.client.get("/api/favicon?u=http://self.example:8080/panel").status_code, 404)
         self.assertEqual(calls, ["http://self.example:8080/"])
 
+    def test_conventional_touch_icon_beats_a_small_declared_favicon(self):
+        # 站点只声明了 32px 的 favicon，但根目录放着 apple-touch-icon.png：拿高清的那张。
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="icon" href="/f32.png" sizes="32x32"></head>', "text/html"),
+            "https://demo.example/f32.png": (ICO, "image/x-icon"),
+            "https://demo.example/apple-touch-icon.png": (PNG, "image/png"),
+        })
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.get_data(), PNG)
+        self.assertNotIn("https://demo.example/f32.png", self.calls)
+
+    def test_declared_hires_icon_skips_the_conventional_probe(self):
+        # 已经声明了够清晰的图标就别再多探一次约定路径，省一个请求。
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="icon" href="/i192.png" sizes="192x192"></head>', "text/html"),
+            "https://demo.example/i192.png": (PNG, "image/png"),
+        })
+        self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").status_code, 200)
+        self.assertEqual(self.calls, ["https://demo.example/", "https://demo.example/i192.png"])
+
+    def test_missing_conventional_icon_still_falls_back(self):
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="icon" href="/f.ico"></head>', "text/html"),
+            "https://demo.example/f.ico": (ICO, "image/x-icon"),
+        })
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.mimetype, "image/x-icon")
+        self.assertEqual(self.calls, ["https://demo.example/", "https://demo.example/apple-touch-icon.png",
+                                      "https://demo.example/f.ico"])
+
+    def _write_legacy_cache(self, origin, data):
+        key = app_module._favicon_key(origin)
+        app_module.FAVICON_DIR.mkdir(parents=True, exist_ok=True)
+        (app_module.FAVICON_DIR / (key + ".bin")).write_bytes(data)
+        (app_module.FAVICON_DIR / (key + ".json")).write_text(json.dumps(
+            {"origin": origin, "ok": True, "mime": "image/x-icon", "fetched_at": time.time()}), encoding="utf-8")
+
+    def test_cache_from_the_old_picking_strategy_is_refetched(self):
+        # 升级前缓存的是低清 favicon（元数据里没有 v）：不必等 7 天过期，下一次请求就按新策略重抓。
+        self._write_legacy_cache("https://demo.example", ICO)
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="apple-touch-icon" href="/touch.png"></head>', "text/html"),
+            "https://demo.example/touch.png": (PNG, "image/png"),
+        })
+        self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").get_data(), PNG)
+        tried = list(self.calls)
+        self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").get_data(), PNG)
+        self.assertEqual(self.calls, tried, "重抓后的新缓存应当直接命中")
+
+    def test_old_icon_survives_a_failed_refetch(self):
+        # 重抓失败（站点临时挂了）不能把原来好好的图标弄丢。
+        self._write_legacy_cache("https://demo.example", ICO)
+        self._patch_http({})
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_data(), ICO)
+
     def test_failure_is_negatively_cached(self):
         self._patch_http({})
         first = self.client.get("/api/favicon?u=https://demo.example/dash")
@@ -260,7 +339,7 @@ class FaviconUiTest(unittest.TestCase):
         self.assertNotIn('<div class="link-avatar is-emoji"', self.html)
 
     def test_failed_icon_is_removed_instead_of_showing_broken_image(self):
-        self.assertIn("if (state === 'ok') img.classList.add('is-ready'); else img.remove();", self.html)
+        self.assertIn("if (state === 'ok') { img.classList.add('is-ready'); markIconResolution(img); } else img.remove();", self.html)
         self.assertIn("FAVICON_MEMO.set(origin, state)", self.html)
         # 已知失败的站点不再渲染 <img>，避免每次重绘都打一次 404。
         self.assertIn("FAVICON_MEMO.get(origin) !== 'fail'", self.html)

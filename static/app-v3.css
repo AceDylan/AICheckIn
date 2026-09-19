@@ -1025,7 +1025,8 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-search-tag { flex: 0 0 auto; max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: var(--tone-soft, var(--surface-2)); color: var(--tone, var(--text-3)); font-size: 10.5px; font-weight: 700; }
 
 .home-notice { justify-content: center; margin: 18px 0 0; }
-.home-toolbar { display: flex; align-items: center; gap: 8px; margin: clamp(20px, 4vh, 36px) 2px 18px; }
+/* 工具条放不下时换行而不是把页面撑宽：手机上页面一旦超宽，整页（连同弹窗）都会被缩小、右侧被裁掉。 */
+.home-toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin: clamp(20px, 4vh, 36px) 2px 18px; }
 .home-toolbar .spacer { flex: 1; }
 .home-view-toggle { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
 .home-view-toggle button { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); font-size: 11.5px; font-weight: 650; cursor: pointer; transition: all .14s ease; }
@@ -1033,31 +1034,34 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-view-toggle button:hover { color: var(--text); }
 .home-view-toggle button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-1); }
 
-/* 图标视图下，分组按「装得下就并排」排开：几个只有两三个网址的小分组不必各占一整行，
-   一屏就能看全。--n 是该分组的图标数，决定它想要的宽度；放不下时自动换行并在组内折行。 */
-.home-list.is-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 30px 44px; }
-.home-list.is-tiles .home-section { flex: 0 1 calc(max(var(--n, 4), 2) * 128px - 12px); min-width: 0; margin: 0; }
-.tile-grid { display: grid; grid-template-columns: repeat(auto-fill, 116px); justify-content: center; gap: 12px; }
-.home-tile {
-  position: relative; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
-  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, .05);
-  transition: border-color .18s ease, transform .18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .18s ease;
-}
-.home-tile:hover { border-color: var(--tone, var(--border-strong)); transform: translateY(-3px); box-shadow: var(--shadow-2); }
-.tile-link { display: flex; flex-direction: column; align-items: center; min-height: 127px; padding: 16px 8px 12px; border-radius: inherit; color: inherit; text-align: center; text-decoration: none; }
+/* ---------- 图标视图（极简 / 信息密度）----------
+   图标不带卡片底板：大图标 + 名字，直接落在背景（或壁纸）上。分组按「装得下就并排」排开，
+   几个只有两三个网址的小分组不必各占一整行。--n 是该分组占几格（小组件算 2 格），决定它想要的宽度。 */
+.home-list.is-tiles { --tile-w: 96px; --tile-gap: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 40px; }
+.home-list.is-tiles .home-section { flex: 0 1 calc(max(var(--n, 4), 2) * (var(--tile-w) + var(--tile-gap)) - var(--tile-gap)); min-width: 0; margin: 0; }
+.tile-grid { display: grid; grid-template-columns: repeat(auto-fill, var(--tile-w)); justify-content: center; gap: 14px var(--tile-gap); }
+.home-tile { position: relative; min-width: 0; border-radius: 18px; }
+.tile-link { display: flex; flex-direction: column; align-items: center; padding: 8px 4px 6px; border-radius: inherit; color: inherit; text-align: center; text-decoration: none; }
 .tile-avatar {
-  position: relative; overflow: hidden; display: grid; place-items: center; width: 50px; height: 50px; flex: 0 0 50px; margin-bottom: 9px;
-  border: 1px solid rgba(255, 255, 255, .08); border-radius: 15px;
+  position: relative; overflow: hidden; display: grid; place-items: center; width: 60px; height: 60px; flex: 0 0 60px; margin-bottom: 8px;
+  border-radius: 17px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
   color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
-  font-size: 15px; font-weight: 820; letter-spacing: -.02em; text-transform: uppercase;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .15);
+  font-size: 19px; font-weight: 820; letter-spacing: -.02em; text-transform: uppercase;
+  box-shadow: var(--shadow-1), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  transition: transform .18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .18s ease;
 }
-.tile-avatar.is-emoji { font-size: 24px; text-transform: none; }
-.tile-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 680; line-height: 1.35; letter-spacing: -.01em; }
-.tile-host { max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 10.5px; }
+.tile-avatar.is-emoji { font-size: 30px; text-transform: none; }
+/* 图标满幅铺进圆角方块。很多 logo 是给浅色标签栏画的透明底深色图，拿到图后统一垫一块浅色底板，
+   深色主题和壁纸上也不会糊成一团黑。不支持 :has() 的浏览器保留色块底，只是没这层保险。 */
+.tile-avatar .avatar-img { padding: 0; object-fit: cover; border-radius: inherit; }
+.tile-avatar:has(.avatar-img.is-ready) { background: #f4f6fa; }
+/* 原图不到 64px 的小 favicon 不放大：按接近原尺寸居中摆在底板上，保持锐利。 */
+.tile-avatar .avatar-img.is-lowres { inset: 50% auto auto 50%; width: 32px; height: 32px; object-fit: contain; border-radius: 6px; transform: translate(-50%, -50%); }
+.home-tile:hover .tile-avatar, .tile-link:focus-visible .tile-avatar { transform: translateY(-2px) scale(1.04); box-shadow: var(--shadow-2), inset 0 0 0 1px rgba(255, 255, 255, .1); }
+.tile-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 640; line-height: 1.35; letter-spacing: -.01em; }
 .tile-metric {
-  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 5px; padding: 1px 7px; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 4px; padding: 1px 7px; overflow: hidden;
   border-radius: 999px; background: var(--accent-soft); color: var(--accent);
   font-size: 10.5px; font-weight: 720; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis;
 }
@@ -1067,10 +1071,160 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .tile-metric-dot { flex: 0 0 5px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 /* 图标上的「···」：菜单相对整块图标定位并水平居中，最左一列也不会伸到侧栏底下。 */
 .tile-menu { position: static; }
-.tile-menu > summary { position: absolute; top: 5px; right: 5px; width: 24px; height: 24px; font-size: 13px; opacity: 0; transition: opacity .14s ease; }
+.tile-menu > summary { position: absolute; top: 2px; right: 8px; width: 24px; height: 24px; font-size: 13px; opacity: 0; transition: opacity .14s ease; }
 .home-tile:hover .tile-menu > summary, .tile-menu > summary:focus-visible, .tile-menu[open] > summary { opacity: 1; }
 .tile-menu .menu-popover { width: 152px; right: auto; left: calc(50% - 76px); }
 @media (hover: none) { .tile-menu { display: none; } }
+
+/* 监控小组件（2×1）：带余额 / 到期字段的看板站点。这是真信息，值得比普通图标多占一格。 */
+.home-widget { grid-column: span 2; }
+.widget-link {
+  display: flex; align-items: center; gap: 12px; min-height: 88px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: inherit; background: var(--surface);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, .05);
+  color: inherit; text-decoration: none;
+  transition: border-color .18s ease, transform .18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .18s ease;
+}
+.home-widget:hover .widget-link { border-color: var(--tone, var(--border-strong)); transform: translateY(-2px); box-shadow: var(--shadow-2); }
+.home-widget.is-busy .widget-link { opacity: .6; }
+.tile-avatar.widget-avatar { width: 44px; height: 44px; flex: 0 0 44px; margin: 0; border-radius: 13px; font-size: 15px; }
+.home-widget:hover .widget-avatar { transform: none; }
+.widget-body { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
+.widget-head { display: flex; align-items: center; gap: 6px; }
+.widget-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 11.5px; font-weight: 650; }
+.widget-dot { flex: 0 0 7px; width: 7px; height: 7px; margin-right: 18px; border-radius: 50%; background: var(--success); }
+.home-widget.is-warning .widget-dot { background: var(--warning); }
+.home-widget.is-error .widget-dot { background: var(--danger); }
+.home-widget.is-stale .widget-dot { background: var(--text-3); }
+.widget-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; font-weight: 760; line-height: 1.3; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.widget-value small { margin-left: 4px; color: var(--text-3); font-size: 10.5px; font-weight: 650; letter-spacing: 0; }
+.widget-value.is-error { color: var(--danger); font-size: 14px; }
+.widget-value.is-stale { color: var(--text-3); font-size: 14px; }
+.widget-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 10.5px; font-weight: 550; }
+.home-widget.is-warning .widget-sub { color: var(--warning); }
+.home-widget.is-error .widget-sub { color: var(--danger); }
+.home-widget .tile-menu > summary { top: 6px; right: 6px; }
+
+/* 极简密度：收起分组标题，所有图标连成一张网格（分组只在语义上保留）。 */
+.home-list.is-minimal { display: grid; grid-template-columns: repeat(auto-fill, var(--tile-w)); justify-content: center; gap: 18px var(--tile-gap); max-width: calc(9 * (var(--tile-w) + var(--tile-gap))); margin-inline: auto; }
+.home-list.is-minimal .home-section, .home-list.is-minimal .tile-grid { display: contents; }
+.home-list.is-minimal .section-label { display: none; }
+
+/* ==========================================================================
+   首页外观：壁纸层 + 遮罩 + 半透明搜索框 / 导航（只在收藏首页生效）
+   <html> 上的两个开关由 applyHomeLook() 维护：
+     .home-wall-on  首页且启用壁纸 —— 首页固定「深色场景 + 白字」，主题切换只影响其它页面
+     .home-rail     首页且导航选了图标栏（仅桌面宽度）
+   毛玻璃（backdrop-filter）只给搜索框和导航这两三块大面；图标、小组件一律用半透明实底，手机上不掉帧。
+   ========================================================================== */
+.home-wall {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; visibility: hidden;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, .10), transparent 60%), var(--wall-color, #10151f);
+  transition: opacity .35s ease, visibility 0s linear .35s;
+}
+.home-wall::before { content: ""; position: absolute; inset: 0; background: var(--wall-image, none) center / cover no-repeat; opacity: 0; transition: opacity .5s ease; }
+.home-wall.is-ready::before { opacity: 1; }
+/* 遮罩：浓度 --wall-dim 由脚本按画面亮度算出（白字 4.5:1 的下限）与用户档位取大；上下两端再压一点，托住时钟和底栏。 */
+.home-wall::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg,
+    rgb(4 7 12 / calc(var(--wall-dim, .4) + .12)) 0%, rgb(4 7 12 / var(--wall-dim, .4)) 28%,
+    rgb(4 7 12 / var(--wall-dim, .4)) 68%, rgb(4 7 12 / calc(var(--wall-dim, .4) + .16)) 100%);
+}
+html.home-wall-on .home-wall { opacity: 1; visibility: visible; transition: opacity .35s ease; }
+
+/* 壁纸场景里的令牌：不论深浅主题，首页内容区与导航统一用这一套（白字 + 半透明深色面）。 */
+html.home-wall-on #view-bookmarks, html.home-wall-on .sidebar {
+  color-scheme: dark;
+  --surface: rgba(13, 17, 26, .66); --surface-2: rgba(13, 17, 26, .5); --surface-hover: rgba(255, 255, 255, .14); --surface-input: rgba(13, 17, 26, .5);
+  --border: rgba(255, 255, 255, .14); --border-strong: rgba(255, 255, 255, .26);
+  --text: #ffffff; --text-2: rgba(255, 255, 255, .88); --text-3: rgba(255, 255, 255, .78);
+  --accent: #5eead4; --accent-strong: #2dd4bf; --accent-ink: #042f2e; --accent-soft: rgba(94, 234, 212, .18); --accent-ring: rgba(94, 234, 212, .34);
+  --success: #4ade80; --danger: #fda4af; --danger-soft: rgba(251, 113, 133, .22); --warning: #fcd34d; --warning-soft: rgba(251, 191, 36, .2);
+  --info: #7dd3fc; --info-soft: rgba(56, 189, 248, .2);
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .2);
+  --shadow-2: 0 10px 28px -4px rgba(0, 0, 0, .5), 0 3px 8px -2px rgba(0, 0, 0, .3);
+  --avatar-sat: 70%; --avatar-l: 74%; --avatar-bg-a: .34;
+  color: var(--text);
+}
+html.home-wall-on #view-bookmarks .tone-mint, html.home-wall-on .sidebar .tone-mint { --tone: #5eead4; --tone-soft: rgba(94, 234, 212, .2); }
+html.home-wall-on #view-bookmarks .tone-sky, html.home-wall-on .sidebar .tone-sky { --tone: #7dd3fc; --tone-soft: rgba(125, 211, 252, .2); }
+html.home-wall-on #view-bookmarks .tone-violet, html.home-wall-on .sidebar .tone-violet { --tone: #c4b5fd; --tone-soft: rgba(196, 181, 253, .2); }
+html.home-wall-on #view-bookmarks .tone-amber, html.home-wall-on .sidebar .tone-amber { --tone: #fcd34d; --tone-soft: rgba(252, 211, 77, .2); }
+html.home-wall-on #view-bookmarks .tone-rose, html.home-wall-on .sidebar .tone-rose { --tone: #fda4af; --tone-soft: rgba(253, 164, 175, .2); }
+html.home-wall-on #view-bookmarks .tone-slate, html.home-wall-on .sidebar .tone-slate { --tone: #cbd5e1; --tone-soft: rgba(203, 213, 225, .2); }
+
+/* 直接压在画面上的字：白字 + 投影，局部亮斑上也读得出来。 */
+html.home-wall-on .hero-clock { text-shadow: 0 2px 18px rgba(0, 0, 0, .45); }
+html.home-wall-on .hero-meta, html.home-wall-on .tile-title, html.home-wall-on .home-toolbar .toolbar-meta,
+html.home-wall-on .home-section .section-label .btn { text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 0 10px rgba(0, 0, 0, .4); }
+html.home-wall-on .tile-title { font-weight: 620; }
+html.home-wall-on .home-section .section-label::after { background: rgba(255, 255, 255, .18); }
+/* 小字号的指标胶囊、计数角标不靠投影，直接给近实底。 */
+html.home-wall-on .tile-metric, html.home-wall-on .home-section .section-label .count { background: rgba(8, 12, 20, .78); }
+html.home-wall-on .tile-metric { color: var(--accent); }
+html.home-wall-on .tile-metric.is-warning { color: var(--warning); }
+html.home-wall-on .tile-metric.is-error { color: var(--danger); }
+html.home-wall-on .tile-metric.is-stale { color: var(--text-2); }
+html.home-wall-on .home-view-toggle, html.home-wall-on .home-toolbar .btn.ghost, html.home-wall-on .chip, html.home-wall-on .alert-chip { background: rgba(10, 14, 22, .6); border-color: rgba(255, 255, 255, .16); color: var(--text-2); }
+html.home-wall-on .home-view-toggle button.active { background: rgba(255, 255, 255, .18); color: #fff; box-shadow: none; }
+html.home-wall-on .chip.active { background: rgba(255, 255, 255, .2); border-color: var(--tone, var(--accent)); color: #fff; }
+html.home-wall-on .alert-chip.is-error, html.home-wall-on .alert-chip.is-expired { color: var(--danger); }
+html.home-wall-on .alert-chip.is-soon { color: var(--warning); }
+html.home-wall-on .empty-state { background: rgba(10, 14, 22, .62); }
+/* 浮层（菜单、搜索下拉）压在画面上必须是实底，半透明会和壁纸搅在一起。 */
+html.home-wall-on #view-bookmarks .menu-popover, html.home-wall-on .home-search-dropdown, html.home-wall-on .home-engine-menu { background: #141a27; }
+html.home-wall-on .home-search-row .omni-ic { background: rgba(255, 255, 255, .08); }
+
+/* 毛玻璃：搜索框与导航。 */
+html.home-wall-on .home-search-bar, html.home-wall-on .sidebar {
+  background: rgba(14, 18, 28, .5);
+  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+html.home-wall-on .home-search-bar { border-color: rgba(255, 255, 255, .24); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
+html.home-wall-on .home-search.is-open .home-search-bar { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
+html.home-wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); }
+html.home-wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
+/* 降级：不支持毛玻璃、或用户要求减少透明度时，换成足够实的底色，保证字照样读得清。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.home-wall-on .home-search-bar, html.home-wall-on .sidebar { background: rgba(14, 18, 28, .88); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  html.home-wall-on .home-search-bar, html.home-wall-on .sidebar { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.home-wall-on #view-bookmarks { --surface: #141a27; --surface-2: #1a2131; --surface-input: #141a27; }
+}
+
+/* 首页图标栏：只在收藏首页把 252px 侧栏收成一条细栏，其它页面照旧。每个按钮都带 title / aria-label 当提示。 */
+.app-shell { transition: grid-template-columns .22s cubic-bezier(0.16, 1, 0.3, 1); }
+@media (min-width: 761px) {
+  html.home-rail { --sidebar-w: 72px; }
+  html.home-rail .sidebar { align-items: center; padding: 18px 10px 14px; }
+  html.home-rail .brand { padding: 0 0 14px; }
+  html.home-rail .brand > div:last-child, html.home-rail .keys-hint, html.home-rail .nav-label,
+  html.home-rail .tab-text, html.home-rail .tab .nav-count, html.home-rail .sub-text, html.home-rail .subnav .nav-count,
+  html.home-rail .omni-trigger span, html.home-rail .omni-kbd, html.home-rail .install-btn span, html.home-rail .lock-pill span { display: none; }
+  html.home-rail .omni-trigger, html.home-rail .tab, html.home-rail .install-btn { width: 44px; min-height: 42px; padding: 0; justify-content: center; }
+  html.home-rail .tabs { align-items: center; width: 100%; }
+  html.home-rail .tab.active::before { left: -10px; }
+  html.home-rail .tab .dot { position: absolute; top: 8px; right: 8px; }
+  html.home-rail .subnav { align-items: center; gap: 4px; margin: 4px 0; padding-left: 0; }
+  html.home-rail .subnav-item { position: relative; width: 44px; min-height: 36px; padding: 0; justify-content: center; border-left: 0; border-radius: 10px; }
+  html.home-rail .subnav-item.active { box-shadow: inset 0 0 0 1px var(--tone, var(--accent)); }
+  html.home-rail .subnav-item .issue-dot { position: absolute; top: 1px; right: 1px; min-width: 14px; padding: 0 3px; font-size: 9px; line-height: 14px; }
+  html.home-rail .sidebar-foot { flex-direction: column; width: 100%; padding: 10px 0 0; }
+  html.home-rail .lock-pill { flex: 0 0 auto; width: 38px; height: 34px; padding: 0; justify-content: center; }
+  html.home-rail .lock-pill svg { width: 15px; height: 15px; }
+}
+
+/* 首页外观弹窗 */
+.home-look-btn .ic { width: 14px; height: 14px; }
+.wall-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.wall-choice { display: flex; flex-direction: column; gap: 6px; padding: 5px 5px 7px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); color: var(--text-2); font-size: 11.5px; font-weight: 650; cursor: pointer; transition: all .14s ease; }
+.wall-choice:hover { border-color: var(--border-strong); color: var(--text); }
+.wall-choice.active { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px var(--accent-ring); }
+.wall-thumb { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; background-color: var(--surface-hover); background-position: center; background-size: cover; }
+.wall-thumb.is-off { background: repeating-linear-gradient(135deg, var(--surface-hover) 0 8px, transparent 8px 16px); border: 1px dashed var(--border-strong); }
+.segmented button:disabled { opacity: .45; cursor: default; }
 
 .admin-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; margin: 0; }
 .start-url { flex: 1; min-width: 0; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-input); color: var(--accent); font-family: var(--mono); font-size: 12px; }
@@ -1172,22 +1326,38 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   .home-search-kbd { display: none; }
   .home-engine-option { min-height: 46px; font-size: 14.5px; }
   .home-notice { justify-content: flex-start; margin-top: 12px; }
-  .home-toolbar { margin: 16px 0 14px; }
+  .home-toolbar { margin: 16px 0 14px; gap: 6px; }
   .home-toolbar .btn.sm { padding: 0 10px; }
   .home-view-toggle button span { display: none; }
   .home-view-toggle button { padding: 0 9px; min-height: 30px; }
-  .home-list.is-tiles { display: block; }
-  .home-list.is-tiles .home-section + .home-section { margin-top: 20px; }
+  /* 手机上的图标视图是一张 4 列网格：分组按 --span 占列，两三个网址的小分组并排放，不再各占一整行。 */
+  .home-list.is-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 4px; max-width: none; }
+  .home-list.is-tiles .home-section { grid-column: span var(--span, 4); flex: none; }
+  .home-list.is-tiles .home-section + .home-section { margin-top: 0; }
+  .home-list.is-tiles .home-section .section-label { margin-bottom: 8px; padding-inline: 4px; font-size: 11px; }
+  .home-list.is-tiles .home-section .section-label .btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+  .home-list.is-tiles .home-section .section-label .btn .ic { width: 13px; height: 13px; }
+  .home-list.is-tiles .home-section .section-label .count { display: none; }
   .home-toolbar .toolbar-meta { order: 0; }
-  .tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 4px; }
-  .home-tile, .home-tile:hover { border-color: transparent; background: transparent; box-shadow: none; transform: none; }
-  .tile-link { min-height: 84px; padding: 4px 2px; }
+  .tile-grid { grid-template-columns: repeat(var(--span, 4), minmax(0, 1fr)); gap: 14px 4px; }
+  .tile-link { padding: 4px 2px; }
   .tile-link:active .tile-avatar { transform: scale(.94); }
-  .tile-avatar { width: 54px; height: 54px; flex-basis: 54px; margin-bottom: 6px; border-radius: 16px; box-shadow: var(--shadow-1); transition: transform .12s ease; }
+  .home-tile:hover .tile-avatar { transform: none; box-shadow: var(--shadow-1); }
+  .tile-avatar { width: 56px; height: 56px; flex-basis: 56px; margin-bottom: 6px; border-radius: 16px; transition: transform .12s ease; }
   .tile-title { font-size: 11.5px; font-weight: 620; }
-  .tile-host { display: none; }
   .tile-metric { margin-top: 3px; padding: 0 5px; font-size: 9.5px; }
+  .widget-link { min-height: 74px; gap: 9px; padding: 9px 10px; }
+  .home-widget:hover .widget-link { transform: none; }
+  .tile-avatar.widget-avatar { width: 38px; height: 38px; flex-basis: 38px; margin: 0; border-radius: 11px; }
+  .widget-dot { margin-right: 0; }
+  .widget-value { font-size: 16px; }
+  .home-look-btn span { display: none; }
+  .home-look-btn { padding: 0 9px; }
   .home-section .bookmark-grid { grid-template-columns: 1fr; }
+}
+/* 手机竖屏：一行要放下「三档密度 + 外观 + 添加 + 自定义首页」，把纯展示的计数让出来。 */
+@media (max-width: 480px) {
+  .home-toolbar .toolbar-meta, .home-toolbar .spacer { display: none; }
 }
 @media (max-width: 400px) {
   .overview { grid-template-columns: 1fr; }

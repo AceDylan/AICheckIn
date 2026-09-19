@@ -74,6 +74,8 @@
 | 部署自检（`/api/diagnostics`） | ❌ | ✅ |
 | 死链检查（`/api/link_groups/<id>/check`） | ❌ | ✅ |
 | 查看 / 恢复配置备份（`/api/backups`、`/api/configs/restore`） | ❌ | ✅ |
+| 加载首页壁纸（内置 `/static/wallpapers/*`、自定义 `GET /api/wallpaper`） | ✅（私密模式未解锁时自定义壁纸不可见，回落到内置） | ✅ |
+| 上传 / 移除自定义壁纸（`PUT` / `DELETE /api/wallpaper`） | ❌ | ✅ |
 
 **未设置 `GYQD_ADMIN_PASSWORD` 时上表整列放开**——这是给本地 / 内网部署留的口子，
 公网部署务必设置。
@@ -101,6 +103,11 @@
 - 配置恢复的备份标识只接受 `bak` 或 `YYYY-MM-DD` 两种形态，绝不把请求里的字符串
   拼进路径——否则就是一个任意文件读取、以及用任意文件覆盖 `config.json` 的洞。
   恢复前会校验备份本身能否解析，被覆盖的那份另存为 `config.json.corrupt-<时间戳>`。
+- 首页壁纸只从本站加载：CSP 保持 `img-src 'self' data:`，没有为它放行外链或 `blob:`。
+  自定义壁纸上传要管理权限，类型按魔数判定且只收 PNG / JPEG / WebP（SVG 能内嵌脚本，不收），
+  上限 2 MB，固定文件名落在 `data/wallpaper/`（请求里没有任何字符串会进路径）；回吐时带
+  `nosniff` 与 `default-src 'none'; sandbox`。浏览器上报的「画面亮度」只接受 0~1 的数，
+  不可信就丢弃并按最亮画面处理——它只影响遮罩深浅，不影响权限。
 - 管理密码失败按「客户端 IP + 全局」双桶计数，窗口内超限回 `429` + `Retry-After`；
   全局桶用于兜底伪造 `X-Forwarded-For` 换头重试的情况。
 - 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，https 下加 `Secure`；令牌是服务端 HMAC 签名，

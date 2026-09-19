@@ -27,6 +27,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='app-v3.css') }}">
 </head>
 <body>
+  <!-- 首页壁纸层：只在收藏首页且选了壁纸时显现；图片同源（CSP img-src 'self'），加载前先露出主色占位。 -->
+  <div class="home-wall" id="homeWall" aria-hidden="true"></div>
   <div class="toast-wrap" id="toasts" aria-live="polite"></div>
 
   <div class="app-shell">
@@ -116,9 +118,11 @@
               <span class="toolbar-meta" id="homeCount"></span>
               <span class="spacer"></span>
               <div class="home-view-toggle" id="homeViewToggle" role="group" aria-label="首页显示方式">
-                <button type="button" data-home-view="tiles" title="图标：更紧凑，适合当作起始页"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg><span>图标</span></button>
+                <button type="button" data-home-view="minimal" title="极简：只留图标和名字，有事要处理时才显示指标"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="7" r="2.2"/><circle cx="12" cy="7" r="2.2"/><circle cx="17.5" cy="7" r="2.2"/><circle cx="6.5" cy="16" r="2.2"/><circle cx="12" cy="16" r="2.2"/><circle cx="17.5" cy="16" r="2.2"/></svg><span>极简</span></button>
+                <button type="button" data-home-view="tiles" title="信息：图标 + 余额 / 到期小组件，保留分组"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="16" height="6.5" rx="1.5"/></svg><span>信息</span></button>
                 <button type="button" data-home-view="cards" title="卡片：显示描述、标签与全部监控字段"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/></svg><span>卡片</span></button>
               </div>
+              <button type="button" class="btn ghost sm home-look-btn" id="homeLookBtn" title="壁纸、遮罩与首页导航" aria-label="首页外观"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.8-4.6 3.4 3.2 2.6-2.4 4.2 3.8"/></svg><span>外观</span></button>
               <button type="button" class="btn ghost sm" id="homeAddLink">＋ 添加</button>
               <button type="button" class="btn ghost sm" id="chooseHomeLinks">自定义首页</button>
             </div>
@@ -205,6 +209,7 @@
                 <div class="field"><label for="engineSelect">网页搜索引擎</label><select class="input" id="engineSelect"></select></div>
               </div>
               <div class="note">这两项记在本浏览器的 Cookie 里，各设备可以各设各的。</div>
+              <div class="controls" style="margin-top:12px"><button type="button" class="btn sm ghost" id="openHomeLook">首页外观：壁纸 / 遮罩 / 导航…</button></div>
             </div>
             <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
           </div>
@@ -359,6 +364,32 @@
     </div>
   </div>
 
+  <!-- 首页外观：壁纸、遮罩、导航形态。选择记在本机 Cookie；上传 / 移除自定义壁纸需要管理权限。 -->
+  <div class="modal-mask" id="homeLookModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="homeLookTitle">
+      <div class="modal-head"><div><h3 id="homeLookTitle">首页外观</h3><div class="modal-sub">只影响收藏首页，其它页面保持工作台样式。选择记在本浏览器里，手机和电脑可以各设各的。</div></div></div>
+      <div class="field"><label id="wallLabel">壁纸</label>
+        <div class="wall-choices" id="wallChoices" role="radiogroup" aria-labelledby="wallLabel"></div>
+        <div class="controls wall-upload" style="margin-top:10px">
+          <label class="btn sm ghost" for="wallFile" id="wallUploadBtn" title="图片会在浏览器里先压缩到 2560px 以内再上传，存放在你自己的服务器上">上传自己的图片…</label>
+          <input type="file" id="wallFile" accept="image/png,image/jpeg,image/webp" hidden>
+          <button type="button" class="btn sm ghost danger-text" id="wallRemoveBtn" hidden>移除上传的壁纸</button>
+          <span class="note" id="wallStatus" style="margin:0" aria-live="polite"></span>
+        </div>
+        <div class="hint">内置壁纸由项目自带脚本绘制，无版权顾虑；上传的图片请确认你有权使用。壁纸只从本站加载，不会外链图床。</div>
+      </div>
+      <div class="field"><label id="wallDimLabel">遮罩</label>
+        <div class="segmented" id="wallDimSeg" role="radiogroup" aria-labelledby="wallDimLabel"><button type="button" data-wall-dim="soft">柔和</button><button type="button" data-wall-dim="medium">适中</button><button type="button" data-wall-dim="strong">加强</button></div>
+        <div class="hint" id="wallDimHint">画面越亮遮罩会自动压得越暗，保证白字始终看得清。</div>
+      </div>
+      <div class="field"><label id="homeNavLabel">首页导航（电脑）</label>
+        <div class="segmented" id="homeNavSeg" role="radiogroup" aria-labelledby="homeNavLabel"><button type="button" data-home-nav="rail">图标栏</button><button type="button" data-home-nav="full">完整侧栏</button></div>
+        <div class="hint">图标栏只在收藏首页收起侧栏，把空间让给壁纸和图标；进入分组、看板等页面会自动恢复完整侧栏。</div>
+      </div>
+      <div class="modal-actions"><span style="flex:1"></span><button class="btn sm" id="homeLookClose">完成</button></div>
+    </div>
+  </div>
+
   <div class="modal-mask" id="homeModal">
     <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
       <div class="modal-head"><div><h3 id="homeModalTitle">自定义收藏首页</h3><div class="modal-sub">从站点看板与各分组勾选要展示的内容，首页与原位置保持同步。</div></div></div>
@@ -469,6 +500,13 @@
         : '';
       return `<span class="${cls || 'site-avatar'}${emoji ? ' is-emoji' : ''}" aria-hidden="true">${img}${uploaded}<span class="avatar-text">${text}</span></span>`;
     }
+    // 首页大图标约 60px：16 / 32px 的 favicon 拉满会糊成一团。量一下原图，不够清晰就标成 is-lowres，
+    // 样式里让它按原尺寸附近居中摆在色块上，而不是铺满。矢量图没有固有尺寸（naturalWidth 为 0），照常铺满。
+    const ICON_HIRES_MIN_PX = 64;
+    function markIconResolution(img) {
+      const w = Number(img.naturalWidth) || 0;
+      img.classList.toggle('is-lowres', w > 0 && w < ICON_HIRES_MIN_PX);
+    }
     function startFavicon(img) {
       const origin = img.dataset.favicon;
       let settled = false;
@@ -477,7 +515,7 @@
         settled = true;
         clearTimeout(timer);
         if (state) FAVICON_MEMO.set(origin, state);
-        if (state === 'ok') img.classList.add('is-ready'); else img.remove();
+        if (state === 'ok') { img.classList.add('is-ready'); markIconResolution(img); } else img.remove();
         FAVICON_INFLIGHT.delete(img);
         drainFavicons();
       };
@@ -584,6 +622,101 @@
       return true;
     }
 
+    // ===== 首页外观：壁纸 / 遮罩 / 导航形态 =====
+    // 这一段必须放在路由初始化之前：switchView 在脚本顶部就会被调用，它要用到这里的常量。
+    // 内置壁纸由 tools/make_wallpapers.py 绘制；color 是加载前的主色占位，lum 是画面 p90 相对亮度
+    // （与 static/wallpapers/manifest.json 保持一致，有测试核对）。
+    const WALLPAPERS = [
+      { id: 'aurora', name: '极光', color: '#112f49', lum: 0.121 },
+      { id: 'dusk', name: '暮色群山', color: '#573352', lum: 0.217 },
+      { id: 'mist', name: '晨雾山林', color: '#284e53', lum: 0.167 },
+    ];
+    const WALL_DEFAULT = 'aurora';
+    const WALL_IDS = ['off'].concat(WALLPAPERS.map(w => w.id), ['custom']);
+    const WALL_DIMS = { soft: 0.25, medium: 0.4, strong: 0.58 };
+    const WALL_DIM_LABELS = { soft: '柔和', medium: '适中', strong: '加强' };
+    const HOME_NAVS = ['rail', 'full'];
+    const WALL = { url: '' };
+    function wallPref() { return readPref('bh_wallpaper', WALL_IDS, WALL_DEFAULT); }
+    function wallDimPref() { return readPref('bh_wp_dim', Object.keys(WALL_DIMS), 'medium'); }
+    function homeNavPref() { return readPref('bh_home_nav', HOME_NAVS, 'rail'); }
+    function customWallpaper() {
+      const w = STATE.wallpaper;
+      return w && w.custom && /^[0-9a-f]{16}$/.test(w.v || '') ? w : null;
+    }
+    // 当前生效的壁纸；null = 不用壁纸。选了「自定义」但服务器上没有（被移除 / 私密模式未解锁）时回落到默认内置，
+    // 数据还没到之前先按中性深色占位，免得首屏先白后黑地闪一下。
+    // 系统开了「提高对比度 / 强制颜色」的人要的是实底高对比界面，壁纸整个让路，首页退回普通主题。
+    const WALL_BLOCK_QUERY = '(prefers-contrast: more), (forced-colors: active)';
+    function wallBlocked() { return !!(window.matchMedia && window.matchMedia(WALL_BLOCK_QUERY).matches); }
+    function currentWallpaper() {
+      const id = wallPref();
+      if (id === 'off' || wallBlocked()) return null;
+      if (id === 'custom') {
+        const c = customWallpaper();
+        if (c) return { id: 'custom', name: '自定义', color: '#10151f', lum: c.lum, url: '/api/wallpaper?v=' + c.v };
+        if (!STATE_LOADED) return { id: 'custom', name: '自定义', color: '#10151f', lum: null, url: '' };
+      }
+      const w = WALLPAPERS.find(x => x.id === id) || WALLPAPERS.find(x => x.id === WALL_DEFAULT);
+      const phone = !!(window.matchMedia && window.matchMedia('(max-width: 760px) and (orientation: portrait)').matches);
+      return Object.assign({ url: '/static/wallpapers/' + w.id + (phone ? '-m' : '') + '.webp' }, w);
+    }
+    // 壁纸上的字固定用白色。白字要 4.5:1，背景相对亮度不能超过 0.183；遮罩按 sRGB 值线性压暗，
+    // 亮度约按 2.2 次方下降，由此反推遮罩至少要多浓。目标定在 0.16 而不是 0.183：遮罩本身不是纯黑
+    // （rgb(4 7 12) 会把结果抬高一点），2.2 只是近似，画面里也总有比 p90 更亮的局部。
+    // 量不到亮度的（lum 为空）按纯白画面处理。
+    const WALL_BG_LUM_TARGET = 0.16;
+    function wallMinDim(lum) {
+      const l = (typeof lum === 'number' && lum >= 0 && lum <= 1) ? lum : 1;
+      if (l <= WALL_BG_LUM_TARGET) return 0;
+      return Math.min(0.82, 1 - Math.pow(WALL_BG_LUM_TARGET / l, 1 / 2.2));
+    }
+    // 向上取到两位小数：写进样式变量时四舍五入可能正好舍掉那一点余量。
+    function wallDimFor(w) { return Math.ceil(Math.max(WALL_DIMS[wallDimPref()], wallMinDim(w.lum)) * 100 - 1e-9) / 100; }
+    function setCssVar(el, name, value) {
+      if (el.style && typeof el.style.setProperty === 'function') el.style.setProperty(name, value);
+      else el.style[name] = value;
+    }
+    function saveDataOn() { return !!(navigator.connection && navigator.connection.saveData); }
+    // 先探后换：图片下完才挂到壁纸层并淡入，期间露出主色占位；失败就停在占位色上，不留破图。
+    function loadWallImage(url) {
+      const layer = $('homeWall');
+      if (WALL.url === url) return;
+      WALL.url = url;
+      layer.classList.remove('is-ready');
+      if (!url || saveDataOn()) return;   // 省流量模式只用主色渐变，不下载图片
+      const probe = document.createElement('img');
+      probe.decoding = 'async';
+      probe.addEventListener('load', () => {
+        if (WALL.url !== url) return;
+        setCssVar(layer, '--wall-image', `url("${url}")`);
+        layer.classList.add('is-ready');
+      });
+      probe.src = url;
+    }
+    function onHomePage() { return currentViewName() === 'bookmarks' && LIB.page === '@home'; }
+    // 每次切页 / 改偏好后调用：决定 <html> 上的三个开关，样式全部挂在它们上面。
+    //  home-wall-on：首页且启用壁纸（首页固定白字，主题切换只影响其它页面）
+    //  home-rail：首页且导航选了图标栏（只在桌面宽度生效，见样式）
+    function applyHomeLook() {
+      const root = document.documentElement;
+      const home = onHomePage();
+      const w = home ? currentWallpaper() : null;
+      root.classList.toggle('home-wall-on', !!w);
+      root.classList.toggle('home-rail', home && homeNavPref() === 'rail');
+      if (!w) return;   // 离开首页不卸图：回来时不用重新淡入
+      const layer = $('homeWall');
+      setCssVar(layer, '--wall-color', w.color);
+      setCssVar(layer, '--wall-dim', String(wallDimFor(w)));
+      loadWallImage(w.url);
+    }
+    if (window.matchMedia) {
+      for (const query of ['(max-width: 760px) and (orientation: portrait)', WALL_BLOCK_QUERY]) {
+        const mq = window.matchMedia(query);
+        if (mq.addEventListener) mq.addEventListener('change', () => applyHomeLook());
+      }
+    }
+
     // ===== Toast =====
     function toast(msg, kind) {
       const el = document.createElement('div');
@@ -654,6 +787,7 @@
       // const（TDZ ReferenceError），或者用错误的解锁状态发出请求。
       // 首次加载由 loadConfigs() 结束时的 refreshActiveView() 统一补上。
       if (STATE_LOADED) refreshActiveView(currentViewName());
+      applyHomeLook();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     // 切到某个页面时它自己要拉的数据。集中在这里，免得 switchView 直接引用
@@ -1084,7 +1218,8 @@
       const pages = libPages();
       $('bmNavCount').textContent = (STATE.bookmarks || []).length + totalLinks();
       // 首页和站点看板固定，只有分组参与排序。
-      const sortHint = (p) => ['@home', 'monitor'].includes(p.id) ? '' : ` data-sortable="1" title="${escapeHtml(p.name)}｜按住拖动可调整顺序（Alt+↑/↓）"`;
+      // 每一项都带 title：首页收成图标栏后文字看不见，靠它当提示。
+      const sortHint = (p) => ['@home', 'monitor'].includes(p.id) ? ` title="${escapeHtml(p.name)}"` : ` data-sortable="1" title="${escapeHtml(p.name)}｜按住拖动可调整顺序（Alt+↑/↓）"`;
       $('libSubnav').innerHTML = pages.map(p =>
         `<button type="button" class="subnav-item tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)} aria-current="${LIB.page === p.id ? 'page' : 'false'}"><span class="sub-ic">${icon(p.icon)}</span><span class="sub-text">${escapeHtml(p.name)}</span>${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="subnav-item is-add" data-act="add-group"><span class="sub-ic">${icon('plus')}</span><span class="sub-text">新建分组</span></button>`;
@@ -1351,6 +1486,7 @@
       $('bmPage').hidden = !isMonitor;
       $('linkPage').hidden = isMonitor || isHome;
       $('bmSearch').placeholder = isMonitor ? '搜索站点名称、域名或字段' : '搜索名称、域名、描述或标签';
+      applyHomeLook();
       renderCurrentLibraryPage();
     }
     function renderCurrentLibraryPage() {
@@ -1371,8 +1507,9 @@
       return (STATE.bookmarks || []).map((b, i) => ({ b, i })).filter(({ b }) => b && b.show_on_home);
     }
 
-    // ===== 收藏首页：图标（起始页密度）/ 卡片（完整信息）=====
-    const HOME_VIEWS = ['tiles', 'cards'];
+    // ===== 收藏首页：极简（只有图标）/ 信息（图标 + 监控小组件）/ 卡片（完整信息）=====
+    // 'tiles' 这个值沿用旧版「图标」视图的 Cookie，老用户升级后落在「信息」密度上。
+    const HOME_VIEWS = ['minimal', 'tiles', 'cards'];
     function homeView() { return readPref('bh_home_view', HOME_VIEWS, 'tiles'); }
     function setHomeView(view) { writePref('bh_home_view', view); renderHome(); }
     $('homeViewToggle').addEventListener('click', (e) => {
@@ -1401,6 +1538,7 @@
       if (alert && !f.error) title += ` · ${ALERT_META[alert].label}`;
       return `<span class="tile-metric${cls}" title="${escapeHtml(title)}">${alert ? '<span class="tile-metric-dot"></span>' : ''}${escapeHtml(text)}</span>`;
     }
+    // 图标：不带卡片底板，只有大图标和名字；域名放进 title，不占版面。
     function homeTileHtml(o) {
       const safe = safeUrl(o.url);
       const host = siteHost(o.url) || '未设置域名';
@@ -1408,7 +1546,7 @@
         <a class="tile-link" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(o.name)} · ${escapeHtml(o.url)}">
           ${siteAvatarHtml(o.name, o.url, 'tile-avatar', o.emoji, o.customIcon)}
           <span class="tile-title">${escapeHtml(o.name)}</span>
-          ${o.metric || `<span class="tile-host">${escapeHtml(host)}</span>`}
+          ${o.metric || ''}
         </a>
         <details class="action-menu tile-menu">
           <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(o.name)} 的更多操作">···</summary>
@@ -1425,16 +1563,76 @@
          <div class="sep"></div>
          <button onclick="toggleHomeLink('${gid}','${lid}')">从首页移除</button>` });
     }
-    function homeSiteTileHtml(b, i) {
-      return homeTileHtml({ name: b.name, url: b.url, tone: 'mint', metric: siteMetricHtml(b), menu:
-        `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}
+    function homeSiteMenuHtml(b, i) {
+      return `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}
          <button onclick="editBm(${i})">编辑</button>
          <button onclick="openLibPage('monitor')">前往「站点看板」</button>
          <div class="sep"></div>
-         <button onclick="toggleHomeSite(${i})">从首页移除</button>` });
+         <button onclick="toggleHomeSite(${i})">从首页移除</button>`;
     }
-    function homeSectionHtml(page, title, iconName, tone, count, body) {
-      return `<section class="home-section tone-${escapeHtml(tone)}" style="--n:${Math.min(count, 12)}">
+    // 极简密度下的看板站点：平时和普通图标一样安静，只有取数失败 / 到期这类要处理的事才亮出指标。
+    function homeSiteTileHtml(b, i, quiet) {
+      const metric = quiet && !bookmarkAlert(b) ? '' : siteMetricHtml(b);
+      return homeTileHtml({ name: b.name, url: b.url, tone: 'mint', metric, menu: homeSiteMenuHtml(b, i) });
+    }
+
+    // ----- 监控小组件（2×1）：名称 + 状态点 + 主数值 + 一行次要信息 -----
+    // 主数值取第一个金额字段（没有就取首个字段）；次要信息优先取时间字段（到期），否则取下一个字段。
+    // 预警三态的文案取自 ALERT_META（声明在下方的看板小节），所以只在渲染时读取，不在这里展开。
+    const WIDGET_STATE_CLS = { error: 'is-error', expired: 'is-error', soon: 'is-warning', stale: 'is-stale', ok: 'is-ok' };
+    function widgetStateLabel(state) {
+      return state === 'stale' ? '待刷新' : state === 'ok' ? '正常' : ALERT_META[state].label;
+    }
+    function fieldBlank(f) { return f.value == null || f.value === ''; }
+    function siteWidgetParts(b) {
+      const fields = enabledFields(b);
+      const primary = fields.find(f => (f.type || 'amount') === 'amount') || fields[0];
+      const rest = fields.filter(f => f !== primary);
+      const secondary = rest.find(f => (f.type || 'amount') === 'time') || rest[0] || null;
+      const state = bookmarkAlert(b) || (fieldBlank(primary) ? 'stale' : 'ok');
+      let value = '', unit = '';
+      if (primary.error) value = '取数失败';
+      else if (fieldBlank(primary)) value = '待刷新';
+      else if ((primary.type || 'amount') === 'amount') {
+        const text = String(primary.value).trim();
+        value = /^-?[\d,]*\.?\d+$/.test(text) ? fmtNum(parseNum(text)) : text;
+        unit = primary.unit || '';
+      } else value = compactFieldValue(primary);
+      let sub;
+      if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
+      else sub = primary.updated_at ? `${primary.label} · 更新于 ${shortStamp(primary.updated_at)}` : primary.label;
+      return { state, value, unit, sub, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : '' };
+    }
+    function homeSiteWidgetHtml(b, i) {
+      const safe = safeUrl(b.url);
+      const host = siteHost(b.url) || '未设置域名';
+      const w = siteWidgetParts(b);
+      const st = { cls: WIDGET_STATE_CLS[w.state], label: widgetStateLabel(w.state) };
+      return `<div class="home-tile home-widget tone-mint ${st.cls}" data-bm-index="${i}" style="--hue:${hueOf(host)}">
+        <a class="widget-link" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(b.name)} · ${escapeHtml(b.url)}">
+          ${siteAvatarHtml(b.name, b.url, 'tile-avatar widget-avatar')}
+          <span class="widget-body">
+            <span class="widget-head"><span class="widget-name">${escapeHtml(b.name)}</span><span class="widget-dot" role="img" aria-label="状态：${escapeHtml(st.label)}" title="${escapeHtml(st.label)}"></span></span>
+            <span class="widget-value${w.valueCls}" title="${escapeHtml(w.label)}">${escapeHtml(w.value)}${w.unit ? `<small>${escapeHtml(w.unit)}</small>` : ''}</span>
+            <span class="widget-sub">${escapeHtml(w.sub)}</span>
+          </span>
+        </a>
+        <details class="action-menu tile-menu">
+          <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
+          <div class="menu-popover">${homeSiteMenuHtml(b, i)}</div>
+        </details>
+      </div>`;
+    }
+    // 信息密度：配了监控字段的站点用小组件，没配的仍是普通图标。
+    function homeSiteHtml(b, i, minimal) {
+      return !minimal && enabledFields(b).length ? homeSiteWidgetHtml(b, i) : homeSiteTileHtml(b, i, minimal);
+    }
+    function homeSiteUnits(b, minimal) { return !minimal && enabledFields(b).length ? 2 : 1; }
+    // --n：这个分组要占几格（小组件算 2 格），决定桌面上它想要的宽度；
+    // --span：手机 4 列网格里占几列——两三个网址的小分组因此可以并排，不必各占一整行。
+    function homeSectionHtml(page, title, iconName, tone, count, body, units) {
+      const n = Math.max(1, units || count);
+      return `<section class="home-section tone-${escapeHtml(tone)}" aria-label="${escapeHtml(title)}" style="--n:${Math.min(n, 12)};--span:${Math.min(n, 4)}">
         <div class="section-label"><button type="button" class="btn ghost sm" onclick="openLibPage('${escapeHtml(page)}')" title="打开「${escapeHtml(title)}」">${icon(iconName)} ${escapeHtml(title)}</button><span class="count">${count}</span></div>
         ${body}
       </section>`;
@@ -1457,7 +1655,8 @@
 
     function renderHome() {
       const view = homeView();
-      const tiles = view === 'tiles';
+      const minimal = view === 'minimal';
+      const tiles = view !== 'cards';
       const query = $('bmSearch').value || '';
       const q = query.trim().toLowerCase();
       const groups = homeGroups(query);
@@ -1477,12 +1676,13 @@
       // 与侧栏顺序一致：站点看板在前，其后按分组顺序。
       const sections = [];
       if (sites.length) sections.push(homeSectionHtml('monitor', '站点看板', 'pulse', 'mint', sites.length, tiles
-        ? `<div class="tile-grid">${sites.map(({ b, i }) => homeSiteTileHtml(b, i)).join('')}</div>`
-        : `<div class="bookmark-grid">${sites.map(({ b, i }) => bookmarkCardHtml(b, i, { home: true })).join('')}</div>`));
+        ? `<div class="tile-grid">${sites.map(({ b, i }) => homeSiteHtml(b, i, minimal)).join('')}</div>`
+        : `<div class="bookmark-grid">${sites.map(({ b, i }) => bookmarkCardHtml(b, i, { home: true })).join('')}</div>`,
+        sites.reduce((n, { b }) => n + homeSiteUnits(b, minimal), 0)));
       for (const g of groups) sections.push(homeSectionHtml(g.id, g.name, g.icon, g.color, g.links.length, tiles
         ? `<div class="tile-grid">${g.links.map(l => homeLinkTileHtml(l, g)).join('')}</div>`
         : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`));
-      $('homeList').className = 'home-list is-' + view;
+      $('homeList').className = 'home-list is-' + (tiles ? 'tiles' : 'cards') + (minimal ? ' is-minimal' : '');
       $('homeList').innerHTML = sections.join('');
       if (count) hideEmpty($('homeEmpty'));
       else showEmpty($('homeEmpty'), total
@@ -3363,6 +3563,135 @@
     $('engineSelect').addEventListener('change', (e) => setEngine(e.target.value));
     $('copyStartUrl').addEventListener('click', async () => {
       toast((await copyText(location.origin + '/')) ? '地址已复制，粘贴到浏览器的主页设置里即可' : '复制失败，请手动复制', 'ok');
+    });
+
+    // ----- 首页外观弹窗：壁纸 / 遮罩 / 导航 -----
+    function wallThumbStyle(o, custom) {
+      if (o.id === 'off') return '';
+      if (o.id === 'custom') return `background-color:#10151f;background-image:url('/api/wallpaper?v=${custom.v}')`;
+      return `background-color:${o.color};background-image:url('/static/wallpapers/${o.id}-thumb.webp')`;
+    }
+    function setSegmented(selector, attr, value, disabled) {
+      document.querySelectorAll(selector).forEach(b => {
+        const on = b.dataset[attr] === value;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', String(on));
+        b.disabled = !!disabled;
+      });
+    }
+    function renderHomeLook() {
+      const custom = customWallpaper();
+      const current = currentWallpaper();
+      const effective = current ? current.id : 'off';
+      const opts = [{ id: 'off', name: '不用壁纸' }].concat(WALLPAPERS, custom ? [{ id: 'custom', name: '我的图片' }] : []);
+      $('wallChoices').innerHTML = opts.map(o => {
+        const on = o.id === effective;
+        return `<button type="button" class="wall-choice${on ? ' active' : ''}" role="radio" aria-checked="${on}" data-wall="${o.id}"><span class="wall-thumb${o.id === 'off' ? ' is-off' : ''}" style="${wallThumbStyle(o, custom)}"></span><span class="wall-name">${escapeHtml(o.name)}</span></button>`;
+      }).join('');
+      setSegmented('#wallDimSeg [data-wall-dim]', 'wallDim', wallDimPref(), !current);
+      setSegmented('#homeNavSeg [data-home-nav]', 'homeNav', homeNavPref(), false);
+      const forced = current && wallMinDim(current.lum) > WALL_DIMS[wallDimPref()];
+      $('wallDimHint').textContent = !current ? '启用壁纸后可调。'
+        : forced ? `这张图偏亮，遮罩已自动加深到 ${Math.round(wallDimFor(current) * 100)}%，保证白字看得清。`
+        : '画面越亮遮罩会自动压得越暗，保证白字始终看得清。';
+      $('wallRemoveBtn').hidden = !custom;
+    }
+    function openHomeLook() {
+      $('wallStatus').textContent = '';
+      renderHomeLook();
+      $('homeLookModal').classList.add('show');
+      $('homeLookClose').focus();
+    }
+    function refreshHomeLook() { applyHomeLook(); renderHomeLook(); }
+    $('homeLookBtn').addEventListener('click', openHomeLook);
+    $('openHomeLook').addEventListener('click', openHomeLook);
+    $('homeLookClose').addEventListener('click', () => $('homeLookModal').classList.remove('show'));
+    $('wallChoices').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-wall]');
+      if (!btn || !WALL_IDS.includes(btn.dataset.wall)) return;
+      writePref('bh_wallpaper', btn.dataset.wall);
+      refreshHomeLook();
+    });
+    $('wallDimSeg').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-wall-dim]');
+      if (!btn || btn.disabled) return;
+      writePref('bh_wp_dim', btn.dataset.wallDim);
+      refreshHomeLook();
+    });
+    $('homeNavSeg').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-home-nav]');
+      if (!btn) return;
+      writePref('bh_home_nav', btn.dataset.homeNav);
+      refreshHomeLook();
+    });
+
+    // 上传前在浏览器里压缩：长边收到 2560px 以内、转成 WebP（不支持就 JPEG），顺手量出画面亮度。
+    // 走 createImageBitmap + canvas，全程不需要 blob: 地址，CSP 不用为它开口子。
+    const WALL_MAX_SIDE = 2560;
+    const WALL_UPLOAD_MAX_BYTES = 1900 * 1024;   // 服务端上限 2MB，留一点余量
+    function relLuminance(r, g, b) {
+      const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    }
+    // p90 相对亮度：取画面里偏亮的那部分来定遮罩，而不是被大片暗部拉低的平均值。
+    function p90Luminance(pixels) {
+      const lums = [];
+      for (let i = 0; i + 3 < pixels.length; i += 4) lums.push(relLuminance(pixels[i], pixels[i + 1], pixels[i + 2]));
+      if (!lums.length) return 1;
+      lums.sort((a, b) => a - b);
+      return lums[Math.min(lums.length - 1, Math.floor(lums.length * 0.9))];
+    }
+    function canvasBlob(canvas, type, quality) { return new Promise(resolve => canvas.toBlob(resolve, type, quality)); }
+    async function encodeWallpaper(file) {
+      if (typeof createImageBitmap !== 'function') throw new Error('这个浏览器不支持图片处理，请换一个浏览器上传');
+      let bitmap;
+      try { bitmap = await createImageBitmap(file); } catch (_) { throw new Error('读不出这张图片，请换 PNG / JPEG / WebP 格式'); }
+      const probe = document.createElement('canvas');
+      probe.width = 64; probe.height = 36;
+      probe.getContext('2d').drawImage(bitmap, 0, 0, 64, 36);
+      const lum = p90Luminance(probe.getContext('2d').getImageData(0, 0, 64, 36).data);
+      let scale = Math.min(1, WALL_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+      for (let attempt = 0; attempt < 4; attempt++, scale *= 0.8) {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        for (const [type, quality] of [['image/webp', 0.82], ['image/jpeg', 0.85]]) {
+          const blob = await canvasBlob(canvas, type, quality);
+          // 不支持该格式的浏览器会悄悄回落成 PNG，体积大得多，这里只认编码成功的。
+          if (blob && blob.type === type && blob.size <= WALL_UPLOAD_MAX_BYTES) return { blob, lum };
+        }
+      }
+      throw new Error('图片压缩后仍然过大，换一张试试');
+    }
+    async function wallpaperApi(method, url, body, type) {
+      const resp = await fetch(url, { method, headers: type ? { 'Content-Type': type } : {}, body });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || '操作失败');
+      STATE.wallpaper = data.wallpaper;
+      return data;
+    }
+    $('wallUploadBtn').addEventListener('click', (e) => { if (!guardAdmin()) e.preventDefault(); });
+    $('wallFile').addEventListener('change', async () => {
+      const file = $('wallFile').files && $('wallFile').files[0];
+      $('wallFile').value = '';
+      if (!file || !guardAdmin()) return;
+      $('wallStatus').textContent = '正在压缩并上传…';
+      try {
+        const { blob, lum } = await encodeWallpaper(file);
+        await wallpaperApi('PUT', '/api/wallpaper?lum=' + lum.toFixed(3), blob, blob.type);
+        writePref('bh_wallpaper', 'custom');
+        $('wallStatus').textContent = `已上传（${Math.round(blob.size / 1024)} KB）`;
+        refreshHomeLook();
+      } catch (err) { $('wallStatus').textContent = ''; toast(err.message, 'err'); }
+    });
+    $('wallRemoveBtn').addEventListener('click', async () => {
+      if (!guardAdmin() || !confirm('移除上传的壁纸？内置壁纸不受影响。')) return;
+      try {
+        await wallpaperApi('DELETE', '/api/wallpaper');
+        $('wallStatus').textContent = '已移除';
+        refreshHomeLook();
+      } catch (err) { toast(err.message, 'err'); }
     });
 
     // ===== 历史 =====

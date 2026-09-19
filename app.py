@@ -2027,6 +2027,8 @@ def api_configs():
             "refresh": {"enabled": False, "interval_minutes": DEFAULT_REFRESH_INTERVAL,
                         "last_run_time": "", "intervals": list(REFRESH_INTERVALS)},
             "admin_required": True, "admin_unlocked": False, "scheduler_running": SCHEDULER_ENABLED,
+            # 未解锁时 /api/wallpaper 同样被挡住，这里如实说「没有」，页面回落到内置壁纸。
+            "wallpaper": {"custom": False, "v": "", "lum": None},
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -2076,6 +2078,7 @@ def api_configs():
         "scheduler_running": SCHEDULER_ENABLED,
         "private": private_mode_active(),
         "locked": False,
+        "wallpaper": public_wallpaper(),
     })
 
 
@@ -3213,6 +3216,9 @@ FAVICON_HTML_MAX_BYTES = 256 * 1024   # 首页 HTML 只读前若干字节用于�
 FAVICON_TIMEOUT = 5                   # 单次请求超时（秒）
 FAVICON_BUDGET = 12                   # 单个 origin 的总抓取时间预算（秒）
 FAVICON_MAX_CANDIDATES = 4
+# 选图策略变了（例如改为高清优先）就 +1：旧版本抓下来的缓存视为过期并重抓，
+# 不必等 7 天 TTL；重抓失败时仍沿用旧图，不会因为升级反而丢图标。
+FAVICON_CACHE_VERSION = 2
 FAVICON_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/125.0.0.0 Safari/537.36"
@@ -3407,28 +3413,45 @@ def _favicon_attrs(chunk):
     return attrs
 
 
+# 首页图标视图把站点图标放大到 60px 左右（高分屏上是 120~180 物理像素），16/32px 的 favicon
+# 拉到这个尺寸会糊成一团。打分因此以「够不够清晰」为先：矢量与 120~256px 的位图最优，
+# apple-touch-icon 即使不写 sizes 也按约定的 180px 计；32px 以下的小图标垫底。
+_FAVICON_TOUCH_DEFAULT_PX = 180
+# 站点没声明高清图标时，值得按约定路径再探一次 /apple-touch-icon.png：它的分数压在
+# 「声明了 ≥64px 的图标」之下、「只声明了小图标 / 没写尺寸」之上。
+_FAVICON_CONVENTIONAL_TOUCH_SCORE = 56
+
+
+def _favicon_size_score(best):
+    if best >= 120:
+        return 30 if best <= 256 else (22 if best <= 512 else 10)
+    if best >= 64:
+        return 24
+    return 14 if best >= 32 else 4
+
+
 def _favicon_link_score(attrs):
-    """rel / sizes / type 综合打分：优先常规 icon，其次 apple-touch-icon；尺寸偏好 32~192px 与矢量图。"""
+    """rel / sizes / type 综合打分：清晰度优先。高清（矢量、120~256px、apple-touch-icon）在前，小 favicon 垫底。"""
     rel = (attrs.get("rel") or "").lower()
-    if "apple-touch-icon" in rel:
-        score = 30
+    touch = "apple-touch-icon" in rel
+    if touch:
+        score = 38
     elif "mask-icon" in rel:
-        score = 5
+        return 5  # 单色剪影，只在别的都拿不到时才用
     else:
         score = 40
     sizes = (attrs.get("sizes") or "").lower()
     if sizes == "any" or (attrs.get("type") or "").lower() == "image/svg+xml":
-        score += 25
-    else:
-        nums = [int(n) for n in _FAVICON_SIZE_RE.findall(sizes)]
-        if nums:
-            best = max(nums)
-            score += 20 if 32 <= best <= 192 else (12 if best > 192 else 6)
-    return score
+        return score + 30
+    nums = [int(n) for n in _FAVICON_SIZE_RE.findall(sizes)]
+    if nums:
+        return score + _favicon_size_score(max(nums))
+    # 没写 sizes：apple-touch-icon 约定就是 180px；普通 icon 多半是 16/32px 的 .ico。
+    return score + (_favicon_size_score(_FAVICON_TOUCH_DEFAULT_PX) if touch else 8)
 
 
-def favicon_candidates(html, page_url):
-    """从首页 HTML 抽出图标候选，按可用性排序。相对路径 / 协议相对路径 / <base href> 都会解析为绝对地址。"""
+def _favicon_scored_candidates(html, page_url):
+    """首页 HTML 里声明的图标候选：[(score, url)]，已按清晰度排序并去重。"""
     head = html.split("</head>", 1)[0] if "</head>" in html else html
     base = page_url
     base_tag = _FAVICON_BASE_RE.search(head)
@@ -3455,12 +3478,32 @@ def favicon_candidates(html, page_url):
             continue
         found.append((_favicon_link_score(attrs), len(found), url))
     found.sort(key=lambda item: (-item[0], item[1]))
-    urls, seen = [], set()
-    for _, _, url in found:
+    scored, seen = [], set()
+    for score, _, url in found:
         if url in seen:
             continue
         seen.add(url)
-        urls.append(url)
+        scored.append((score, url))
+    return scored
+
+
+def favicon_candidates(html, page_url):
+    """从首页 HTML 抽出图标候选，按清晰度排序。相对路径 / 协议相对路径 / <base href> 都会解析为绝对地址。"""
+    return [url for _, url in _favicon_scored_candidates(html, page_url)]
+
+
+def _favicon_fetch_plan(origin, scored):
+    """实际抓取顺序：声明的候选 + 约定路径的 /apple-touch-icon.png（按分数插队）+ 兜底 /favicon.ico。"""
+    touch = origin + "/apple-touch-icon.png"
+    merged = list(scored)
+    if touch not in [url for _, url in merged]:
+        merged.append((_FAVICON_CONVENTIONAL_TOUCH_SCORE, touch))
+        # 稳定排序：同分时站点自己声明的仍排在约定路径之前。
+        merged.sort(key=lambda item: -item[0])
+    urls = [url for _, url in merged][:FAVICON_MAX_CANDIDATES]
+    fallback = origin + "/favicon.ico"
+    if fallback not in urls:
+        urls.append(fallback)
     return urls
 
 
@@ -3474,12 +3517,10 @@ def _favicon_fetch(origin, proxy):
     if page is None and status == 0:
         return None, ""
     if page and (not ctype or "html" in ctype or "xml" in ctype):
-        candidates = favicon_candidates(page.decode("utf-8", errors="replace"), final_url or origin + "/")
-    # 站点没有声明 <link rel=icon>（或首页就抓不到）时回落到约定俗成的 /favicon.ico。
-    fallback = origin + "/favicon.ico"
-    if fallback not in candidates:
-        candidates.append(fallback)
-    for url in candidates[:FAVICON_MAX_CANDIDATES]:
+        candidates = _favicon_scored_candidates(page.decode("utf-8", errors="replace"), final_url or origin + "/")
+    # 站点没有声明高清图标（或首页就抓不到）时，依次回落到约定俗成的
+    # /apple-touch-icon.png 与 /favicon.ico；兜底的 /favicon.ico 不占候选名额。
+    for url in _favicon_fetch_plan(origin, candidates):
         if time.monotonic() >= deadline:
             break
         data = _favicon_http_get(url, proxy, FAVICON_TIMEOUT, FAVICON_MAX_BYTES)[0]
@@ -3493,14 +3534,19 @@ def _favicon_key(origin):
     return hashlib.sha1(origin.encode("utf-8")).hexdigest()
 
 
-def _favicon_cache_read(origin):
-    """命中且未过期返回 {'ok': bool, 'data':, 'mime':}；未命中/过期返回 None。"""
+def _favicon_cache_read(origin, allow_outdated=False):
+    """命中且未过期返回 {'ok': bool, 'data':, 'mime':}；未命中/过期返回 None。
+
+    旧选图策略留下的条目（v 不等于 FAVICON_CACHE_VERSION）默认当作未命中；
+    allow_outdated=True 时照常返回，供重抓失败后兜底。"""
     key = _favicon_key(origin)
     try:
         meta = json.loads((FAVICON_DIR / (key + ".json")).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(meta, dict) or meta.get("origin") != origin:
+        return None
+    if meta.get("v") != FAVICON_CACHE_VERSION and not allow_outdated:
         return None
     try:
         age = time.time() - float(meta.get("fetched_at") or 0)
@@ -3526,8 +3572,8 @@ def _favicon_cache_write(origin, data, mime):
         if data:
             (FAVICON_DIR / (key + ".bin")).write_bytes(data)
         (FAVICON_DIR / (key + ".json")).write_text(
-            json.dumps({"origin": origin, "ok": bool(data), "mime": mime, "fetched_at": time.time()},
-                       ensure_ascii=False),
+            json.dumps({"origin": origin, "ok": bool(data), "mime": mime, "fetched_at": time.time(),
+                        "v": FAVICON_CACHE_VERSION}, ensure_ascii=False),
             encoding="utf-8",
         )
     except OSError:
@@ -3567,6 +3613,11 @@ def api_favicon():
             if hit is None:
                 with _favicon_fetch_slots:
                     data, mime = _favicon_fetch(origin, proxy)
+                if not data:
+                    # 升级选图策略后的重抓没成功：旧图还在有效期内就继续用它。
+                    stale = _favicon_cache_read(origin, allow_outdated=True)
+                    if stale and stale.get("ok"):
+                        data, mime = stale["data"], stale["mime"]
                 _favicon_cache_write(origin, data, mime)
                 hit = {"ok": bool(data), "data": data, "mime": mime}
     if not hit.get("ok"):
@@ -3578,6 +3629,150 @@ def api_favicon():
     resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     resp.headers["Content-Disposition"] = "inline"
     return resp
+
+
+# =========================
+# 首页壁纸（自定义上传）
+# =========================
+#
+# 页面 CSP 是 img-src 'self' data:，壁纸只能同源提供：内置的几张在 static/wallpapers/，
+# 自己上传的那张存到 data/wallpaper/（随 bind mount 持久化，不进 config.json，也不进导出）。
+# 起始页每开一个标签页都会请求壁纸，外链图床等于把使用习惯交给第三方，所以不为它放宽 CSP。
+WALLPAPER_MAX_BYTES = 2 * 1024 * 1024
+# 只收位图：SVG 能内嵌脚本，GIF / BMP / ICO 当壁纸没有意义。
+WALLPAPER_MIMES = frozenset({"image/png", "image/jpeg", "image/webp"})
+_wallpaper_lock = threading.Lock()
+
+
+def _wallpaper_paths():
+    # 每次现取 DATA_DIR：测试会把它重定向到逐用例的临时目录。
+    root = DATA_DIR / "wallpaper"
+    return root, root / "custom.bin", root / "custom.json"
+
+
+def wallpaper_meta():
+    """已上传壁纸的元数据 {'v':, 'mime':, 'lum':, 'bytes':}；没有或损坏返回 None。"""
+    _, bin_path, meta_path = _wallpaper_paths()
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(meta, dict) or meta.get("mime") not in WALLPAPER_MIMES or not bin_path.is_file():
+        return None
+    if not re.fullmatch(r"[0-9a-f]{16}", str(meta.get("v") or "")):
+        return None
+    return meta
+
+
+def public_wallpaper():
+    """随 /api/configs 下发给页面的壁纸信息：有没有自定义壁纸、版本号（缓存键）、亮度提示。"""
+    meta = wallpaper_meta()
+    if not meta:
+        return {"custom": False, "v": "", "lum": None}
+    return {"custom": True, "v": meta["v"], "lum": meta.get("lum")}
+
+
+def _clean_wallpaper_lum(raw):
+    """前端量出来的画面亮度（0~1，用来决定遮罩最少要压多暗）；不可信就丢掉，由前端按最亮处理。"""
+    try:
+        lum = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if lum != lum or lum < 0 or lum > 1:
+        return None
+    return round(lum, 3)
+
+
+def _wallpaper_write(path, data):
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp_path, 0o644)
+        os.replace(tmp_path, str(path))
+        tmp_path = None
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.get("/api/wallpaper")
+def api_wallpaper():
+    """返回上传的首页壁纸。开放访问（私密模式未解锁时由全局拦截挡住）。"""
+    # 元数据与图片字节在同一把锁里读：正好撞上替换上传时，不会拿到「新图配旧类型 / 旧 ETag」。
+    with _wallpaper_lock:
+        meta = wallpaper_meta()
+        try:
+            data = _wallpaper_paths()[1].read_bytes() if meta else None
+        except OSError:
+            data = None
+    if not meta or data is None:
+        return jsonify({"ok": False, "error": "还没有上传壁纸"}), 404
+    resp = app.response_class(data, mimetype=meta["mime"])
+    resp.set_etag(meta["v"])
+    # 页面带着 ?v=<内容哈希> 来取：内容变了地址就变，可以放心长缓存；裸地址则每次校验。
+    if request.args.get("v") == meta["v"]:
+        resp.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    else:
+        resp.headers["Cache-Control"] = "private, no-cache"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    resp.headers["Content-Disposition"] = "inline"
+    return resp.make_conditional(request)
+
+
+@app.put("/api/wallpaper")
+def api_wallpaper_upload():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    data = request.get_data(cache=False)
+    if not data:
+        return jsonify({"ok": False, "error": "没有收到图片"}), 400
+    if len(data) > WALLPAPER_MAX_BYTES:
+        return jsonify({"ok": False, "error": "壁纸过大（上限 {0:.0f} MB）".format(WALLPAPER_MAX_BYTES / 1024.0 / 1024.0)}), 413
+    # 类型以魔数为准，不信 Content-Type：改个请求头就能把 HTML / SVG 塞进来。
+    mime = sniff_image_mime(data)
+    if mime not in WALLPAPER_MIMES:
+        return jsonify({"ok": False, "error": "只支持 PNG / JPEG / WebP 图片"}), 400
+    meta = {
+        "v": hashlib.sha256(data).hexdigest()[:16],
+        "mime": mime,
+        "bytes": len(data),
+        "lum": _clean_wallpaper_lum(request.args.get("lum")),
+        "updated_at": _now_str(),
+    }
+    root, bin_path, meta_path = _wallpaper_paths()
+    try:
+        with _wallpaper_lock:
+            root.mkdir(parents=True, exist_ok=True)
+            _wallpaper_write(bin_path, data)
+            _wallpaper_write(meta_path, json.dumps(meta, ensure_ascii=False).encode("utf-8"))
+    except OSError:
+        return jsonify({"ok": False, "error": "壁纸保存失败：数据目录不可写"}), 500
+    return jsonify({"ok": True, "wallpaper": public_wallpaper()})
+
+
+@app.delete("/api/wallpaper")
+def api_wallpaper_delete():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    with _wallpaper_lock:
+        for path in _wallpaper_paths()[1:]:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return jsonify({"ok": False, "error": "壁纸删除失败：数据目录不可写"}), 500
+    return jsonify({"ok": True, "wallpaper": public_wallpaper()})
 
 
 @app.get("/api/configs/export")

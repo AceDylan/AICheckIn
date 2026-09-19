@@ -76,7 +76,8 @@ class GroupSortUiTest(unittest.TestCase):
 
     def test_only_groups_are_marked_sortable(self):
         # 「收藏首页」与「站点看板」固定，不带 data-sortable；分组项都带。
-        self.assertIn("['@home', 'monitor'].includes(p.id) ? '' : ` data-sortable=\"1\"", self.html)
+        # 固定页只带 title（首页收成图标栏后靠它当提示）。
+        self.assertIn("['@home', 'monitor'].includes(p.id) ? ` title=\"${escapeHtml(p.name)}\"` : ` data-sortable=\"1\"", self.html)
         self.assertIn("querySelectorAll('[data-sortable]')", self.html)
 
     def test_drag_handlers_are_bound_to_both_navs(self):

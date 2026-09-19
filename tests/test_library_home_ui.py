@@ -77,20 +77,34 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.ok($('homeEmpty').innerHTML.includes('自定义首页'));
         """)
 
-    def test_dashboard_sites_join_the_home_in_both_densities(self):
+    def test_dashboard_sites_join_the_home_in_every_density(self):
         self.run_js("""
             assert.deepEqual(homeSites().map(x => x.i), [0]);
             assert.equal(libPages()[0].count, 3);
-            // 默认是图标视图：看板站点排在分组之前，带一条压缩过的指标。
+            // 默认是「信息」密度（沿用旧 Cookie 值 tiles）：看板站点排在分组之前，带监控字段的渲染成 2×1 小组件。
             assert.equal(homeView(), 'tiles');
             let html = $('homeList').innerHTML;
             assert.equal($('homeList').className, 'home-list is-tiles');
             assert.ok(html.indexOf('看板站') < html.indexOf('Other selected'));
-            assert.ok(html.includes('tile-metric'));
+            assert.ok(html.includes('home-widget'));
             assert.ok(html.includes('>27.07<'));
             assert.ok(!html.includes('27.0660232000'));
             assert.ok(!html.includes('未选站'));
             assert.ok(html.includes('toggleHomeSite(0)'));
+            // 小组件占 2 格：分组宽度与手机列数按格数算，而不是按站点个数。
+            assert.ok(html.includes('--n:2;--span:2'));
+            // 极简密度：只有图标和名字；没有要处理的事就不显示指标，分组标题由样式收起。
+            setHomeView('minimal');
+            html = $('homeList').innerHTML;
+            assert.equal($('homeList').className, 'home-list is-tiles is-minimal');
+            assert.ok(!html.includes('home-widget') && !html.includes('tile-metric'));
+            assert.ok(html.includes('看板站') && html.includes('toggleHomeSite(0)'));
+            assert.ok(html.includes('--n:1;--span:1'));
+            // ……一旦取数失败，极简密度也要把它亮出来。
+            STATE.bookmarks[0].fields[0].error = 'HTTP 500';
+            renderHome();
+            assert.ok($('homeList').innerHTML.includes('tile-metric is-error'));
+            delete STATE.bookmarks[0].fields[0].error;
             // 卡片视图复用看板卡片，字段完整显示；首页上不提供排序。
             setHomeView('cards');
             html = $('homeList').innerHTML;
@@ -104,6 +118,110 @@ class LibraryHomeUiTest(unittest.TestCase):
             const own = bookmarkCardHtml(STATE.bookmarks[1], 1, {});
             assert.ok(own.includes(\"moveBm(1,'top')\"));
             assert.ok(own.includes('展示到首页'));
+        """)
+
+    def test_widget_shows_balance_expiry_and_status(self):
+        self.run_js("""
+            const day = 86400, now = Date.now() / 1000;
+            const site = (fields) => ({ name: 'S', url: 'https://s.example', fields: fields.map((f, k) => Object.assign({ id: 'f' + k, enabled: true }, f)) });
+            // 主数值取金额字段，次要信息优先取时间字段（到期）。
+            let w = siteWidgetParts(site([
+                { label: '到期', type: 'time', value: '2030-01-01', raw: now + 40 * day },
+                { label: '余额', type: 'amount', value: '1234.5', unit: 'USD' }]));
+            assert.deepEqual([w.state, w.value, w.unit, w.label], ['ok', '1,234.5', 'USD', '余额']);
+            assert.ok(w.sub.startsWith('到期 · ') && w.sub.includes('后'));
+            // 状态取最严重的一类：快到期 → 警告；已过期 / 取数失败 → 错误。
+            w = siteWidgetParts(site([{ label: '余额', type: 'amount', value: '3' }, { label: '到期', type: 'time', value: 'x', raw: now + 2 * day }]));
+            assert.equal(w.state, 'soon');
+            assert.ok(homeSiteWidgetHtml(site([{ label: '到期', type: 'time', value: 'x', raw: now - day }]), 0).includes('home-widget tone-mint is-error'));
+            w = siteWidgetParts(site([{ label: '余额', type: 'amount', value: '3', error: '<b>HTTP 500</b>' }]));
+            assert.deepEqual([w.state, w.value, w.valueCls], ['error', '取数失败', ' is-error']);
+            // 还没刷新过：灰色「待刷新」，不是绿色「正常」。
+            w = siteWidgetParts(site([{ label: '余额', type: 'amount' }]));
+            assert.deepEqual([w.state, w.value], ['stale', '待刷新']);
+            // 只有一个字段时，次要信息退回「字段名 · 更新时间」。
+            w = siteWidgetParts(site([{ label: '余额', type: 'amount', value: '3', updated_at: '2026-01-02 03:04:05' }]));
+            assert.ok(w.sub.startsWith('余额 · 更新于 '));
+            // 状态不能只靠颜色：状态点带文字标签；站点名、字段值一律转义。
+            const html = homeSiteWidgetHtml({ name: '<i>x</i>', url: 'https://s.example', fields: [{ id: 'f', enabled: true, label: '余额', type: 'raw', value: '<script>' }] }, 3);
+            assert.ok(html.includes('aria-label="状态：正常"'));
+            assert.ok(!html.includes('<i>x</i>') && !html.includes('<script>'));
+            assert.ok(html.includes('refreshBmBalance(3)') && html.includes('data-bm-index="3"'));
+            // 没配监控字段的站点不是小组件，就是普通图标。
+            assert.ok(!homeSiteHtml({ name: 'P', url: 'https://p.example', fields: [] }, 1, false).includes('home-widget'));
+        """)
+
+    def test_tiles_are_borderless_icons_with_name_only(self):
+        self.run_js("""
+            const html = homeLinkTileHtml({ id: 'l9', name: 'Docs', url: 'https://docs.example/path' }, { id: 'daily', name: '常用', color: 'sky' });
+            assert.ok(html.includes('tile-avatar') && html.includes('tile-title'));
+            // 域名不再占一行，收进 title 里。
+            assert.ok(!html.includes('tile-host'));
+            assert.ok(html.includes('title="Docs · https://docs.example/path"'));
+            // 低清 favicon 不放大：量到原图不足 64px 就标记，矢量图（naturalWidth 0）与高清图照常铺满。
+            const img = (w) => { const el = document.createElement('img'); el.naturalWidth = w; markIconResolution(el); return el.classList.contains('is-lowres'); };
+            assert.deepEqual([img(16), img(32), img(64), img(180), img(0)], [true, true, false, false, false]);
+        """)
+
+    def test_wallpaper_follows_the_page_and_the_cookie(self):
+        self.run_js("""
+            const root = document.documentElement, layer = $('homeWall');
+            // 默认启用内置壁纸，只在收藏首页生效；首页同时收成图标栏。
+            assert.equal(currentWallpaper().id, 'aurora');
+            assert.ok(root.classList.contains('home-wall-on') && root.classList.contains('home-rail'));
+            assert.equal(layer.style['--wall-color'], '#112f49');
+            openLibPage('monitor');
+            assert.ok(!root.classList.contains('home-wall-on') && !root.classList.contains('home-rail'));
+            switchView('settings');
+            assert.ok(!root.classList.contains('home-wall-on'));
+            document.querySelector('.tab[data-view="bookmarks"]').click();
+            assert.ok(root.classList.contains('home-wall-on'));
+            // 关掉壁纸 / 换成完整侧栏：各自独立。
+            document.cookie = 'bh_wallpaper=off; bh_home_nav=full';
+            applyHomeLook();
+            assert.ok(!root.classList.contains('home-wall-on') && !root.classList.contains('home-rail'));
+            // Cookie 被改成别的值只会回落到默认，不会拿去拼地址。
+            document.cookie = 'bh_wallpaper=../../evil; bh_wp_dim=9; bh_home_nav=x';
+            assert.deepEqual([wallPref(), wallDimPref(), homeNavPref()], ['aurora', 'medium', 'rail']);
+            assert.equal(currentWallpaper().url, '/static/wallpapers/aurora.webp');
+            // 选了「自定义」但服务器上没有：回落到默认内置；有了才用，地址带内容哈希。
+            document.cookie = 'bh_wallpaper=custom';
+            assert.equal(currentWallpaper().id, 'aurora');
+            STATE.wallpaper = { custom: true, v: '0123456789abcdef', lum: 0.9 };
+            assert.equal(currentWallpaper().url, '/api/wallpaper?v=0123456789abcdef');
+            STATE.wallpaper = { custom: true, v: '"><img src=x>', lum: 0.9 };
+            assert.equal(currentWallpaper().id, 'aurora');
+        """)
+
+    def test_scrim_is_strong_enough_for_white_text(self):
+        self.run_js("""
+            // 白字 4.5:1 → 背景相对亮度 ≤ 0.183。按页面真实的合成方式验算：遮罩色是 rgb(4 7 12) 而不是纯黑，
+            // 在 sRGB 值上按 alpha 混合，再用标准传递函数换回相对亮度（取灰阶画面，亮度为 lum）。
+            const lin = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+            const enc = (l) => l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055;
+            const after = (lum, dim) => {
+                const c = enc(lum), mix = (s) => lin(c * (1 - dim) + (s / 255) * dim);
+                return 0.2126 * mix(4) + 0.7152 * mix(7) + 0.0722 * mix(12);
+            };
+            for (const lum of [0.17, 0.2, 0.4, 0.7, 0.92, 1]) {
+                const dim = wallDimFor({ lum });
+                assert.ok(after(lum, dim) <= 0.183, 'lum ' + lum + ' dim ' + dim + ' -> ' + after(lum, dim));
+                assert.ok((1.05) / (after(lum, dim) + 0.05) >= 4.5, 'contrast at lum ' + lum);
+            }
+            assert.equal(wallMinDim(0.1), 0);
+            // 量不到亮度（旧数据 / 被篡改）按最亮处理，而不是当成不需要遮罩。
+            assert.equal(wallMinDim(null), wallMinDim(1));
+            assert.equal(wallMinDim('0.1'), wallMinDim(1));
+            // 内置壁纸在「柔和」档也够暗；偏亮的自定义图会自动加深，用户档位只能更暗不能更亮。
+            document.cookie = 'bh_wp_dim=soft';
+            for (const w of WALLPAPERS) assert.ok(after(w.lum, wallDimFor(w)) <= 0.183, w.id);
+            assert.equal(wallDimFor({ lum: 0.1 }), WALL_DIMS.soft);
+            assert.ok(wallDimFor({ lum: 0.95 }) > WALL_DIMS.soft);
+            // 写进样式变量的值向上取整到两位小数，不会因为取整把余量舍掉。
+            assert.ok(wallDimFor({ lum: 0.92 }) >= wallMinDim(0.92));
+            assert.equal(String(wallDimFor({ lum: 0.92 })).length <= 4, true);
+            document.cookie = 'bh_wp_dim=strong';
+            assert.equal(wallDimFor({ lum: 0.3 }), WALL_DIMS.strong);
         """)
 
     def test_site_metric_states_stay_short(self):
@@ -172,6 +290,8 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.equal(openMode(), 'new');
             assert.equal(currentEngine().id, 'google');
             assert.equal(homeView(), 'tiles');
+            document.cookie = 'bh_home_view=minimal';
+            assert.equal(homeView(), 'minimal');
         """)
 
     def test_fetched_icon_and_uploaded_fallback_are_independent_layers(self):

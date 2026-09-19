@@ -6,8 +6,13 @@
  *
  * 外壳（/ 与 /static/*）走 stale-while-revalidate：先用缓存秒开，后台再更新，
  * 下一次访问就是新版本。CACHE_VERSION 改了会清掉所有旧缓存。
+ *
+ * 内置壁纸（/static/wallpapers/*）例外，走 cache-first：起始页每开一个标签页都要用它，
+ * 文件几乎不变，没必要每次都回源校验；重画了壁纸就把 CACHE_VERSION +1。壁纸不预热，
+ * 用到哪张缓存哪张。上传的自定义壁纸在 /api/wallpaper，和其它接口一样不经过这里，
+ * 由带内容哈希的地址 + HTTP 长缓存负责。
  */
-const CACHE_VERSION = 'bh-shell-v7';
+const CACHE_VERSION = 'bh-shell-v8';
 const SHELL = [
   '/',
   '/static/app-v3.css',
@@ -47,6 +52,10 @@ function isShellRequest(url) {
   return url.pathname === '/' || url.pathname.startsWith('/static/');
 }
 
+function isWallpaperRequest(url) {
+  return url.pathname.startsWith('/static/wallpapers/');
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -62,6 +71,17 @@ self.addEventListener('fetch', (event) => {
   // 离线时回退到已缓存的外壳。
   if (url.search) {
     event.respondWith(fetch(request).catch(() => caches.match('/').then((r) => r || offlineResponse())));
+    return;
+  }
+
+  if (isWallpaperRequest(url)) {
+    event.respondWith(
+      caches.open(CACHE_VERSION).then((cache) => cache.match(request).then((cached) => cached
+        || fetch(request).then((response) => {
+          if (response && response.ok && response.type === 'basic') cache.put(request, response.clone());
+          return response;
+        }).catch(() => offlineResponse())))
+    );
     return;
   }
 
