@@ -114,6 +114,12 @@
 - 首页待办比收藏更私人：`/api/todos*` 全部要管理权限，开放的 `/api/configs` 只在已解锁（或未设密码）时下发待办，
   私密模式的空壳里同样没有。内容存在 `data/todos.json`（不进 `config.json`，勾选待办不会重写装着凭据的那个文件），
   长度 ≤ 200 字、最多 200 条，渲染时一律转义。显示偏好沿用 Cookie `bh_home_todo`（值域白名单 `open` / `closed` / `off`）。
+  排序接口 `POST /api/todos/<id>/move` 同样要管理权限：只接受 `before` / `after` 二选一、值必须是另一条现存待办的 id，
+  校验不过（缺参、两个都给、以自己为参照、参照物不存在）一律不落盘；它只改顺序，不接收也不回显任何新内容。
+- 「编辑首页」（拖动图标排序 / 移除）没有新增接口：排序复用 `POST /api/link_groups/<gid>/links/reorder` 与
+  `POST /api/bookmarks/reorder`（都要管理权限、都要求是现有条目的一个全排列），移除复用既有的 `show_on_home` 开关；
+  未解锁的访客看不到「添加 / 编辑」入口，直接调接口也会被 403 挡下。编辑状态下图标的名称进 `aria-label` 前同样转义，
+  「自定义首页」弹窗里用于筛选的 `data-pick-text` / `data-pick-name` 也是转义后的属性值，不经过 `innerHTML` 之外的任何求值。
 - 配置恢复接口的备份 id 白名单是 `bak`、`pre-import` 与 `YYYY-MM-DD`，全是固定字面量或严格格式，请求里的字符串不会进路径。
   `pre-import` 对应 `config.json.pre-import.bak`：那是一次性数据迁移（从 WeTab 备份迁入网址与待办）前留下的回溯点，
   本站自己不再生成它——迁移做完后，导入入口与 `POST /api/import/wetab` 接口都已移除，不留长期开放的批量写入口。

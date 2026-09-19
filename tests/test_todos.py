@@ -92,6 +92,42 @@ class TodoCrudTest(TodoCase):
             self.assertEqual(self.client.post("/api/todos/reorder", json={"order": bad}).status_code, 400, bad)
         self.assertEqual([t["id"] for t in read_todos()], flipped)
 
+    def test_move_places_an_item_before_or_after_another(self):
+        ids = [t["id"] for t in (self.add("a"), self.add("b"), self.add("c"), self.add("d"))[-1]]   # d c b a
+        d, c, b, a = ids
+        moved = self.client.post("/api/todos/%s/move" % a, json={"before": d}).get_json()
+        self.assertEqual([t["id"] for t in moved["todos"]], [a, d, c, b])
+        moved = self.client.post("/api/todos/%s/move" % a, json={"after": c}).get_json()
+        self.assertEqual([t["id"] for t in moved["todos"]], [d, c, a, b])
+        moved = self.client.post("/api/todos/%s/move" % d, json={"after": b}).get_json()      # 挪到最后
+        self.assertEqual([t["id"] for t in moved["todos"]], [c, a, b, d])
+        self.assertEqual([t["id"] for t in read_todos()], [c, a, b, d])                        # 已落盘
+        # 挪动不算「修改」：时间戳、完成状态原样保留。
+        self.assertTrue(all(t["updated_at"] == t["created_at"] and not t["done"] for t in read_todos()))
+
+    def test_move_survives_a_list_that_changed_elsewhere(self):
+        """另一台设备刚加了一条：本机的列表是旧的，但相对挪动只要求两条都还在。"""
+        ids = [t["id"] for t in (self.add("a"), self.add("b"))[-1]]
+        b, a = ids
+        self.add("手机上新加的")
+        resp = self.client.post("/api/todos/%s/move" % a, json={"before": b})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([t["text"] for t in resp.get_json()["todos"]], ["手机上新加的", "a", "b"])
+        # 同一时刻整单重排会被拒绝（这正是要有 move 的原因）。
+        self.assertEqual(self.client.post("/api/todos/reorder", json={"order": [a, b]}).status_code, 400)
+
+    def test_move_validation_leaves_the_list_untouched(self):
+        ids = [t["id"] for t in (self.add("a"), self.add("b"))[-1]]
+        b, a = ids
+        cases = (({}, 400), ({"before": b, "after": b}, 400), ({"before": a}, 400), ({"before": 7}, 400),
+                 ({"before": None}, 400), ({"after": "gone"}, 404), ("before", 400), ([b], 400))
+        for body, status in cases:
+            resp = self.client.post("/api/todos/%s/move" % a, json=body)
+            self.assertEqual(resp.status_code, status, body)
+            self.assertFalse(resp.get_json()["ok"])
+        self.assertEqual(self.client.post("/api/todos/gone/move", json={"before": b}).status_code, 404)
+        self.assertEqual([t["id"] for t in read_todos()], [b, a])
+
     def test_list_is_capped(self):
         self.addCleanup(setattr, app_module, "MAX_TODOS", app_module.MAX_TODOS)
         app_module.MAX_TODOS = 2
@@ -153,7 +189,8 @@ class TodoAccessTest(TodoCase):
         tid = read_todos()[0]["id"]
         calls = (("get", "/api/todos", None), ("post", "/api/todos", {"text": "x"}),
                  ("put", "/api/todos/" + tid, {"done": True}), ("delete", "/api/todos/" + tid, None),
-                 ("post", "/api/todos/clear_done", None), ("post", "/api/todos/reorder", {"order": [tid]}))
+                 ("post", "/api/todos/clear_done", None), ("post", "/api/todos/reorder", {"order": [tid]}),
+                 ("post", "/api/todos/%s/move" % tid, {"before": "x"}))
         for method, url, body in calls:
             resp = getattr(self.client, method)(url, json=body)
             self.assertEqual(resp.status_code, 403, url)

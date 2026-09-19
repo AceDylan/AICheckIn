@@ -86,6 +86,8 @@ globalThis.location = { hash: '', search: '', pathname: '/', origin: 'https://ex
 globalThis.history = { replaceState() {}, pushState() {} };
 globalThis.navigator = { serviceWorker: { register: () => Promise.resolve() }, clipboard: null };
 globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+globalThis.CSS = { escape: (value) => String(value) };
 globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} });
 globalThis.scrollTo = () => {};
 globalThis.setTimeout = setTimeout;

@@ -3994,6 +3994,31 @@ def api_todos_reorder():
     return _todos_call(change)
 
 
+@app.post("/api/todos/<tid>/move")
+def api_todo_move(tid):
+    """把一条待办挪到另一条的前面 / 后面：{"before": id} 或 {"after": id}，二选一。
+
+    拖拽排序走这里而不是 reorder：reorder 要的是「全部 id 的一个排列」，手机上刚加了一条、
+    电脑上那份列表还没刷新时再拖一下就会被整单拒绝；相对挪动只要求这两条都还在。"""
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(items):
+        keys = [k for k in ("before", "after") if k in payload]
+        if len(keys) != 1 or not isinstance(payload[keys[0]], str):
+            raise ValueError("需要 before 或 after 其中之一（另一条待办的 id）")
+        anchor = payload[keys[0]]
+        if anchor == tid:
+            raise ValueError("不能以自己为参照")
+        item = items.pop(_find_todo(items, tid))
+        try:
+            pos = _find_todo(items, anchor)
+        except LookupError:
+            raise LookupError("参照的那条待办已不存在，请刷新")
+        items.insert(pos if keys[0] == "before" else pos + 1, item)
+    return _todos_call(change)
+
+
 @app.get("/api/configs/export")
 def api_export():
     guard = _guard_admin()

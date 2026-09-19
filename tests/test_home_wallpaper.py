@@ -335,11 +335,10 @@ class WallpaperPageGuardsTest(unittest.TestCase):
 
     def test_home_toolbar_wraps_instead_of_widening_the_page(self):
         # 回归：加了第三档密度和「外观」按钮后，工具条在 390px 手机上比视口宽 24px——页面一旦超宽，
-        # 手机浏览器会把整页缩小，连弹窗右侧都被裁掉（「完成」按钮点不到）。放不下就换行 / 让出计数。
-        rule = re.search(r"\.home-toolbar \{([^}]*)\}", self.css).group(1)
+        # 手机浏览器会把整页缩小，连弹窗右侧都被裁掉（「完成」按钮点不到）。放不下就换行。
+        # 现在工具条在手机上默认收在「⋯」后面（见 test_home_layout），展开时这条护栏照样成立。
+        rule = re.search(r"\n\.home-toolbar \{([^}]*)\}", self.css).group(1)
         self.assertIn("flex-wrap: wrap", rule)
-        narrow = self.css[self.css.index("@media (max-width: 480px)"):]
-        self.assertIn(".home-toolbar .toolbar-meta, .home-toolbar .spacer { display: none; }", narrow[:narrow.index("}\n}") + 3])
         mobile = self.css[self.css.index("@media (max-width: 760px)"):]
         self.assertIn(".home-look-btn span { display: none; }", mobile)
         self.assertIn(".home-view-toggle button span { display: none; }", mobile)

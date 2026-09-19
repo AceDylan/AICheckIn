@@ -95,10 +95,25 @@
             <span class="toolbar-meta" id="bmVisibleCount"></span>
           </div>
           <div id="homePage">
-            <header class="home-hero" aria-label="时间与问候">
-              <div class="hero-clock" id="heroClock" aria-hidden="true">--:--</div>
-              <div class="hero-meta"><span id="heroGreeting">你好</span><span class="hero-divider" aria-hidden="true">·</span><time id="heroDate"></time></div>
-            </header>
+            <!-- 时钟 + 工具条。工具条（密度 / 外观 / 添加 / 编辑）都是偶尔才用的设置：宽屏收在右上角，不再横在搜索框和图标之间；
+                 手机上收进时钟行右端的「⋯」，点一下才展开，把首屏让给搜索和图标。 -->
+            <div class="home-top">
+              <header class="home-hero" aria-label="时间与问候">
+                <div class="hero-clock" id="heroClock" aria-hidden="true">--:--</div>
+                <div class="hero-meta"><span id="heroGreeting">你好</span><span class="hero-divider" aria-hidden="true">·</span><time id="heroDate"></time></div>
+                <button type="button" class="home-tools-toggle" id="homeToolsToggle" aria-expanded="false" aria-controls="homeTools" title="首页设置" aria-label="首页设置"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+              </header>
+              <div class="home-toolbar" id="homeTools">
+                <div class="home-view-toggle" id="homeViewToggle" role="group" aria-label="首页显示方式">
+                  <button type="button" data-home-view="minimal" title="极简：只留图标和名字，有事要处理时才显示指标" aria-label="极简"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="7" r="2.2"/><circle cx="12" cy="7" r="2.2"/><circle cx="17.5" cy="7" r="2.2"/><circle cx="6.5" cy="16" r="2.2"/><circle cx="12" cy="16" r="2.2"/><circle cx="17.5" cy="16" r="2.2"/></svg><span>极简</span></button>
+                  <button type="button" data-home-view="tiles" title="信息：图标 + 余额 / 到期小组件，保留分组" aria-label="信息"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="16" height="6.5" rx="1.5"/></svg><span>信息</span></button>
+                  <button type="button" data-home-view="cards" title="卡片：显示描述、标签与全部监控字段" aria-label="卡片"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/></svg><span>卡片</span></button>
+                </div>
+                <button type="button" class="btn ghost sm home-look-btn" id="homeLookBtn" title="壁纸、遮罩与导航（全部页面生效）" aria-label="外观"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.8-4.6 3.4 3.2 2.6-2.4 4.2 3.8"/></svg><span>外观</span></button>
+                <button type="button" class="btn ghost sm" id="homeAddLink" title="添加网址并展示到首页">＋ 添加</button>
+                <button type="button" class="btn ghost sm" id="homeEditBtn" title="整理首页：拖动图标调整顺序、移除图标、选择要展示的网址" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="m14.5 7.5 3 3"/></svg><span>编辑</span></button>
+              </div>
+            </div>
             <div class="home-search" id="homeSearchBox">
               <!-- 搜索框必须自成一个 <form role="search">：页面上还有一个管理密码框，两者都不在表单里时，
                    浏览器会把它们归进同一个「虚拟登录表单」，把可见的搜索框当成用户名——手机上一点搜索框
@@ -119,18 +134,14 @@
               <div class="home-search-dropdown" id="homeSearchList" role="listbox" aria-label="搜索结果" hidden></div>
             </div>
             <div class="alert-strip home-notice" id="homeNotice" hidden aria-label="需要留意的站点"></div>
-            <div class="home-toolbar">
-              <span class="toolbar-meta" id="homeCount"></span>
+            <!-- 编辑首页时的说明条：吸在顶部，随时能「完成」。 -->
+            <div class="home-arrange-bar" id="homeArrangeBar" role="region" aria-label="编辑首页" hidden>
+              <span class="arrange-tip" id="homeArrangeTip"></span>
               <span class="spacer"></span>
-              <div class="home-view-toggle" id="homeViewToggle" role="group" aria-label="首页显示方式">
-                <button type="button" data-home-view="minimal" title="极简：只留图标和名字，有事要处理时才显示指标"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="7" r="2.2"/><circle cx="12" cy="7" r="2.2"/><circle cx="17.5" cy="7" r="2.2"/><circle cx="6.5" cy="16" r="2.2"/><circle cx="12" cy="16" r="2.2"/><circle cx="17.5" cy="16" r="2.2"/></svg><span>极简</span></button>
-                <button type="button" data-home-view="tiles" title="信息：图标 + 余额 / 到期小组件，保留分组"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="16" height="6.5" rx="1.5"/></svg><span>信息</span></button>
-                <button type="button" data-home-view="cards" title="卡片：显示描述、标签与全部监控字段"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/></svg><span>卡片</span></button>
-              </div>
-              <button type="button" class="btn ghost sm home-look-btn" id="homeLookBtn" title="壁纸、遮罩与导航（全部页面生效）" aria-label="外观"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.8-4.6 3.4 3.2 2.6-2.4 4.2 3.8"/></svg><span>外观</span></button>
-              <button type="button" class="btn ghost sm" id="homeAddLink">＋ 添加</button>
-              <button type="button" class="btn ghost sm" id="chooseHomeLinks">自定义首页</button>
+              <button type="button" class="btn ghost sm" id="chooseHomeLinks" title="从站点看板和各分组里勾选要展示到首页的网址">选择网址…</button>
+              <button type="button" class="btn sm" id="homeArrangeDone">完成</button>
             </div>
+            <div class="sr-only" id="homeArrangeLive" aria-live="polite"></div>
             <div class="home-body" id="homeBody">
               <!-- 待办是静态节点、自成一个表单：renderHome() 只重绘 #homeList，输入到一半的字和焦点不会被搜索 / 刷新冲掉；
                    输入框带着与搜索框相同的密码管理器忽略标记，理由见上方搜索框的注释。 -->
@@ -148,6 +159,9 @@
                     <button type="submit" class="todo-add" id="todoAdd" title="添加待办" aria-label="添加待办"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
                   </form>
                   <div class="todo-state" id="todoState" hidden></div>
+                  <!-- 排序结果念给读屏听；用法说明挂在每个把手的 aria-describedby 上，只写一份。 -->
+                  <div class="sr-only" id="todoLive" aria-live="polite"></div>
+                  <p class="sr-only" id="todoSortHint">按上下方向键调整顺序，Home / End 移到最前 / 最后；回车打开排序菜单。</p>
                   <ul class="todo-list" id="todoList" aria-label="未完成的待办"></ul>
                   <details class="todo-done" id="todoDone" hidden>
                     <summary><span id="todoDoneLabel">已完成</span><button type="button" class="todo-clear" id="todoClear" title="删除全部已完成的待办">清除已完成</button></summary>
@@ -160,6 +174,7 @@
                 <div id="homeEmpty" class="empty-state" style="display:none"></div>
               </div>
             </div>
+            <div class="home-foot"><span class="toolbar-meta" id="homeCount"></span></div>
           </div>
           <div id="bmPage" hidden>
             <div class="alert-strip" id="bmAlerts" hidden aria-label="站点数据预警"></div>
@@ -426,13 +441,28 @@
     </div>
   </div>
 
+  <!-- 待办排序菜单：点一下把手弹出（拖不动、不想拖的时候用）。放在列表之外，免得被列表的滚动区裁掉。 -->
+  <div class="todo-sort-menu" id="todoSortMenu" role="menu" aria-label="调整顺序" hidden>
+    <button type="button" role="menuitem" data-todo-sort="top"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M12 20V9m0 0-4.5 4.5M12 9l4.5 4.5"/></svg>置顶</button>
+    <button type="button" role="menuitem" data-todo-sort="up"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6m0 0-5 5m5-5 5 5"/></svg>上移一位</button>
+    <button type="button" role="menuitem" data-todo-sort="down"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13m0 0-5-5m5 5 5-5"/></svg>下移一位</button>
+    <button type="button" role="menuitem" data-todo-sort="bottom"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19h14M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5"/></svg>移到最后</button>
+  </div>
+
   <div class="modal-mask" id="homeModal">
-    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
+    <!-- 头（标题 + 筛选）和尾（计数 + 保存）固定，只有中间的清单滚动：上百个网址时不用滚到底才能点「保存」。 -->
+    <div class="modal modal-wide home-picker" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
       <div class="modal-head"><div><h3 id="homeModalTitle">自定义收藏首页</h3><div class="modal-sub">从站点看板与各分组勾选要展示的内容，首页与原位置保持同步。</div></div></div>
-      <div id="homeChoices"></div>
-      <div class="hint" id="homeSelectionCount" aria-live="polite"></div>
+      <div class="picker-bar">
+        <label class="search-box" for="homeFilter">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          <input class="input" id="homeFilter" type="search" placeholder="筛选名称、网址或分组" autocomplete="off" aria-label="筛选网址" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+        </label>
+        <label class="picker-only"><input type="checkbox" id="homeOnlyChecked"> 只看已选</label>
+      </div>
+      <div id="homeChoices" class="picker-list" tabindex="-1"></div>
       <div class="hint danger-text" id="homeError" role="alert" hidden></div>
-      <div class="modal-actions"><button class="btn ghost sm" id="homeSelectAll">全选</button><button class="btn ghost sm" id="homeSelectNone">清空选择</button><span style="flex:1"></span><button class="btn ghost sm" id="homeCancel">取消</button><button class="btn sm" id="homeSave">保存</button></div>
+      <div class="modal-actions picker-foot"><span class="hint" id="homeSelectionCount" aria-live="polite"></span><span class="spacer"></span><button class="btn ghost sm" id="homeSelectAll">全选</button><button class="btn ghost sm" id="homeSelectNone">清空选择</button><button class="btn ghost sm" id="homeCancel">取消</button><button class="btn sm" id="homeSave">保存</button></div>
     </div>
   </div>
 
@@ -894,6 +924,7 @@
       // const（TDZ ReferenceError），或者用错误的解锁状态发出请求。
       // 首次加载由 loadConfigs() 结束时的 refreshActiveView() 统一补上。
       if (STATE_LOADED) refreshActiveView(currentViewName());
+      if (STATE_LOADED && ARRANGE.on && mainName !== 'bookmarks') leaveArrange();   // 先判 STATE_LOADED：脚本顶部的首次调用发生在 ARRANGE 声明之前
       applyLook();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1333,7 +1364,24 @@
       $('libChips').innerHTML = pages.map(p =>
         `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
+      syncSubnavScroll(true);
     }
+    // 分组多到侧栏放不下时，只有分组这一段滚动（「签到中心 / 系统设置」始终留在原位）。滚动条藏起来了，
+    // 上下还有内容就在那一端淡出作提示；换页后把当前分组带进视野。
+    function syncSubnavScroll(reveal) {
+      const nav = $('libSubnav');
+      if (!nav.clientHeight) return;
+      const active = reveal === true && nav.querySelector('.subnav-item.active');
+      if (active) {
+        const top = active.offsetTop - nav.offsetTop, bottom = top + active.offsetHeight;
+        if (top < nav.scrollTop) nav.scrollTop = top - 6;
+        else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight + 6;
+      }
+      nav.classList.toggle('fade-top', nav.scrollTop > 2);
+      nav.classList.toggle('fade-bottom', nav.scrollTop + nav.clientHeight < nav.scrollHeight - 2);
+    }
+    $('libSubnav').addEventListener('scroll', syncSubnavScroll, { passive: true });
+    window.addEventListener('resize', syncSubnavScroll);
     function onLibNavClick(e) {
       if (Date.now() < SORT.blockClickUntil) return;  // 拖拽结束后浏览器仍会补一次 click
       const btn = e.target.closest('[data-lib],[data-act="add-group"]');
@@ -1567,6 +1615,7 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     function renderLibrary() {
+      if (ARRANGE.on && LIB.page !== '@home') leaveArrange();
       if (!['@home', 'monitor'].includes(LIB.page) && STATE_LOADED && !findGroup(LIB.page)) { LIB.page = '@home'; history.replaceState(null, '', libHash()); }
       renderLibNav();
       const isHome = LIB.page === '@home';
@@ -1645,25 +1694,39 @@
       if (alert && !f.error) title += ` · ${ALERT_META[alert].label}`;
       return `<span class="tile-metric${cls}" title="${escapeHtml(title)}">${alert ? '<span class="tile-metric-dot"></span>' : ''}${escapeHtml(text)}</span>`;
     }
+    // 编辑首页时，图标不再是链接（没有 href：点了不跳转，长按也不会弹出浏览器的链接菜单），
+    // 整块可拖、可聚焦，角上多一个「移除」；平时的「···」菜单收起。arrangeId：分组里是网址 id，看板里是站点下标。
+    const ARRANGE = { on: false, tile: null, grid: null, pointerId: null, touch: false, x: 0, y: 0, lastX: 0, lastY: 0, grabX: 0, grabY: 0, active: false, timer: 0, raf: 0, queue: Promise.resolve() };
+    function tileHrefAttrs(o) {
+      const safe = safeUrl(o.url);
+      return ARRANGE.on ? '' : `href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(o.name)} · ${escapeHtml(o.url)}"`;
+    }
+    function tileArrangeAttrs(o) {
+      return ARRANGE.on ? ` data-arrange-id="${escapeHtml(o.arrangeId)}" tabindex="0" role="group" aria-roledescription="可排序的图标" aria-label="${escapeHtml(o.name)}：方向键调整顺序，Delete 从首页移除"` : '';
+    }
+    function tileExtrasHtml(o) {
+      return ARRANGE.on
+        ? `<button type="button" class="tile-remove" data-arrange-remove title="从首页移除" aria-label="从首页移除 ${escapeHtml(o.name)}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>`
+        : `<details class="action-menu tile-menu">
+          <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(o.name)} 的更多操作">···</summary>
+          <div class="menu-popover">${o.menu}</div>
+        </details>`;
+    }
     // 图标：不带卡片底板，只有大图标和名字；域名放进 title，不占版面。
     function homeTileHtml(o) {
-      const safe = safeUrl(o.url);
       const host = siteHost(o.url) || '未设置域名';
-      return `<div class="home-tile tone-${escapeHtml(o.tone)}" style="--hue:${hueOf(host)}">
-        <a class="tile-link" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(o.name)} · ${escapeHtml(o.url)}">
+      return `<div class="home-tile tone-${escapeHtml(o.tone)}" style="--hue:${hueOf(host)}"${tileArrangeAttrs(o)}>
+        <a class="tile-link" ${tileHrefAttrs(o)}>
           ${siteAvatarHtml(o.name, o.url, 'tile-avatar', o.emoji, o.customIcon)}
           <span class="tile-title">${escapeHtml(o.name)}</span>
           ${o.metric || ''}
         </a>
-        <details class="action-menu tile-menu">
-          <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(o.name)} 的更多操作">···</summary>
-          <div class="menu-popover">${o.menu}</div>
-        </details>
+        ${tileExtrasHtml(o)}
       </div>`;
     }
     function homeLinkTileHtml(l, g) {
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
-      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: l.custom_icon, tone: g.color, menu:
+      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: l.custom_icon, tone: g.color, arrangeId: l.id, menu:
         `<button onclick="editLink('${gid}','${lid}')">编辑</button>
          <button onclick="copyLinkUrl('${gid}','${lid}')">复制网址</button>
          <button onclick="openLibPage('${gid}')">前往「${escapeHtml(g.name)}」</button>
@@ -1680,7 +1743,7 @@
     // 极简密度下的看板站点：平时和普通图标一样安静，只有取数失败 / 到期这类要处理的事才亮出指标。
     function homeSiteTileHtml(b, i, quiet) {
       const metric = quiet && !bookmarkAlert(b) ? '' : siteMetricHtml(b);
-      return homeTileHtml({ name: b.name, url: b.url, tone: 'mint', metric, menu: homeSiteMenuHtml(b, i) });
+      return homeTileHtml({ name: b.name, url: b.url, tone: 'mint', metric, arrangeId: String(i), menu: homeSiteMenuHtml(b, i) });
     }
 
     // ----- 监控小组件（2×1）：名称 + 状态点 + 主数值 + 一行次要信息 -----
@@ -1711,12 +1774,12 @@
       return { state, value, unit, sub, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : '' };
     }
     function homeSiteWidgetHtml(b, i) {
-      const safe = safeUrl(b.url);
       const host = siteHost(b.url) || '未设置域名';
       const w = siteWidgetParts(b);
       const st = { cls: WIDGET_STATE_CLS[w.state], label: widgetStateLabel(w.state) };
-      return `<div class="home-tile home-widget tone-mint ${st.cls}" data-bm-index="${i}" style="--hue:${hueOf(host)}">
-        <a class="widget-link" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(b.name)} · ${escapeHtml(b.url)}">
+      const o = { name: b.name, url: b.url, arrangeId: String(i), menu: homeSiteMenuHtml(b, i) };
+      return `<div class="home-tile home-widget tone-mint ${st.cls}" data-bm-index="${i}" style="--hue:${hueOf(host)}"${tileArrangeAttrs(o)}>
+        <a class="widget-link" ${tileHrefAttrs(o)}>
           ${siteAvatarHtml(b.name, b.url, 'tile-avatar widget-avatar')}
           <span class="widget-body">
             <span class="widget-head"><span class="widget-name">${escapeHtml(b.name)}</span><span class="widget-dot" role="img" aria-label="状态：${escapeHtml(st.label)}" title="${escapeHtml(st.label)}"></span></span>
@@ -1724,10 +1787,7 @@
             <span class="widget-sub">${escapeHtml(w.sub)}</span>
           </span>
         </a>
-        <details class="action-menu tile-menu">
-          <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
-          <div class="menu-popover">${homeSiteMenuHtml(b, i)}</div>
-        </details>
+        ${tileExtrasHtml(o)}
       </div>`;
     }
     // 信息密度：配了监控字段的站点用小组件，没配的仍是普通图标。
@@ -1735,11 +1795,51 @@
       return !minimal && enabledFields(b).length ? homeSiteWidgetHtml(b, i) : homeSiteTileHtml(b, i, minimal);
     }
     function homeSiteUnits(b, minimal) { return !minimal && enabledFields(b).length ? 2 : 1; }
-    // --n：这个分组要占几格（小组件算 2 格），决定桌面上它想要的宽度；
-    // --span：手机 4 列网格里占几列——两三个网址的小分组因此可以并排，不必各占一整行。
+
+    // ----- 首页列网格 -----
+    // 图标视图是一张统一的列网格：每个分组占 min(自己的格数, 总列数) 列，所有分组落在同一组列线上——
+    // 左边线对齐、分组标题和它的第一个图标对齐，两三个网址的小分组照旧并排。列数要看主区实际放得下几格
+    // （侧栏形态、待办是否占右侧一列都会变），CSS 自己算不出「min(格数, 列数)」的跨度，所以由这里量一次、
+    // 把结果写成样式变量：--cols / --grid-w 在 #homeBody 上，--span 在各分组上。手机固定 4 列，格子宽度随屏。
+    const HOME_GRID = { cols: 4, max: 10 };
+    const HOME_PHONE_QUERY = '(max-width: 760px)';
+    function measureHomeGrid() {
+      const body = $('homeBody'), list = $('homeList');
+      if (!body.clientWidth || typeof getComputedStyle !== 'function') return false;   // 首页没显示 / 没有样式系统：沿用上次的结果
+      if (window.matchMedia && window.matchMedia(HOME_PHONE_QUERY).matches) {
+        setCssVar(body, '--grid-w', '');
+        return setHomeCols(4);
+      }
+      const css = getComputedStyle(list);
+      const tile = parseFloat(css.getPropertyValue('--tile-w')) || 96, gap = parseFloat(css.getPropertyValue('--tile-gap')) || 10;
+      // 待办占右侧一列时（#homeBody 此时是两列网格），主区 = 总宽 − 待办列 − 列距。
+      const bodyCss = getComputedStyle(body), todo = $('homeTodo');
+      const side = bodyCss.display === 'grid' && !todo.hidden;
+      const room = body.clientWidth - (side ? todo.offsetWidth + (parseFloat(bodyCss.columnGap) || 0) : 0);
+      const cols = Math.max(3, Math.min(HOME_GRID.max, Math.floor((room + gap) / (tile + gap))));
+      setCssVar(body, '--grid-w', (cols * (tile + gap) - gap) + 'px');
+      return setHomeCols(cols);
+    }
+    function setHomeCols(cols) {
+      const changed = cols !== HOME_GRID.cols;
+      HOME_GRID.cols = cols;
+      setCssVar($('homeBody'), '--cols', String(cols));
+      return changed;
+    }
+    // 窗口 / 侧栏宽度变了：重新量；列数真变了才去改各分组的跨度。
+    function relayoutHomeGrid() {
+      if (!measureHomeGrid()) return;
+      $('homeList').querySelectorAll('.home-section').forEach(sec => {
+        setCssVar(sec, '--span', String(Math.min(Number(sec.dataset.units) || 1, HOME_GRID.cols)));
+      });
+    }
+    if (typeof ResizeObserver === 'function') new ResizeObserver(relayoutHomeGrid).observe($('homeBody'));
+    else window.addEventListener('resize', relayoutHomeGrid);
+
+    // --n：这个分组占几格（小组件算 2 格）；--span：它在列网格里跨几列 = min(格数, 当前列数)。
     function homeSectionHtml(page, title, iconName, tone, count, body, units) {
       const n = Math.max(1, units || count);
-      return `<section class="home-section tone-${escapeHtml(tone)}" aria-label="${escapeHtml(title)}" style="--n:${Math.min(n, 12)};--span:${Math.min(n, 4)}">
+      return `<section class="home-section tone-${escapeHtml(tone)}" aria-label="${escapeHtml(title)}" data-units="${n}" style="--n:${Math.min(n, 12)};--span:${Math.min(n, HOME_GRID.cols)}">
         <div class="section-label"><button type="button" class="btn ghost sm" onclick="openLibPage('${escapeHtml(page)}')" title="打开「${escapeHtml(title)}」">${icon(iconName)} ${escapeHtml(title)}</button><span class="count">${count}</span></div>
         ${body}
       </section>`;
@@ -1761,7 +1861,8 @@
     });
 
     function renderHome() {
-      const view = homeView();
+      // 编辑首页只在图标视图里做：卡片密度下临时按「信息」密度画，点「完成」后回到原来的密度。
+      const view = ARRANGE.on && homeView() === 'cards' ? 'tiles' : homeView();
       const minimal = view === 'minimal';
       const tiles = view !== 'cards';
       const query = $('bmSearch').value || '';
@@ -1775,35 +1876,44 @@
       $('bmVisibleCount').textContent = label;
       $('homeCount').textContent = total ? `首页 ${label}` : '';
       document.querySelectorAll('#homeViewToggle [data-home-view]').forEach(b => {
-        const on = b.dataset.homeView === view;
+        const on = b.dataset.homeView === homeView();
         b.classList.toggle('active', on);
         b.setAttribute('aria-pressed', String(on));
       });
       renderHomeNotice();
+      // 没有编辑权限的访客用不上「添加 / 编辑」：收起来，工具条只剩密度和外观。
+      $('homeAddLink').hidden = $('homeEditBtn').hidden = !canEdit();
+      // 先定版面再出图标：待办在不在、是哪种密度，都会改变主区放得下几列。
+      // 正在改某一条待办时不重绘它：搜索框每敲一个字都会走到这里，不能把编辑到一半的输入框冲掉。
+      $('homeList').className = 'home-list is-' + (tiles ? 'tiles' : 'cards') + (minimal ? ' is-minimal' : '');
+      $('homeBody').classList.toggle('is-tiles', tiles);
+      if (!TODO.editing) renderTodos();
+      measureHomeGrid();
       // 与侧栏顺序一致：站点看板在前，其后按分组顺序。
       const sections = [];
       if (sites.length) sections.push(homeSectionHtml('monitor', '站点看板', 'pulse', 'mint', sites.length, tiles
-        ? `<div class="tile-grid">${sites.map(({ b, i }) => homeSiteHtml(b, i, minimal)).join('')}</div>`
+        ? `<div class="tile-grid" data-arrange-group="@sites">${sites.map(({ b, i }) => homeSiteHtml(b, i, minimal)).join('')}</div>`
         : `<div class="bookmark-grid">${sites.map(({ b, i }) => bookmarkCardHtml(b, i, { home: true })).join('')}</div>`,
         sites.reduce((n, { b }) => n + homeSiteUnits(b, minimal), 0)));
       for (const g of groups) sections.push(homeSectionHtml(g.id, g.name, g.icon, g.color, g.links.length, tiles
-        ? `<div class="tile-grid">${g.links.map(l => homeLinkTileHtml(l, g)).join('')}</div>`
+        ? `<div class="tile-grid" data-arrange-group="${escapeHtml(g.id)}">${g.links.map(l => homeLinkTileHtml(l, g)).join('')}</div>`
         : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`));
-      $('homeList').className = 'home-list is-' + (tiles ? 'tiles' : 'cards') + (minimal ? ' is-minimal' : '');
       $('homeList').innerHTML = sections.join('');
       if (count) hideEmpty($('homeEmpty'));
       else showEmpty($('homeEmpty'), total
         ? { icon: 'search', title: '没有匹配的网址', text: '换个关键词试试，或清空搜索框。' }
-        : { icon: 'star', title: '把常用网址放到首页', text: '点击「自定义首页」从站点看板和各分组里挑选，或在任意卡片的「···」菜单中选择「展示到首页」。', actions: [{ label: '自定义首页', onclick: 'openHomeModal()' }] });
-      // 正在改某一条待办时不重绘它：搜索框每敲一个字都会走到这里，不能把编辑到一半的输入框冲掉。
-      if (!TODO.editing) renderTodos();
+        : { icon: 'star', title: '把常用网址放到首页', text: '从站点看板和各分组里挑选要放上来的网址，或在任意卡片的「···」菜单中选择「展示到首页」。之后点右上角的「编辑」可以拖动排序。', actions: [{ label: '自定义首页', onclick: 'openHomeModal()' }] });
       pumpFavicons();
     }
     // ===== 首页待办 =====
     // 数据在服务端的 data/todos.json（读写都要管理权限，未解锁时 /api/configs 不下发）；
     // 「显示 / 收起 / 隐藏」记在本浏览器的 Cookie bh_home_todo 里，各设备可以各设各的。
     const TODO_PREFS = ['open', 'closed', 'off'];
-    const TODO = { editing: '', busy: false };
+    // queue：写操作排成一队按序发出；inflight：队里还有几个没回来；resync：队里有失败的，清空后向服务端重新要一份；
+    // moveJob：还没发出去的那次挪动（连按方向键时并成一次请求）。
+    const TODO = { editing: '', queue: Promise.resolve(), inflight: 0, resync: false, moveJob: null };
+    const TODO_SORT = { row: null, list: null, pointerId: null, x: 0, y: 0, lastY: 0, grabY: 0, active: false, raf: 0, endedAt: 0 };
+    const TODO_MENU = { id: '', top: 0 };
     // 没选过时的默认值看版面：宽屏有右侧一列放得下，默认展开；窄屏 / 手机上待办叠在图标上方，
     // 默认收成一条（点一下展开），免得把图标挤出首屏。选过之后以 Cookie 为准。
     const TODO_WIDE_QUERY = '(min-width: 1100px)';
@@ -1816,17 +1926,18 @@
       const resp = await fetch(url, { method, headers: adminHeaders(), body: body === undefined ? undefined : JSON.stringify(body) });
       let data;
       try { data = await resp.json(); } catch (_) { data = { ok: false, error: 'HTTP ' + resp.status }; }
-      if (data && Array.isArray(data.todos)) STATE.todos = data.todos;
       return data;
     }
-    function todoItemHtml(t) {
+    // sortable：未完成的那一组里不止一条时才给把手——只有一条，没什么可排的。
+    function todoItemHtml(t, sortable) {
       const id = escapeHtml(t.id), text = escapeHtml(t.text);
       if (TODO.editing === t.id) {
         return `<li class="todo-item is-editing" data-todo="${id}"><input class="todo-edit" data-todo-edit type="text" maxlength="200" value="${text}" aria-label="修改待办内容，回车保存，Esc 取消" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"></li>`;
       }
       const stamp = t.done ? (t.done_at ? '完成于 ' + shortStamp(t.done_at) : '') : (t.created_at ? '记于 ' + shortStamp(t.created_at) : '');
-      return `<li class="todo-item${t.done ? ' is-done' : ''}" data-todo="${id}">
-        <input type="checkbox" class="todo-check" id="todo-${id}" data-todo-check${t.done ? ' checked' : ''} aria-label="${t.done ? '已完成' : '标记为完成'}：${text}" title="Alt + ↑/↓ 调整顺序">
+      const grip = sortable ? `<button type="button" class="todo-grip" data-todo-grip aria-label="排序：${text}" aria-describedby="todoSortHint" aria-haspopup="menu" aria-expanded="false" title="按住拖动排序；点一下出排序菜单">${icon('grip')}</button>` : '';
+      return `<li class="todo-item${t.done ? ' is-done' : ''}${sortable ? ' is-sortable' : ''}" data-todo="${id}">
+        ${grip}<input type="checkbox" class="todo-check" id="todo-${id}" data-todo-check${t.done ? ' checked' : ''} aria-label="${t.done ? '已完成' : '标记为完成'}：${text}" title="Alt + ↑/↓ 调整顺序">
         <label class="todo-text" for="todo-${id}"${stamp ? ` title="${escapeHtml(stamp)}"` : ''}>${text}</label>
         <span class="todo-actions">
           <button type="button" class="todo-icon-btn" data-todo-act="edit" title="修改" aria-label="修改：${text}">${icon('edit')}</button>
@@ -1835,11 +1946,15 @@
       </li>`;
     }
     function renderTodos() {
+      if (TODO_SORT.active) return;   // 拖到一半不重绘：DOM 一换，手里那一行就没了；松手时会补画
+      closeTodoSortMenu();
       const box = $('homeTodo');
       const pref = todoPref();
       // 私密模式未解锁时整页都是空壳，待办也不出现；其余情况由 Cookie 决定显示与否。
+      const wasHidden = box.hidden;
       box.hidden = pref === 'off' || !STATE_LOADED || !!(STATE.private && STATE.locked);
       $('homeBody').classList.toggle('has-todo', !box.hidden);
+      if (box.hidden !== wasHidden) relayoutHomeGrid();   // 右侧那一列出现 / 消失，主区放得下的列数跟着变
       if (box.hidden) return;
       const open = pref !== 'closed';
       const items = todoItems();
@@ -1858,31 +1973,70 @@
       else if (!items.length) state.textContent = '还没有待办。在上面记下一件接下来要做的事吧。';
       else if (!pending.length) state.textContent = '清单清空了，做得好。';
       else state.hidden = true;
-      $('todoList').innerHTML = pending.map(todoItemHtml).join('');
+      $('todoList').innerHTML = pending.map(t => todoItemHtml(t, pending.length > 1)).join('');
       $('todoList').hidden = !pending.length;
       $('todoDone').hidden = !done.length;
       $('todoDoneLabel').textContent = `已完成 ${done.length}`;
-      $('todoDoneList').innerHTML = done.map(todoItemHtml).join('');
+      $('todoDoneList').innerHTML = done.map(t => todoItemHtml(t, false)).join('');
     }
     // 重绘会把焦点丢回 <body>：键盘用户每勾一条就得从页头重新 Tab 过来。这里把焦点放回同一条（或相邻的一条）。
     function focusTodo(id, selector) {
       const row = id && $('homeTodo').querySelector(`[data-todo="${CSS.escape(id)}"]`);
-      const target = row && row.querySelector(selector || '[data-todo-check]');
+      const target = row && (row.querySelector(selector || '[data-todo-check]') || row.querySelector('[data-todo-check]'));
       if (target) target.focus(); else $('todoInput').focus();
     }
-    async function todoRun(call, focusId, selector) {
-      if (TODO.busy) return false;
-      if (!guardAdmin()) { renderTodos(); return false; }
-      TODO.busy = true;
-      $('homeTodo').classList.add('is-busy');
-      let data;
-      try { data = await call(); } catch (e) { data = { ok: false, error: e.message }; }
-      TODO.busy = false;
+    const TODO_FOCUSABLE = ['[data-todo-grip]', '[data-todo-check]', '[data-todo-act="edit"]', '[data-todo-act="delete"]'];
+    function todoFocusKey() {
+      const at = document.activeElement, row = at && at.closest ? at.closest('#homeTodo [data-todo]') : null;
+      const sel = row ? TODO_FOCUSABLE.find(q => at.matches(q)) : '';
+      return sel ? { id: row.dataset.todo, sel } : null;
+    }
+    // 重绘，但焦点留在原来那一条的原来那个控件上。正在改某一条时不动：输入到一半的字不能被冲掉。
+    function refreshTodos() {
+      if (TODO.editing) return;
+      const key = todoFocusKey();
+      renderTodos();
+      if (key) focusTodo(key.id, key.sel);
+    }
+    function todoSignature(items) { return items.map(t => `${t.id}${t.done ? '+' : '-'}${t.text}`).join('\n'); }
+    // 队列清空时对一次账：采用服务端带回的整份列表；队里有失败的（或这一份拿不到）就重新要一份。
+    // 和本地已经画出来的一样就不重绘——乐观更新做对了的时候，界面不该再闪一下。
+    async function settleTodos(last) {
+      let list = last && last.ok && Array.isArray(last.todos) ? last.todos : null;
+      if (TODO.resync || !list) {
+        TODO.resync = false;
+        try { const fresh = await todoApi('/api/todos', 'GET'); list = fresh.ok && Array.isArray(fresh.todos) ? fresh.todos : null; } catch (_) { list = null; }
+      }
+      if (TODO.inflight) return;   // 等的这一会儿又有新操作入队：由它们来收尾
       $('homeTodo').classList.remove('is-busy');
-      if (!data.ok) toast(data.error || '待办保存失败', 'err');
-      renderTodos();   // 失败也重绘一次：把没保存成功的勾选状态还原回去
-      if (focusId !== undefined) focusTodo(focusId, selector);
-      return !!data.ok;
+      if (!list) return;
+      const shown = todoSignature(todoItems());
+      STATE.todos = list;
+      if (todoSignature(list) !== shown) refreshTodos();
+    }
+    // 写操作排成一队按序发出。以前是「上一个没回来就丢掉这一个」：连着勾两条，第二条会被悄悄还原。
+    // local() 先把改动落到本地并画出来（乐观更新）；响应只在队列清空时才采用——中途采用，
+    // 会把后面几步还没落地的本地改动冲回去。
+    function todoRun(call, focusId, selector, local) {
+      if (!guardAdmin()) { renderTodos(); return Promise.resolve(false); }
+      if (local) {
+        local();
+        renderTodos();
+        if (focusId !== undefined) focusTodo(focusId, selector);
+      }
+      TODO.inflight++;
+      $('homeTodo').classList.add('is-busy');
+      const job = TODO.queue.then(async () => {
+        let data;
+        try { data = await call(); } catch (e) { data = { ok: false, error: e.message }; }
+        TODO.inflight--;
+        if (!data.ok) { TODO.resync = true; toast(data.error || '待办保存失败', 'err'); }
+        if (!TODO.inflight) await settleTodos(data);
+        if (!local && focusId !== undefined) focusTodo(focusId, selector);
+        return !!data.ok;
+      });
+      TODO.queue = job.then(() => {}, () => {});   // 哪一步意外抛了错，也不能让后面排着的操作永远发不出去
+      return job;
     }
     function neighbourTodoId(id) {
       const items = todoItems(), at = items.findIndex(t => t.id === id);
@@ -1894,23 +2048,201 @@
       const text = input.value.replace(/\s+/g, ' ').trim();
       TODO.editing = '';
       if (!item || !text || text === item.text) { renderTodos(); focusTodo(id, '[data-todo-act="edit"]'); return; }
-      await todoRun(() => todoApi('/api/todos/' + encodeURIComponent(id), 'PUT', { text }), id, '[data-todo-act="edit"]');
+      await todoRun(() => todoApi('/api/todos/' + encodeURIComponent(id), 'PUT', { text }), id, '[data-todo-act="edit"]', () => { item.text = text; });
     }
-    // 在「未完成」或「已完成」各自的小组里上下挪一格，再把整份顺序交给服务端。
-    async function moveTodo(id, dir) {
+    // 在「未完成」或「已完成」各自的小组里挪到第 to 位（从 0 数）。本地先挪，再告诉服务端「挪到谁的前 / 后」——
+    // 相对挪动不要求两边的列表完全一致，另一台设备刚加过一条也照样成功。返回是否真的挪了。
+    function moveTodoTo(id, to, selector) {
       const items = todoItems(), me = items.find(t => t.id === id);
-      if (!me) return;
-      const same = items.filter(t => t.done === me.done), pos = same.findIndex(t => t.id === id), swap = same[pos + dir];
-      if (!swap) return;
-      const order = items.map(t => t.id), a = order.indexOf(id), b = order.indexOf(swap.id);
-      order[a] = swap.id; order[b] = id;
-      await todoRun(() => todoApi('/api/todos/reorder', 'POST', { order }), id);
+      if (!me || !guardAdmin()) return false;
+      const same = items.filter(t => t.done === me.done), from = same.indexOf(me);
+      const pos = Math.max(0, Math.min(to, same.length - 1));
+      if (pos === from) return false;
+      const rest = items.filter(t => t !== me), others = same.filter(t => t !== me);
+      const after = pos >= others.length, anchor = others[after ? others.length - 1 : pos];
+      rest.splice(rest.indexOf(anchor) + (after ? 1 : 0), 0, me);
+      const body = after ? { after: anchor.id } : { before: anchor.id };
+      const local = () => { STATE.todos = rest; };
+      $('todoLive').textContent = `「${me.text}」移到第 ${pos + 1} 位，共 ${same.length} 项`;
+      // 同一条连着挪（按住方向键）：上一次还没发出去就只改它的目的地，不多发请求。
+      const queued = TODO.moveJob;
+      if (queued && queued.id === id && !queued.started) {
+        queued.body = body;
+        local(); renderTodos(); focusTodo(id, selector);
+        return true;
+      }
+      const job = TODO.moveJob = { id, body, started: false };
+      todoRun(() => { job.started = true; return todoApi('/api/todos/' + encodeURIComponent(id) + '/move', 'POST', job.body); }, id, selector, local);
+      return true;
     }
+    function moveTodo(id, dir, selector) {
+      const items = todoItems(), me = items.find(t => t.id === id);
+      if (!me) return false;
+      return moveTodoTo(id, items.filter(t => t.done === me.done).indexOf(me) + dir, selector);
+    }
+
+    // ----- 排序菜单：点一下把手弹出。拖拽之外的另一条路——不方便拖、不想拖的时候用它。-----
+    function closeTodoSortMenu(refocus) {
+      const menu = $('todoSortMenu');
+      if (menu.hidden) return;
+      menu.hidden = true;
+      const row = TODO_MENU.id && $('homeTodo').querySelector(`[data-todo="${CSS.escape(TODO_MENU.id)}"]`);
+      const grip = row && row.querySelector('[data-todo-grip]');
+      TODO_MENU.id = '';
+      if (grip) { grip.setAttribute('aria-expanded', 'false'); if (refocus) grip.focus(); }
+    }
+    function openTodoSortMenu(grip) {
+      const row = grip.closest('[data-todo]'), rows = todoRows($('todoList'));
+      const at = rows.indexOf(row), menu = $('todoSortMenu');
+      if (at < 0) return;
+      TODO_MENU.id = row.dataset.todo;
+      grip.setAttribute('aria-expanded', 'true');
+      menu.querySelectorAll('[data-todo-sort]').forEach(b => {
+        b.disabled = ['top', 'up'].includes(b.dataset.todoSort) ? at === 0 : at === rows.length - 1;
+      });
+      menu.hidden = false;
+      // 默认贴着把手下沿；下面放不下（手机底栏、窗口底边）就翻到上面。
+      const r = grip.getBoundingClientRect(), gap = 6;
+      const nav = document.querySelector('.sidebar');
+      const floor = nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
+      const below = r.bottom + gap + menu.offsetHeight <= floor - 8;
+      menu.style.top = Math.max(8, below ? r.bottom + gap : r.top - gap - menu.offsetHeight) + 'px';
+      menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+      TODO_MENU.top = r.top;
+      const first = menu.querySelector('[data-todo-sort]:not(:disabled)');
+      if (first) first.focus();
+    }
+    $('todoSortMenu').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-todo-sort]');
+      if (!btn || btn.disabled) return;
+      const id = TODO_MENU.id, how = btn.dataset.todoSort;
+      closeTodoSortMenu();
+      if (how === 'top' || how === 'bottom') moveTodoTo(id, how === 'top' ? 0 : Infinity, '[data-todo-grip]') || focusTodo(id, '[data-todo-grip]');
+      else moveTodo(id, how === 'up' ? -1 : 1, '[data-todo-grip]') || focusTodo(id, '[data-todo-grip]');
+    });
+    $('todoSortMenu').addEventListener('keydown', (e) => {
+      const items = Array.from($('todoSortMenu').querySelectorAll('[data-todo-sort]:not(:disabled)'));
+      const at = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTodoSortMenu(true); }
+      else if (e.key === 'Tab') closeTodoSortMenu(true);
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); items[e.key === 'Home' ? 0 : items.length - 1].focus(); }
+    });
+    // 点到菜单和把手之外、页面滚动、窗口变化：都收起来（菜单是按把手当时的位置摆的）。
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('todoSortMenu').hidden && !e.target.closest('#todoSortMenu, [data-todo-grip]')) closeTodoSortMenu();
+    }, true);
+    // 滚动事件是异步补发的：点把手之前那一下滚动（惯性、把这一行滚进视野）的事件可能在菜单打开之后才到，
+    // 所以只在把手真的挪了位置时才收。
+    window.addEventListener('scroll', () => {
+      if ($('todoSortMenu').hidden) return;
+      const row = $('homeTodo').querySelector(`[data-todo="${CSS.escape(TODO_MENU.id)}"]`), grip = row && row.querySelector('[data-todo-grip]');
+      if (!grip || Math.abs(grip.getBoundingClientRect().top - TODO_MENU.top) > 4) closeTodoSortMenu();
+    }, true);
+    window.addEventListener('resize', () => closeTodoSortMenu());
+
+    // ----- 拖拽排序 -----
+    // 鼠标可以按住整行拖；触摸 / 手写笔只能从把手拖（把手上 touch-action:none），行上的滑动留给列表自己滚动。
+    // 拖动时直接挪 DOM（让路的那几行用 FLIP 补一段位移动画），松手后按落点算出「挪到第几位」。
+    // 按下到真正拖起来之间不抢指针：原地按下再松开仍然是一次普通点击（勾选 / 弹菜单）。
+    function todoRows(list) { return Array.from((list || TODO_SORT.list).querySelectorAll('[data-todo]')); }
+    function flipTodoRows(mutate) {
+      const still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      const rows = still ? [] : todoRows().filter(r => r !== TODO_SORT.row);
+      const tops = rows.map(r => r.offsetTop);
+      mutate();
+      const moved = rows.filter((r, i) => {
+        const dy = tops[i] - r.offsetTop;
+        if (dy) { r.style.transition = 'none'; r.style.transform = `translateY(${dy}px)`; }
+        return dy;
+      });
+      if (!moved.length) return;
+      void TODO_SORT.list.offsetHeight;   // 先让「倒回原位」生效，再放开过渡
+      moved.forEach(r => { r.style.transition = 'transform .16s cubic-bezier(0.2, 0, 0, 1)'; r.style.transform = ''; });
+    }
+    // 落点：第一条「中线在指针之下」的行之前。用 offsetTop 而不是实时矩形——让路动画进行中的行，矩形是歪的。
+    function placeTodoRow(y) {
+      const { row, list } = TODO_SORT;
+      const base = list.getBoundingClientRect().top + list.clientTop - list.scrollTop;
+      const before = todoRows().find(other => other !== row && y < base + other.offsetTop + other.offsetHeight / 2) || null;
+      if (before !== row.nextElementSibling) flipTodoRows(() => list.insertBefore(row, before));
+      // 手里这一行跟着指针走（只在列表范围内）：它的「位置」已经换到落点上，这里补的是落点到指针之间的那一段。
+      const top = Math.max(-4, Math.min(list.clientHeight - row.offsetHeight + 4, y - TODO_SORT.grabY - base - list.scrollTop)) + list.scrollTop;
+      row.style.transform = `translateY(${Math.round(top - row.offsetTop)}px)`;
+    }
+    // 指针靠近列表上下沿时带着列表滚：离得越近滚得越快，滚不动了就停。
+    function stepTodoAutoScroll() {
+      TODO_SORT.raf = 0;
+      const { list, lastY } = TODO_SORT;
+      if (!TODO_SORT.active) return;
+      const r = list.getBoundingClientRect(), edge = 30;
+      const over = lastY < r.top + edge ? lastY - (r.top + edge) : lastY > r.bottom - edge ? lastY - (r.bottom - edge) : 0;
+      const from = list.scrollTop;
+      if (over) list.scrollTop = from + Math.max(-14, Math.min(14, Math.round(over / 3) || Math.sign(over)));
+      if (list.scrollTop === from) return;
+      placeTodoRow(lastY);
+      TODO_SORT.raf = requestAnimationFrame(stepTodoAutoScroll);
+    }
+    function onTodoSortMove(e) {
+      if (e.pointerId !== TODO_SORT.pointerId) return;
+      if (!TODO_SORT.active) {
+        if (Math.hypot(e.clientX - TODO_SORT.x, e.clientY - TODO_SORT.y) < 5) return;   // 小幅抖动仍算点击
+        TODO_SORT.active = true;
+        try { TODO_SORT.list.setPointerCapture(e.pointerId); } catch (_) {}
+        TODO_SORT.grabY = TODO_SORT.y - TODO_SORT.row.getBoundingClientRect().top;
+        TODO_SORT.row.classList.add('is-dragging');
+        $('homeTodo').classList.add('is-sorting');
+        const picked = window.getSelection && window.getSelection();
+        if (picked && picked.removeAllRanges) picked.removeAllRanges();
+      }
+      e.preventDefault();
+      TODO_SORT.lastY = e.clientY;
+      placeTodoRow(e.clientY);
+      if (!TODO_SORT.raf) TODO_SORT.raf = requestAnimationFrame(stepTodoAutoScroll);
+    }
+    function endTodoSort(commit) {
+      const { row, list, active, pointerId } = TODO_SORT;
+      window.removeEventListener('pointermove', onTodoSortMove);
+      window.removeEventListener('pointerup', onTodoSortUp);
+      window.removeEventListener('pointercancel', onTodoSortCancel);
+      window.removeEventListener('keydown', onTodoSortKey, true);
+      if (TODO_SORT.raf) cancelAnimationFrame(TODO_SORT.raf);
+      Object.assign(TODO_SORT, { row: null, list: null, pointerId: null, active: false, raf: 0 });
+      if (!row || !active) return;
+      try { list.releasePointerCapture(pointerId); } catch (_) {}
+      $('homeTodo').classList.remove('is-sorting');
+      TODO_SORT.endedAt = Date.now();   // 松手后浏览器可能补发一次 click：别让它顺手把这一条勾掉
+      // 落点按「后面那一行是谁」换算成位次，不直接数 DOM：拖的这一会儿列表可能已经被别的响应更新过。
+      const id = row.dataset.todo, next = row.nextElementSibling;
+      const others = todoItems().filter(t => !t.done && t.id !== id).map(t => t.id);
+      const to = next && others.includes(next.dataset.todo) ? others.indexOf(next.dataset.todo) : others.length;
+      // 没挪成（放回原位 / 按 Esc 取消）也重画一遍：回到权威顺序，顺带清掉动画留下的行内样式。
+      if (!(commit && moveTodoTo(id, to, '[data-todo-grip]'))) refreshTodos();
+    }
+    function onTodoSortUp(e) { if (e.pointerId === TODO_SORT.pointerId) endTodoSort(true); }
+    function onTodoSortCancel(e) { if (e.pointerId === TODO_SORT.pointerId) endTodoSort(false); }
+    function onTodoSortKey(e) { if (e.key === 'Escape' && TODO_SORT.active) { e.preventDefault(); e.stopPropagation(); endTodoSort(false); } }
+    $('todoList').addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || TODO.editing || TODO_SORT.row || !canEdit()) return;
+      const row = e.target.closest('.todo-item.is-sortable');
+      if (!row) return;
+      const onGrip = !!e.target.closest('[data-todo-grip]');
+      if (!onGrip && (e.pointerType !== 'mouse' || e.target.closest('.todo-actions'))) return;
+      Object.assign(TODO_SORT, { row, list: e.currentTarget, pointerId: e.pointerId, x: e.clientX, y: e.clientY, lastY: e.clientY, active: false });
+      window.addEventListener('pointermove', onTodoSortMove, { passive: false });
+      window.addEventListener('pointerup', onTodoSortUp);
+      window.addEventListener('pointercancel', onTodoSortCancel);
+      window.addEventListener('keydown', onTodoSortKey, true);
+    });
+    $('homeTodo').addEventListener('click', (e) => {
+      if (Date.now() - TODO_SORT.endedAt < 350) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+
     $('todoForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const input = $('todoInput'), text = input.value.replace(/\s+/g, ' ').trim();
       if (!text) { input.focus(); return; }
-      if (await todoRun(() => todoApi('/api/todos', 'POST', { text }))) input.value = '';
+      if (await todoRun(() => todoApi('/api/todos', 'POST', { text })) && input.value.replace(/\s+/g, ' ').trim() === text) input.value = '';
       input.focus();
     });
     $('todoCollapse').addEventListener('click', () => {
@@ -1921,16 +2253,24 @@
       e.preventDefault();   // 按钮在 <summary> 里：别顺带把「已完成」折叠起来
       const n = todoItems().filter(t => t.done).length;
       if (!n || !confirm(`删除 ${n} 条已完成的待办？`)) return;
-      await todoRun(() => todoApi('/api/todos/clear_done', 'POST'), '');
+      await todoRun(() => todoApi('/api/todos/clear_done', 'POST'), '', undefined, () => { STATE.todos = todoItems().filter(t => !t.done); });
     });
     $('homeTodo').addEventListener('change', (e) => {
       const box = e.target.closest('[data-todo-check]'), row = box && box.closest('[data-todo]');
       if (!row) return;
       const id = row.dataset.todo, done = box.checked, next = neighbourTodoId(id);
       // 勾完一条，焦点落到同组的下一条上，方便连续处理；组里没别的了就回输入框。
-      todoRun(() => todoApi('/api/todos/' + encodeURIComponent(id), 'PUT', { done }), next);
+      todoRun(() => todoApi('/api/todos/' + encodeURIComponent(id), 'PUT', { done }), next, undefined,
+        () => { const item = todoItems().find(t => t.id === id); if (item) item.done = done; });
     });
     $('homeTodo').addEventListener('click', (e) => {
+      const grip = e.target.closest('[data-todo-grip]');
+      if (grip) {
+        const mine = TODO_MENU.id === grip.closest('[data-todo]').dataset.todo;
+        closeTodoSortMenu();
+        if (!mine) openTodoSortMenu(grip);
+        return;
+      }
       const btn = e.target.closest('[data-todo-act]');
       if (!btn) return;
       const act = btn.dataset.todoAct, row = btn.closest('[data-todo]'), id = row ? row.dataset.todo : '';
@@ -1943,7 +2283,8 @@
         if (input) { input.focus(); input.select(); }
       } else if (act === 'delete') {
         const next = neighbourTodoId(id);
-        todoRun(() => todoApi('/api/todos/' + encodeURIComponent(id), 'DELETE'), next);
+        todoRun(() => todoApi('/api/todos/' + encodeURIComponent(id), 'DELETE'), next, undefined,
+          () => { STATE.todos = todoItems().filter(t => t.id !== id); });
       }
     });
     $('homeTodo').addEventListener('keydown', (e) => {
@@ -1953,43 +2294,330 @@
         return;
       }
       const row = e.target.closest('[data-todo]');
-      if (row && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        e.preventDefault();
-        moveTodo(row.dataset.todo, e.key === 'ArrowUp' ? -1 : 1);
-      }
+      if (!row || e.ctrlKey || e.metaKey) return;
+      const id = row.dataset.todo, key = todoFocusKey(), sel = key ? key.sel : undefined;
+      // 把手上：方向键直接挪，Home / End 到头到尾。其它控件上保留 Alt + ↑/↓（复选框上的裸方向键另有用处）。
+      const onGrip = !!e.target.closest('[data-todo-grip]') && !e.altKey && !e.shiftKey;
+      if ((onGrip || e.altKey) && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); moveTodo(id, e.key === 'ArrowUp' ? -1 : 1, sel); }
+      else if (onGrip && (e.key === 'Home' || e.key === 'End')) { e.preventDefault(); moveTodoTo(id, e.key === 'Home' ? 0 : Infinity, sel); }
     });
     // 点到别处 = 保存（和按回车一致）；Esc 已经先把 editing 清掉了，不会走到这里。
     $('homeTodo').addEventListener('focusout', (e) => {
       if (TODO.editing && e.target.closest('[data-todo-edit]')) saveTodoEdit(e.target);
     });
 
+    // ===== 编辑首页：拖动图标调整顺序 / 移除 / 选择网址 =====
+    // 首页的顺序就是「分组顺序 + 分组内顺序」，没有单独的一份：在这里拖动，等于在原分组里调整这几个网址的相对位置
+    // （没上首页的网址原地不动），分组页同步变化。所以只能在同一个分组里拖；拖起来时别的分组会变暗。
+    // 鼠标 / 手写笔按住就能拖；手指要先按住约 0.25 秒——直接滑动留给页面滚动。
+    const ARRANGE_HOLD_MS = 240;
+    function arrangeTiles(grid) { return Array.from(grid.querySelectorAll('[data-arrange-id]')); }
+    function setArrange(on) {
+      if (on && !guardAdmin()) return;
+      if (ARRANGE.tile) endArrangeDrag(false);
+      ARRANGE.on = !!on;
+      $('homePage').classList.toggle('is-arranging', ARRANGE.on);
+      $('homeArrangeBar').hidden = !ARRANGE.on;
+      $('homeEditBtn').setAttribute('aria-pressed', String(ARRANGE.on));
+      const coarse = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
+      $('homeArrangeTip').textContent = (coarse ? '按住图标约半秒再拖动' : '拖动图标') + '调整顺序（同一分组内），点图标角上的「−」从首页移除。';
+      // 拖起来之后要拦住页面滚动：touchmove 必须是非 passive 的监听，只在编辑期间挂着。
+      const list = $('homeList');
+      if (ARRANGE.on) list.addEventListener('touchmove', onArrangeTouchMove, { passive: false });
+      else list.removeEventListener('touchmove', onArrangeTouchMove);
+      renderHome();
+      if (!ARRANGE.on) $('homeEditBtn').focus();
+    }
+    // 离开首页（去别的分组 / 别的视图）时悄悄退出编辑：不重画、不抢焦点。
+    function leaveArrange() {
+      if (ARRANGE.tile) endArrangeDrag(false);
+      ARRANGE.on = false;
+      $('homePage').classList.remove('is-arranging');
+      $('homeArrangeBar').hidden = true;
+      $('homeEditBtn').setAttribute('aria-pressed', 'false');
+      $('homeList').removeEventListener('touchmove', onArrangeTouchMove);
+    }
+    function onArrangeTouchMove(e) { if (ARRANGE.active && e.cancelable) e.preventDefault(); }
+    $('homeEditBtn').addEventListener('click', () => setArrange(!ARRANGE.on));
+    $('homeArrangeDone').addEventListener('click', () => setArrange(false));
+    $('homeToolsToggle').addEventListener('click', () => {
+      const open = !$('homeTools').parentNode.classList.contains('tools-open');
+      $('homeTools').parentNode.classList.toggle('tools-open', open);
+      $('homeToolsToggle').setAttribute('aria-expanded', String(open));
+    });
+
+    // 把首页上这一组的新顺序并回原分组 / 看板的完整顺序：上了首页的那几个位置按新顺序重新填，其余原地不动。
+    function mergeHomeOrder(all, isHome, picked) {
+      const queue = picked.slice();
+      return all.map(x => (isHome(x) ? queue.shift() : x));
+    }
+    // 新顺序先落到本地（立刻按它重画，之后的操作都以它为准），再把请求排进队里按序发出；
+    // 这些请求不回写 STATE——晚到的旧响应会把后面几步冲掉。哪一步失败了，就向服务端重新要一份。
+    // 返回挪完之后该聚焦哪个图标：看板站点以下标为 id，顺序一变下标全变，得换算成新下标。
+    function persistArrange(group, ids, movedId) {
+      let url, order, focusId = movedId;
+      if (group === '@sites') {
+        const bms = STATE.bookmarks || [];
+        order = mergeHomeOrder(bms.map((_, k) => k), k => !!(bms[k] && bms[k].show_on_home), ids.map(Number));
+        if (order.some(k => !Number.isInteger(k) || !bms[k]) || new Set(order).size !== bms.length) return null;
+        STATE.bookmarks = order.map(k => bms[k]);
+        focusId = String(order.indexOf(Number(movedId)));
+        url = '/api/bookmarks/reorder';
+      } else {
+        const g = findGroup(group), links = (g && g.links) || [];
+        order = mergeHomeOrder(links.map(l => l.id), id => links.some(l => l.id === id && l.show_on_home), ids);
+        if (!g || order.some(id => !id) || new Set(order).size !== links.length) return null;
+        g.links = order.map(id => links.find(l => l.id === id));
+        url = `/api/link_groups/${encodeURIComponent(group)}/links/reorder`;
+      }
+      ARRANGE.queue = ARRANGE.queue.then(async () => {
+        let data;
+        try {
+          const resp = await fetch(url, { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ order }) });
+          data = await resp.json();
+        } catch (e) { data = { ok: false, error: e.message }; }
+        if (!data || !data.ok) { toast((data && data.error) || '排序失败', 'err'); await loadConfigs(); }
+      });
+      return { group, id: focusId };
+    }
+    function renderArrangeKeepingFocus(focus) {
+      const at = document.activeElement, tile = at && at.closest ? at.closest('#homeList [data-arrange-id]') : null;
+      const key = focus || (tile ? { group: tile.closest('[data-arrange-group]').dataset.arrangeGroup, id: tile.dataset.arrangeId } : null);
+      renderHome();
+      if (!key) return;
+      const grid = $('homeList').querySelector(`[data-arrange-group="${CSS.escape(key.group)}"]`);
+      const target = grid && (grid.querySelector(`[data-arrange-id="${CSS.escape(key.id)}"]`) || arrangeTiles(grid)[0]);
+      if (target) target.focus();
+    }
+    function announceArrange(tile, grid) {
+      const tiles = arrangeTiles(grid), name = (tile.querySelector('.tile-title, .widget-name') || {}).textContent || '';
+      $('homeArrangeLive').textContent = `「${name}」移到第 ${tiles.indexOf(tile) + 1} 个，共 ${tiles.length} 个`;
+    }
+
+    // 拖动中的图标跟着指针走（transform），其余图标用 FLIP 让路；落点规则与分组页的卡片拖拽一致（先比行、再比列）。
+    function arrangeBase(el) {   // 不含 transform 的排版位置（视口坐标）
+      const box = el.offsetParent.getBoundingClientRect();
+      return { left: box.left + el.offsetParent.clientLeft + el.offsetLeft, top: box.top + el.offsetParent.clientTop + el.offsetTop, width: el.offsetWidth, height: el.offsetHeight };
+    }
+    function followArrangePointer() {
+      const b = arrangeBase(ARRANGE.tile);
+      ARRANGE.tile.style.transform = `translate(${Math.round(ARRANGE.lastX - ARRANGE.grabX - b.left)}px, ${Math.round(ARRANGE.lastY - ARRANGE.grabY - b.top)}px) scale(1.06)`;
+    }
+    function placeArrangeTile() {
+      const { tile, grid, lastX: x, lastY: y } = ARRANGE;
+      const before = arrangeTiles(grid).find(other => {
+        if (other === tile) return false;
+        const r = arrangeBase(other);
+        return y < r.top || (y <= r.top + r.height && x < r.left + r.width / 2);
+      }) || null;
+      if (before === tile.nextElementSibling) return;
+      const still = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      const others = still ? [] : arrangeTiles(grid).filter(t => t !== tile);
+      const from = others.map(t => [t.offsetLeft, t.offsetTop]);
+      grid.insertBefore(tile, before);
+      const moved = others.filter((t, i) => {
+        const dx = from[i][0] - t.offsetLeft, dy = from[i][1] - t.offsetTop;
+        if (dx || dy) { t.style.transition = 'none'; t.style.transform = `translate(${dx}px, ${dy}px)`; }
+        return dx || dy;
+      });
+      if (moved.length) {
+        void grid.offsetHeight;
+        moved.forEach(t => { t.style.transition = 'transform .18s cubic-bezier(0.2, 0, 0, 1)'; t.style.transform = ''; });
+      }
+      announceArrange(tile, grid);
+    }
+    // 拖到视口上下沿附近时带着页面滚（手机上要让开底部标签栏）。
+    function stepArrangeScroll() {
+      ARRANGE.raf = 0;
+      if (!ARRANGE.active) return;
+      const nav = document.querySelector('.sidebar');
+      const floor = nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
+      const edge = 70, y = ARRANGE.lastY;
+      const over = y < edge ? y - edge : y > floor - edge ? y - (floor - edge) : 0;
+      const from = window.scrollY;
+      if (over) window.scrollBy(0, Math.max(-18, Math.min(18, Math.round(over / 4) || Math.sign(over))));
+      if (window.scrollY === from) return;
+      placeArrangeTile(); followArrangePointer();
+      ARRANGE.raf = requestAnimationFrame(stepArrangeScroll);
+    }
+    function startArrangeDrag() {
+      const { tile, grid } = ARRANGE;
+      ARRANGE.active = true;
+      clearTimeout(ARRANGE.timer);
+      const b = arrangeBase(tile);
+      ARRANGE.grabX = ARRANGE.x - b.left; ARRANGE.grabY = ARRANGE.y - b.top;
+      try { $('homeList').setPointerCapture(ARRANGE.pointerId); } catch (_) {}
+      tile.classList.add('is-dragging');
+      grid.classList.add('is-drag-scope');
+      $('homeList').classList.add('is-sorting');
+      if (ARRANGE.touch && navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
+      const picked = window.getSelection && window.getSelection();
+      if (picked && picked.removeAllRanges) picked.removeAllRanges();
+      followArrangePointer();
+    }
+    function onArrangeMove(e) {
+      if (e.pointerId !== ARRANGE.pointerId) return;
+      ARRANGE.lastX = e.clientX; ARRANGE.lastY = e.clientY;
+      if (!ARRANGE.active) {
+        const far = Math.hypot(e.clientX - ARRANGE.x, e.clientY - ARRANGE.y);
+        if (ARRANGE.touch) { if (far > 8) endArrangeDrag(false); return; }   // 还没按够时间就滑走了：这是在滚动页面
+        if (far < 5) return;
+        startArrangeDrag();
+      }
+      e.preventDefault();
+      placeArrangeTile();
+      followArrangePointer();
+      if (!ARRANGE.raf) ARRANGE.raf = requestAnimationFrame(stepArrangeScroll);
+    }
+    function endArrangeDrag(commit) {
+      const { tile, grid, active, pointerId } = ARRANGE;
+      clearTimeout(ARRANGE.timer);
+      window.removeEventListener('pointermove', onArrangeMove);
+      window.removeEventListener('pointerup', onArrangeUp);
+      window.removeEventListener('pointercancel', onArrangeCancel);
+      if (ARRANGE.raf) cancelAnimationFrame(ARRANGE.raf);
+      Object.assign(ARRANGE, { tile: null, grid: null, pointerId: null, active: false, raf: 0, timer: 0 });
+      if (!tile || !active) return;
+      try { $('homeList').releasePointerCapture(pointerId); } catch (_) {}
+      $('homeList').classList.remove('is-sorting');
+      const group = grid.dataset.arrangeGroup, id = tile.dataset.arrangeId, ids = arrangeTiles(grid).map(t => t.dataset.arrangeId);
+      const before = group === '@sites' ? homeSites().map(({ i }) => String(i)) : ((homeGroups().find(g => g.id === group) || {}).links || []).map(l => l.id);
+      const changed = commit && ids.length === before.length && ids.some((x, k) => x !== before[k]);
+      // 没挪成（放回原位 / 被打断）也重画一遍：回到权威顺序，顺带清掉拖动留下的行内样式。
+      renderArrangeKeepingFocus((changed && persistArrange(group, ids, id)) || { group, id });
+    }
+    function onArrangeUp(e) { if (e.pointerId === ARRANGE.pointerId) endArrangeDrag(true); }
+    function onArrangeCancel(e) { if (e.pointerId === ARRANGE.pointerId) endArrangeDrag(false); }
+    $('homeList').addEventListener('pointerdown', (e) => {
+      if (!ARRANGE.on || e.button !== 0 || ARRANGE.tile || e.target.closest('[data-arrange-remove]')) return;
+      const tile = e.target.closest('[data-arrange-id]'), grid = tile && tile.closest('[data-arrange-group]');
+      if (!grid || arrangeTiles(grid).length < 2) return;
+      const touch = e.pointerType === 'touch';
+      Object.assign(ARRANGE, { tile, grid, pointerId: e.pointerId, touch, x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY, active: false });
+      if (touch) ARRANGE.timer = setTimeout(() => { if (ARRANGE.tile === tile && !ARRANGE.active) startArrangeDrag(); }, ARRANGE_HOLD_MS);
+      window.addEventListener('pointermove', onArrangeMove, { passive: false });
+      window.addEventListener('pointerup', onArrangeUp);
+      window.addEventListener('pointercancel', onArrangeCancel);
+    });
+    // 编辑期间长按图标不弹浏览器菜单（图片另存为 / 复制之类）。
+    $('homeList').addEventListener('contextmenu', (e) => { if (ARRANGE.on && e.target.closest('[data-arrange-id]')) e.preventDefault(); });
+    function removeArrangeTile(tile) {
+      const grid = tile.closest('[data-arrange-group]'), group = grid.dataset.arrangeGroup, id = tile.dataset.arrangeId;
+      const tiles = arrangeTiles(grid), next = tiles[tiles.indexOf(tile) + 1] || tiles[tiles.indexOf(tile) - 1];
+      // 看板站点的 id 是下标，移除不改变下标；焦点交给相邻的那个图标。
+      const focus = next ? { group, id: next.dataset.arrangeId } : null;
+      const done = group === '@sites' ? toggleHomeSite(Number(id)) : toggleHomeLink(group, id);
+      Promise.resolve(done).then(() => { if (ARRANGE.on && focus) renderArrangeKeepingFocus(focus); });
+    }
+    $('homeList').addEventListener('click', (e) => {
+      if (!ARRANGE.on) return;
+      const btn = e.target.closest('[data-arrange-remove]');
+      if (btn) removeArrangeTile(btn.closest('[data-arrange-id]'));
+    });
+    $('homeList').addEventListener('keydown', (e) => {
+      if (!ARRANGE.on || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tile = e.target.closest('[data-arrange-id]');
+      if (!tile || e.target !== tile) return;
+      const grid = tile.closest('[data-arrange-group]'), tiles = arrangeTiles(grid), at = tiles.indexOf(tile);
+      const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+      if (step) {
+        e.preventDefault();
+        const to = at + step;
+        if (to < 0 || to >= tiles.length) return;
+        grid.insertBefore(tile, step < 0 ? tiles[to] : tiles[to].nextElementSibling);
+        announceArrange(tile, grid);
+        const group = grid.dataset.arrangeGroup, id = tile.dataset.arrangeId;
+        renderArrangeKeepingFocus(persistArrange(group, arrangeTiles(grid).map(t => t.dataset.arrangeId), id) || { group, id });
+      } else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeArrangeTile(tile); }
+      else if (e.key === 'Escape') { e.preventDefault(); setArrange(false); }
+    });
+
+    // ----- 自定义首页弹窗：筛选 / 只看已选 / 每组一键全选 -----
+    const HOME_PICK = '[data-home-link], [data-home-site]';
+    function homePickRows(scope, visibleOnly) {
+      return Array.from((scope || $('homeChoices')).querySelectorAll('.home-check')).filter(row => !visibleOnly || !row.hidden);
+    }
+    // 计数、每组的「n / m」和半选状态都从勾选框现算：筛选只是把行藏起来，藏着的勾选照样算数、照样保存。
     function updateHomeSelectionCount() {
-      $('homeSelectionCount').textContent = `已选择 ${$('homeChoices').querySelectorAll('input:checked').length} 项`;
+      const all = $('homeChoices').querySelectorAll(HOME_PICK);
+      const picked = Array.from(all).filter(input => input.checked).length;
+      $('homeSelectionCount').textContent = `已选择 ${picked} / ${all.length} 项`;
+      $('homeChoices').querySelectorAll('.home-choice-group').forEach(group => {
+        const inputs = Array.from(group.querySelectorAll(HOME_PICK)), on = inputs.filter(input => input.checked).length;
+        const head = group.querySelector('[data-home-all]'), count = group.querySelector('.picker-count');
+        if (count) count.textContent = `${on} / ${inputs.length}`;
+        if (head) { head.checked = !!inputs.length && on === inputs.length; head.indeterminate = on > 0 && on < inputs.length; head.disabled = !inputs.length; }
+      });
+    }
+    function applyHomeFilter() {
+      const q = $('homeFilter').value.trim().toLowerCase(), only = $('homeOnlyChecked').checked;
+      let shown = 0;
+      $('homeChoices').querySelectorAll('.home-choice-group').forEach(group => {
+        const whole = !!q && (group.dataset.pickName || '').includes(q);   // 搜到分组名：整组都算命中
+        let any = 0;
+        homePickRows(group).forEach(row => {
+          const input = row.querySelector('input');
+          const hit = (!q || whole || (row.dataset.pickText || '').includes(q)) && (!only || input.checked);
+          row.hidden = !hit;
+          if (hit) any++;
+        });
+        group.hidden = !any && (!!q || only);
+        shown += any;
+      });
+      const filtering = !!q || only;
+      $('homeSelectAll').textContent = filtering ? '全选筛选结果' : '全选';
+      $('homeSelectNone').textContent = filtering ? '取消筛选结果' : '清空选择';
+      let none = $('homeChoices').querySelector('.picker-none');
+      if (filtering && !shown) {
+        if (!none) { none = document.createElement('p'); none.className = 'hint picker-none'; $('homeChoices').appendChild(none); }
+        none.textContent = only && !q ? '还没有选中任何网址。' : '没有匹配的网址，换个关键词试试。';
+      } else if (none) none.remove();
     }
     function homeChoiceHtml(attrs, name, url, checked) {
-      return `<label class="home-check"><input type="checkbox" ${attrs}${checked ? ' checked' : ''}><span><b>${escapeHtml(name)}</b><small>${escapeHtml(url)}</small></span></label>`;
+      const text = escapeHtml(`${name || ''} ${url || ''}`.toLowerCase());
+      return `<label class="home-check" data-pick-text="${text}"><input type="checkbox" ${attrs}${checked ? ' checked' : ''}><span><b>${escapeHtml(name)}</b><small>${escapeHtml(siteHost(url) || url)}</small></span></label>`;
+    }
+    function homeChoiceGroupHtml(key, name, rows, emptyText) {
+      return `<fieldset class="home-choice-group" data-pick-name="${escapeHtml(String(name).toLowerCase())}">
+        <legend><label class="picker-all"><input type="checkbox" data-home-all="${escapeHtml(key)}" aria-label="全选「${escapeHtml(name)}」"><span>${escapeHtml(name)}</span><small class="picker-count"></small></label></legend>
+        <div class="picker-rows">${rows || `<p class="hint">${emptyText}</p>`}</div>
+      </fieldset>`;
     }
     function openHomeModal() {
       if (!guardAdmin()) return;
       $('homeError').hidden = true;
       const sites = STATE.bookmarks || [];
-      const siteBlock = sites.length ? `<fieldset class="home-choice-group"><legend>站点看板</legend>
-        ${sites.map((b, i) => homeChoiceHtml(`data-home-site="${i}"`, b.name, b.url, b.show_on_home)).join('')}
-      </fieldset>` : '';
-      const groupBlocks = libGroups().map(g => `<fieldset class="home-choice-group"><legend>${escapeHtml(g.name)}</legend>
-        ${(g.links || []).map(l => homeChoiceHtml(`data-home-group="${escapeHtml(g.id)}" data-home-link="${escapeHtml(l.id)}"`, l.name, l.url, l.show_on_home)).join('') || '<p class="hint">这个分组还没有网址。</p>'}
-      </fieldset>`).join('');
+      const siteBlock = sites.length ? homeChoiceGroupHtml('@sites', '站点看板',
+        sites.map((b, i) => homeChoiceHtml(`data-home-site="${i}"`, b.name, b.url, b.show_on_home)).join('')) : '';
+      const groupBlocks = libGroups().map(g => homeChoiceGroupHtml(g.id, g.name,
+        (g.links || []).map(l => homeChoiceHtml(`data-home-group="${escapeHtml(g.id)}" data-home-link="${escapeHtml(l.id)}"`, l.name, l.url, l.show_on_home)).join(''),
+        '这个分组还没有网址。')).join('');
       $('homeChoices').innerHTML = (siteBlock + groupBlocks) || '<p class="hint">请先新建分组并添加网址，再选择首页内容。</p>';
+      $('homeFilter').value = '';
+      $('homeOnlyChecked').checked = false;
+      applyHomeFilter();
       updateHomeSelectionCount();
       $('homeModal').classList.add('show');
-      $('homeSave').focus();
+      $('homeChoices').scrollTop = 0;
+      // 桌面端直接落在筛选框里，打字就能找；触屏上不主动聚焦，免得键盘一上来就盖掉半屏清单。
+      if (window.matchMedia && window.matchMedia('(hover: hover)').matches) $('homeFilter').focus(); else $('homeChoices').focus();
     }
     $('chooseHomeLinks').addEventListener('click', openHomeModal);
     $('homeCancel').addEventListener('click', () => $('homeModal').classList.remove('show'));
-    $('homeChoices').addEventListener('change', updateHomeSelectionCount);
-    function selectAllHomeLinks(checked) {
-      $('homeChoices').querySelectorAll('input').forEach(input => { input.checked = checked; });
+    $('homeChoices').addEventListener('change', (e) => {
+      const head = e.target.closest('[data-home-all]');
+      // 组头的勾选框 = 这一组里「当前看得见的」全选 / 全不选。
+      if (head) homePickRows(head.closest('.home-choice-group'), true).forEach(row => { row.querySelector('input').checked = head.checked; });
       updateHomeSelectionCount();
+      if ($('homeOnlyChecked').checked) applyHomeFilter();
+    });
+    $('homeFilter').addEventListener('input', applyHomeFilter);
+    $('homeOnlyChecked').addEventListener('change', applyHomeFilter);
+    // 「全选 / 清空」只动当前看得见的那些：筛选出 5 个再点全选，不会把另外 95 个也勾上。
+    function selectAllHomeLinks(checked) {
+      homePickRows(null, true).forEach(row => { row.querySelector('input').checked = checked; });
+      updateHomeSelectionCount();
+      if ($('homeOnlyChecked').checked) applyHomeFilter();
     }
     $('homeSelectAll').addEventListener('click', () => selectAllHomeLinks(true));
     $('homeSelectNone').addEventListener('click', () => selectAllHomeLinks(false));
@@ -1999,7 +2627,7 @@
       btn.disabled = true;
       $('homeError').hidden = true;
       try {
-        const checked = Array.from($('homeChoices').querySelectorAll('input:checked'));
+        const checked = Array.from($('homeChoices').querySelectorAll(HOME_PICK)).filter(input => input.checked);
         const links = checked.filter(input => input.dataset.homeLink).map(input => ({ group: input.dataset.homeGroup, id: input.dataset.homeLink }));
         // 看板站点靠下标定位，带上网址让后端核对：别处刚排过序的话会拿到 409，而不是选错站点。
         const bookmarks = checked.filter(input => input.dataset.homeSite !== undefined).map(input => {
