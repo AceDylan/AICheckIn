@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""首页待办组件与 WeTab 导入弹窗：页面结构、无障碍标注、偏好白名单、样式护栏，以及用真实页面脚本跑一遍渲染。"""
+"""首页待办组件：页面结构、无障碍标注、偏好白名单、样式护栏，以及用真实页面脚本跑一遍渲染。"""
 import copy
 import json
 import re
@@ -80,20 +80,6 @@ class PageMarkupTest(StoreIsolationMixin, unittest.TestCase):
             self.assertTrue(url.startswith("/api/todos"), url)
         self.assertNotRegex(section, r"https?://")
 
-    def test_import_modal_only_uploads_the_two_stores_it_needs(self):
-        script = _inline_script()
-        slim = script[script.index("function wetabSlim"):script.index("function wetabError")]
-        self.assertIn("'store-icon': { icons:", slim)
-        self.assertIn("'store-todo': { todos:", slim)
-        self.assertRegex(slim, r"WETAB\.notes = Array\.isArray\(notes\) \? notes\.length : 0")
-        for never in ("store-weather", "store-chatgpt", "store-setting", "store-wallpaper", "store-search"):
-            self.assertNotIn(never, script)
-        modal = self.block('id="wetabModal"', 'id="importModal"')
-        self.assertIn('role="dialog" aria-modal="true" aria-labelledby="wetabTitle"', modal)
-        self.assertRegex(modal, r'id="wetabPreview"[^>]*aria-live="polite"')
-        self.assertRegex(modal, r'id="wetab_error"[^>]*role="alert"')
-        self.assertRegex(modal, r'id="wetabDo"[^>]*disabled')
-
     def test_page_is_served_with_the_widget_and_unchanged_csp(self):
         resp = app.test_client().get("/")
         self.assertEqual(resp.status_code, 200)
@@ -101,7 +87,6 @@ class PageMarkupTest(StoreIsolationMixin, unittest.TestCase):
         csp = resp.headers["Content-Security-Policy"]
         self.assertIn("img-src 'self' data:", csp)
         self.assertIn("connect-src 'self'", csp)
-        self.assertNotIn("wetab", csp.lower())
 
 
 class StyleGuardTest(unittest.TestCase):
@@ -244,17 +229,6 @@ class TodoRenderTest(unittest.TestCase):
             assert.equal(neighbourTodoId('t1'), 't3');     // 未完成的下一条，跳过夹在中间的已完成项
             assert.equal(neighbourTodoId('t3'), 't1');
             assert.equal(neighbourTodoId('t2'), '');       // 已完成里只有它自己：焦点回输入框
-        """)
-
-    def test_wetab_slim_drops_everything_but_icons_and_todos(self):
-        self.run_js("""
-            const slim = wetabSlim({ version: '2', data: { 'store-icon': { icons: [{ name: 'p' }], dockIdList: ['x'] },
-              'store-todo': { todos: [{ name: 'l' }], updateCloudTime: 1 }, 'store-note': { notes: [{ content: 'secret' }, {}] },
-              'store-weather': { addedCity: [{ name: 'here' }] }, 'store-chatgpt': { theme: 'x' } } });
-            assert.deepEqual(slim, { data: { 'store-icon': { icons: [{ name: 'p' }] }, 'store-todo': { todos: [{ name: 'l' }] } } });
-            assert.equal(WETAB.notes, 2);
-            assert.ok(!JSON.stringify(slim).includes('secret'));
-            for (const bad of [null, 5, 'x', {}, { data: null }, { data: {} }, { data: { 'store-icon': {} } }]) assert.equal(wetabSlim(bad), null);
         """)
 
 

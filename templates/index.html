@@ -231,7 +231,6 @@
               </div></div>
             <div class="panel"><div class="panel-title">部署自检 <button class="btn sm ghost" id="runDiag" style="float:right;margin-top:-4px">重新检查</button></div><div class="note" style="margin-top:0">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
             <div class="panel"><div class="panel-title">配置恢复 <button class="btn sm ghost" id="loadBackups" style="float:right;margin-top:-4px">查看备份</button></div><div class="note" style="margin-top:0">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
-            <div class="panel"><div class="panel-title">从 WeTab 导入</div><div class="note" style="margin-top:0">在 WeTab「设置 → 备份与恢复」里导出备份（.data 文件），选到这里：网址统一收进「WeTab」分组（原来的分页 / 文件夹名变成标签），待办追加到首页待办。先预览、确认后才写入；便签、天气、壁纸等其余内容不读取也不上传。</div><div class="controls" style="margin-top:10px"><button type="button" class="btn sm ghost" id="openWetabImport">选择 WeTab 备份…</button></div></div>
             <div class="panel"><div class="panel-title">快速收藏</div><div class="note" style="margin-top:0">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
             <div class="panel"><div class="panel-title">首页与起始页</div>
               <div class="note" style="margin-top:0">把本页设为浏览器的「主页 / 启动时打开的网页」，打开浏览器就是你的收藏首页：光标自动落在搜索框，直接打字即可找收藏或搜索网页。</div>
@@ -273,31 +272,6 @@
       <div class="modal-actions">
         <button class="btn ghost sm" id="cfgCancel">取消</button>
         <button class="btn sm" id="cfgSave">保存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 从 WeTab 备份导入 -->
-  <div class="modal-mask" id="wetabModal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wetabTitle">
-      <div class="modal-head"><div><h3 id="wetabTitle">从 WeTab 导入</h3><div class="modal-sub">只取备份里的网址与待办；文件在浏览器里先裁掉其余部分，再发给本站预览。</div></div></div>
-      <div class="controls" style="margin-bottom:10px">
-        <label class="btn sm ghost" for="wetabFile" title="WeTab 导出的 .data / .json 备份">📄 选择备份文件…</label>
-        <input type="file" id="wetabFile" accept=".data,.json,application/json" hidden>
-        <span class="note" id="wetabFileName" style="margin:0"></span>
-      </div>
-      <div class="wetab-preview" id="wetabPreview" aria-live="polite" hidden></div>
-      <div class="wetab-options" id="wetabOptions" hidden>
-        <label class="home-check"><input type="checkbox" id="wetabLinks" checked><span><b>导入网址</b><small>全部收进「WeTab」分组，分页 / 文件夹名转成标签</small></span></label>
-        <label class="home-check"><input type="checkbox" id="wetabTodos" checked><span><b>导入待办</b><small>追加到首页待办，保留完成状态</small></span></label>
-        <label class="home-check"><input type="checkbox" id="wetabSkipExisting"><span><b>跳过其他分组里已有的网址</b><small>不勾选时照常导入，「WeTab」分组就是一份完整备份</small></span></label>
-      </div>
-      <div id="wetab_error" class="error" role="alert" style="display:none"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn ghost sm" id="wetabGoto" hidden>前往「WeTab」分组</button>
-        <span style="flex:1"></span>
-        <button type="button" class="btn ghost sm" id="wetabCancel">关闭</button>
-        <button type="button" class="btn sm" id="wetabDo" disabled>导入</button>
       </div>
     </div>
   </div>
@@ -3178,107 +3152,6 @@
     }
     $('groupUp').addEventListener('click', () => shiftGroup('up'));
     $('groupDown').addEventListener('click', () => shiftGroup('down'));
-
-    // ----- 从 WeTab 备份导入 -----
-    // 备份文件里还有便签、天气城市、AI 对话设置等：在浏览器里就只留下图标页和待办两块再发给本站，
-    // 服务端再按白名单逐字段取一遍。预览（dry_run）与真正导入走同一个接口、同一份计划。
-    const WETAB = { backup: null, notes: 0, busy: false, preview: null };
-    function wetabSlim(raw) {
-      const data = raw && typeof raw === 'object' && raw.data && typeof raw.data === 'object' ? raw.data : null;
-      if (!data) return null;
-      const icons = data['store-icon'] && data['store-icon'].icons, todos = data['store-todo'] && data['store-todo'].todos;
-      if (!Array.isArray(icons) && !Array.isArray(todos)) return null;
-      const notes = data['store-note'] && data['store-note'].notes;
-      WETAB.notes = Array.isArray(notes) ? notes.length : 0;   // 只数个数，用来告诉用户「这些不会导入」
-      return { data: { 'store-icon': { icons: Array.isArray(icons) ? icons : [] }, 'store-todo': { todos: Array.isArray(todos) ? todos : [] } } };
-    }
-    function wetabError(msg) { $('wetab_error').textContent = msg || ''; $('wetab_error').style.display = msg ? 'block' : 'none'; }
-    function wetabOptions() {
-      return { include_links: $('wetabLinks').checked, include_todos: $('wetabTodos').checked, skip_existing: $('wetabSkipExisting').checked };
-    }
-    function wetabPreviewHtml(d, finished) {
-      const L = d.links, T = d.todos, K = d.skipped || {};
-      const left = [];
-      if (K.widgets) left.push(`${K.widgets} 个小组件`);
-      if (WETAB.notes) left.push(`${WETAB.notes} 条便签`);
-      const dropped = [];
-      if (K.invalid) dropped.push(`${K.invalid} 条不是 http(s) 网址`);
-      if (K.credentials) dropped.push(`${K.credentials} 条网址里带账号密码`);
-      if (K.duplicates) dropped.push(`${K.duplicates} 条在备份里重复`);
-      const linkNote = [L.already ? `${L.already} 条已在「WeTab」分组` : '', L.elsewhere ? `${L.elsewhere} 条其他分组里也有${L.skip_existing ? '（已跳过）' : '（照常导入）'}` : ''].filter(Boolean).join(' · ');
-      const todoNote = [T.done ? `其中 ${T.done} 条已完成` : '', T.already ? `${T.already} 条内容相同的已存在` : ''].filter(Boolean).join(' · ');
-      const verb = finished ? '已导入' : '将导入';
-      return `<div class="wetab-stats">
-          <div class="wetab-stat"><b>${L.new}</b><span>${verb}网址 / 共 ${L.found} 条</span>${linkNote ? `<small>${escapeHtml(linkNote)}</small>` : ''}</div>
-          <div class="wetab-stat"><b>${T.new}</b><span>${verb}待办 / 共 ${T.found} 条</span>${todoNote ? `<small>${escapeHtml(todoNote)}</small>` : ''}</div>
-        </div>
-        ${(d.pages || []).length ? `<div class="wetab-pages">${d.pages.map(pg => `<span class="chip">${escapeHtml(pg.name)} · ${pg.count}</span>`).join('')}</div>` : ''}
-        ${!finished && (d.sample || []).length ? `<div class="note">例如：${d.sample.map(x => escapeHtml(x.name)).join('、')}${L.new > d.sample.length ? ' …' : ''}</div>` : ''}
-        ${dropped.length ? `<div class="note">跳过：${escapeHtml(dropped.join('；'))}。</div>` : ''}
-        ${left.length ? `<div class="note">不导入：${escapeHtml(left.join('、'))}（本站没有对应功能，文件里的这部分也不会上传）。</div>` : ''}
-        ${finished ? '<div class="note">想整体撤回：「系统设置 → 配置恢复 → 查看备份」里选「最近一次批量导入前」。</div>' : ''}`;
-    }
-    function wetabSync() {
-      const d = WETAB.preview, nothing = !d || !(d.links.new || d.todos.new);
-      $('wetabDo').disabled = WETAB.busy || nothing;
-      $('wetabDo').textContent = WETAB.busy ? '处理中…' : d && nothing ? '没有新内容' : '导入';
-    }
-    async function wetabRequest(dryRun) {
-      if (!WETAB.backup || WETAB.busy) return null;
-      WETAB.busy = true; wetabSync(); wetabError('');
-      let data;
-      try {
-        const resp = await fetch('/api/import/wetab', { method: 'POST', headers: adminHeaders(), body: JSON.stringify(Object.assign({ backup: WETAB.backup, dry_run: dryRun }, wetabOptions())) });
-        try { data = await resp.json(); } catch (_) { data = { ok: false, error: resp.status === 413 ? '备份文件太大' : 'HTTP ' + resp.status }; }
-      } catch (e) { data = { ok: false, error: e.message }; }
-      WETAB.busy = false;
-      if (!data.ok) { wetabError(data.error || '导入失败'); wetabSync(); return null; }
-      return data;
-    }
-    async function wetabRefreshPreview() {
-      const data = await wetabRequest(true);
-      if (data) { WETAB.preview = data; $('wetabPreview').innerHTML = wetabPreviewHtml(data, false); $('wetabPreview').hidden = false; $('wetabOptions').hidden = false; }
-      wetabSync();
-    }
-    function openWetabImport() {
-      if (!guardAdmin()) return;
-      Object.assign(WETAB, { backup: null, notes: 0, busy: false, preview: null });
-      $('wetabFile').value = ''; $('wetabFileName').textContent = '';
-      $('wetabPreview').hidden = true; $('wetabPreview').innerHTML = ''; $('wetabOptions').hidden = true; $('wetabGoto').hidden = true;
-      wetabError(''); wetabSync();
-      $('wetabModal').classList.add('show');
-    }
-    $('openWetabImport').addEventListener('click', openWetabImport);
-    $('wetabCancel').addEventListener('click', () => $('wetabModal').classList.remove('show'));
-    $('wetabFile').addEventListener('change', async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      WETAB.backup = null; WETAB.preview = null; $('wetabPreview').hidden = true; $('wetabGoto').hidden = true; wetabError('');
-      $('wetabFileName').textContent = `${file.name}（${Math.round(file.size / 1024)} KB）`;
-      try { WETAB.backup = wetabSlim(JSON.parse(await file.text())); } catch (_) { WETAB.backup = null; }
-      if (!WETAB.backup) { wetabError('这不像是 WeTab 导出的备份：请在 WeTab「设置 → 备份与恢复」里导出后再选。'); wetabSync(); return; }
-      await wetabRefreshPreview();
-    });
-    ['wetabLinks', 'wetabTodos', 'wetabSkipExisting'].forEach(id => $(id).addEventListener('change', wetabRefreshPreview));
-    $('wetabDo').addEventListener('click', async () => {
-      const data = await wetabRequest(false);
-      if (!data) return;
-      if (Array.isArray(data.link_groups)) STATE.link_groups = data.link_groups;
-      if (Array.isArray(data.todo_items)) STATE.todos = data.todo_items;
-      WETAB.preview = { links: { new: 0 }, todos: { new: 0 } };   // 同一份备份再点一次也不会有新内容
-      $('wetabPreview').innerHTML = wetabPreviewHtml(data, true);
-      $('wetabOptions').hidden = true;
-      $('wetabGoto').hidden = !(data.group && data.group.id);
-      $('wetabGoto').dataset.gid = (data.group && data.group.id) || '';
-      wetabSync();
-      renderLibrary();
-      toast(`已导入 ${data.links.new} 条网址、${data.todos.new} 条待办`, 'ok');
-    });
-    $('wetabGoto').addEventListener('click', () => {
-      $('wetabModal').classList.remove('show');
-      switchView('bookmarks');
-      openLibPage($('wetabGoto').dataset.gid);
-    });
 
     // ----- 导入导出 -----
     $('exportCfg').addEventListener('click', async () => {

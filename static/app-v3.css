@@ -1498,16 +1498,3 @@ html.wall-on .home-todo { --todo-actions-bg: #1a2130; }
   .todo-list { max-height: 252px; }
 }
 @media (prefers-reduced-motion: reduce) { #todoCollapse .ic, .todo-done > summary::before, .todo-add { transition: none; } }
-
-/* ---------- 从 WeTab 导入：预览 ---------- */
-.wetab-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.wetab-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
-.wetab-stat b { font-size: 24px; font-weight: 780; line-height: 1.15; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.wetab-stat span { color: var(--text-2); font-size: 12px; font-weight: 600; }
-.wetab-stat small { margin-top: 4px; color: var(--text-3); font-size: 11.5px; line-height: 1.45; }
-.wetab-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.wetab-pages .chip { cursor: default; }
-.wetab-preview .note { margin-top: 8px; }
-.wetab-options { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
-.wetab-options[hidden], .wetab-preview[hidden] { display: none; }
-@media (max-width: 480px) { .wetab-stats { grid-template-columns: 1fr; } }
