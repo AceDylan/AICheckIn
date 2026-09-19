@@ -46,8 +46,10 @@ class CardSortUiTest(unittest.TestCase):
 
     def test_grip_is_disabled_while_filtering(self):
         # 网址卡片看 searching，看板卡片看 filtering（搜索或预警筛选）；两处都要禁用。
+        # 看板卡片同时用在首页的卡片视图里，那里顺序跟随看板、不提供排序，所以也禁用。
         self.assertIn("${searching ? ' disabled' : ''}>${icon('grip')}", self.html)
-        self.assertIn("${filtering ? ' disabled' : ''}>${icon('grip')}", self.html)
+        self.assertIn("${o.filtering || o.home ? ' disabled' : ''}>${icon('grip')}", self.html)
+        self.assertIn("bookmarkCardHtml(b, i, { filtering })", self.html)
 
     def test_touch_drag_is_possible(self):
         grip_rule = re.search(r"\.card-grip \{[^}]*\}", self.css).group(0)

@@ -96,6 +96,105 @@ class LibraryHomeApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(read_store()['link_groups'][0]['links'][0]['custom_icon'], PNG)
 
 
+class DashboardHomeApiTest(StoreIsolationMixin, unittest.TestCase):
+    """站点看板里的站点也能上首页：没有稳定 id，用「下标 + 网址」定位。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = app.test_client()
+        self.write_config({'configs': [], 'link_groups': [
+            {'id': 'a', 'name': 'A', 'links': [{'id': 'l1', 'name': 'One', 'url': 'https://one.example'}]}],
+            'bookmarks': [
+                {'name': 'First', 'url': 'https://first.example', 'fields': [
+                    # 与真实落盘的字段同构（经 clean_field 写入的字段一定带 method），否则导入校验会拒收。
+                    {'id': 'f1', 'label': '余额', 'type': 'amount', 'method': 'GET', 'url': 'https://first.example/api',
+                     'headers': {'Authorization': 'Bearer secret-token'}, 'body': None,
+                     'json_path': 'data.balance', 'value': '12.50'}]},
+                {'name': 'Second', 'url': 'https://second.example'},
+            ]})
+
+    def sites(self):
+        return [b['name'] for b in read_store()['bookmarks'] if b['show_on_home']]
+
+    def test_old_bookmarks_default_to_not_on_home(self):
+        self.assertEqual(self.sites(), [])
+        public = self.client.get('/api/configs').get_json()['bookmarks']
+        self.assertEqual([b['show_on_home'] for b in public], [False, False])
+
+    def test_home_selection_can_include_dashboard_sites(self):
+        resp = self.client.put('/api/library/home', json={
+            'links': [{'group': 'a', 'id': 'l1'}],
+            'bookmarks': [{'index': 1, 'url': 'https://second.example'}]})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self.sites(), ['Second'])
+        body = resp.get_json()
+        self.assertEqual([b['show_on_home'] for b in body['bookmarks']], [False, True])
+        self.assertTrue(body['link_groups'][0]['links'][0]['show_on_home'])
+        # 对外响应不得带出接口字段的请求配置与凭据。
+        self.assertNotIn('secret-token', resp.get_data(as_text=True))
+        self.client.put('/api/library/home', json={'links': [], 'bookmarks': []})
+        self.assertEqual(self.sites(), [])
+
+    def test_omitting_bookmarks_keeps_dashboard_selection(self):
+        self.client.put('/api/bookmarks/0/home', json={'show_on_home': True, 'url': 'https://first.example'})
+        self.client.put('/api/library/home', json={'links': []})
+        self.assertEqual(self.sites(), ['First'])
+
+    def test_stale_or_malformed_site_selection_is_atomic(self):
+        original = self.read_config()
+        for sites, code in [('nope', 400), ([None], 400), ([{'index': '0', 'url': 'https://first.example'}], 400),
+                            ([{'index': True, 'url': 'https://first.example'}], 400),
+                            ([{'index': 0}], 400),
+                            ([{'index': 0, 'url': 'https://second.example'}], 409),
+                            ([{'index': 5, 'url': 'https://first.example'}], 409),
+                            ([{'index': -1, 'url': 'https://second.example'}], 409)]:
+            with self.subTest(sites=sites):
+                resp = self.client.put('/api/library/home', json={
+                    'links': [{'group': 'a', 'id': 'l1'}], 'bookmarks': sites})
+                self.assertEqual(resp.status_code, code)
+                self.assertEqual(self.read_config(), original)
+
+    def test_single_site_toggle_checks_position_and_keeps_fields(self):
+        resp = self.client.put('/api/bookmarks/0/home', json={'show_on_home': True, 'url': 'https://first.example'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self.sites(), ['First'])
+        field = read_store()['bookmarks'][0]['fields'][0]
+        self.assertEqual((field['value'], field['headers']['Authorization']), ('12.50', 'Bearer secret-token'))
+        self.assertNotIn('secret-token', resp.get_data(as_text=True))
+        for body, code in [({'show_on_home': True, 'url': 'https://second.example'}, 409),
+                           ({'show_on_home': 'yes', 'url': 'https://first.example'}, 400),
+                           ({'show_on_home': False}, 400), ([], 400)]:
+            self.assertEqual(self.client.put('/api/bookmarks/0/home', json=body).status_code, code)
+        self.assertEqual(self.client.put('/api/bookmarks/9/home', json={
+            'show_on_home': True, 'url': 'https://first.example'}).status_code, 409)
+        self.assertEqual(self.sites(), ['First'])
+
+    def test_editing_a_site_keeps_it_on_home_and_reorder_moves_the_flag(self):
+        self.client.put('/api/bookmarks/1/home', json={'show_on_home': True, 'url': 'https://second.example'})
+        # 编辑弹窗提交的负载不带 show_on_home。
+        self.assertEqual(self.client.put('/api/bookmarks/1', json={
+            'name': 'Renamed', 'url': 'https://second.example'}).status_code, 200)
+        self.assertEqual(self.sites(), ['Renamed'])
+        self.client.post('/api/bookmarks/reorder', json={'order': [1, 0]})
+        self.assertEqual([b['name'] for b in read_store()['bookmarks']], ['Renamed', 'First'])
+        self.assertEqual(self.sites(), ['Renamed'])
+        self.client.delete('/api/bookmarks/0')
+        self.assertEqual(self.sites(), [])
+
+    def test_site_home_flag_round_trips_through_export_and_requires_admin(self):
+        self.client.put('/api/bookmarks/0/home', json={'show_on_home': True, 'url': 'https://first.example'})
+        exported = self.client.get('/api/configs/export').get_json()
+        self.write_config({'configs': [], 'bookmarks': [], 'link_groups': []})
+        self.assertEqual(self.client.post('/api/configs/import', json=exported).status_code, 200)
+        self.assertEqual(self.sites(), ['First'])
+        with patch.object(app_module, 'ADMIN_PASSWORD', 'a-secret-password'):
+            self.assertEqual(self.client.put('/api/bookmarks/0/home', json={
+                'show_on_home': False, 'url': 'https://first.example'}).status_code, 403)
+            self.assertEqual(self.client.put('/api/library/home', json={
+                'links': [], 'bookmarks': []}).status_code, 403)
+        self.assertEqual(self.sites(), ['First'])
+
+
 class CustomIconValidationTest(unittest.TestCase):
     def test_only_bounded_raster_data_is_accepted(self):
         self.assertEqual(clean_custom_icon(PNG), PNG)

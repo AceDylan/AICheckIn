@@ -76,11 +76,10 @@
           <div class="chip-row" id="libChips" aria-label="收藏库页面"></div>
           <div class="view-header" id="libHeader">
             <div><div class="eyebrow" id="libEyebrow">收藏库</div><h1 id="libTitle">收藏首页</h1><p id="libDesc"></p></div>
-            <div class="header-actions" id="libActionsHome"><button class="btn" id="chooseHomeLinks">自定义首页</button></div>
             <div class="header-actions" id="libActionsMonitor" hidden><button class="btn ghost" id="refreshAllBm">刷新所有数据</button><button class="btn" id="addBm">＋ 新增站点</button></div>
             <div class="header-actions" id="libActionsGroup" hidden><button class="btn ghost" id="checkLinksBtn" title="逐条探测本分组的网址是否还能打开">检查链接</button><button class="btn ghost" id="editGroupBtn">编辑分组</button><button class="btn" id="addLinkBtn">＋ 添加网址</button></div>
           </div>
-          <div class="toolbar">
+          <div class="toolbar" id="libToolbar">
             <label class="search-box" for="bmSearch">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
               <input class="input" id="bmSearch" type="search" placeholder="搜索名称、域名、描述或标签" autocomplete="off">
@@ -88,7 +87,37 @@
             </label>
             <span class="toolbar-meta" id="bmVisibleCount"></span>
           </div>
-          <div id="homePage"><div id="homeList"></div><div id="homeEmpty" class="empty-state" style="display:none"></div></div>
+          <div id="homePage">
+            <header class="home-hero" aria-label="时间与问候">
+              <div class="hero-clock" id="heroClock" aria-hidden="true">--:--</div>
+              <div class="hero-meta"><span id="heroGreeting">你好</span><span class="hero-divider" aria-hidden="true">·</span><time id="heroDate"></time></div>
+            </header>
+            <div class="home-search" id="homeSearchBox" role="search">
+              <div class="home-search-bar">
+                <button type="button" class="home-engine-btn" id="homeEngineBtn" title="切换网页搜索引擎（Tab）" aria-label="切换网页搜索引擎">
+                  <span id="homeEngineName">Google</span>
+                  <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <input class="home-search-input" id="homeSearch" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search"
+                       placeholder="搜索收藏，或直接搜索网页…" aria-label="搜索收藏或网页" aria-controls="homeSearchList" aria-autocomplete="list" role="combobox" aria-expanded="false">
+                <div class="home-search-kbd" aria-hidden="true"><kbd>↑↓</kbd>选择<kbd>↵</kbd>打开<kbd>Tab</kbd>换引擎</div>
+              </div>
+              <div class="home-search-dropdown" id="homeSearchList" role="listbox" aria-label="搜索结果" hidden></div>
+            </div>
+            <div class="alert-strip home-notice" id="homeNotice" hidden aria-label="需要留意的站点"></div>
+            <div class="home-toolbar">
+              <span class="toolbar-meta" id="homeCount"></span>
+              <span class="spacer"></span>
+              <div class="home-view-toggle" id="homeViewToggle" role="group" aria-label="首页显示方式">
+                <button type="button" data-home-view="tiles" title="图标：更紧凑，适合当作起始页"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg><span>图标</span></button>
+                <button type="button" data-home-view="cards" title="卡片：显示描述、标签与全部监控字段"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/></svg><span>卡片</span></button>
+              </div>
+              <button type="button" class="btn ghost sm" id="homeAddLink">＋ 添加</button>
+              <button type="button" class="btn ghost sm" id="chooseHomeLinks">自定义首页</button>
+            </div>
+            <div id="homeList"></div>
+            <div id="homeEmpty" class="empty-state" style="display:none"></div>
+          </div>
           <div id="bmPage" hidden>
             <div class="alert-strip" id="bmAlerts" hidden aria-label="站点数据预警"></div>
             <div id="bmList" class="bookmark-grid"></div>
@@ -150,6 +179,16 @@
             <div class="panel"><div class="panel-title">部署自检 <button class="btn sm ghost" id="runDiag" style="float:right;margin-top:-4px">重新检查</button></div><div class="note" style="margin-top:0">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
             <div class="panel"><div class="panel-title">配置恢复 <button class="btn sm ghost" id="loadBackups" style="float:right;margin-top:-4px">查看备份</button></div><div class="note" style="margin-top:0">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
             <div class="panel"><div class="panel-title">快速收藏</div><div class="note" style="margin-top:0">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
+            <div class="panel"><div class="panel-title">首页与起始页</div>
+              <div class="note" style="margin-top:0">把本页设为浏览器的「主页 / 启动时打开的网页」，打开浏览器就是你的收藏首页：光标自动落在搜索框，直接打字即可找收藏或搜索网页。</div>
+              <div class="controls" style="margin-top:10px"><code class="start-url" id="startUrl"></code><button type="button" class="btn sm ghost" id="copyStartUrl">复制地址</button></div>
+              <div class="hint start-steps">Chrome / Edge：设置 → 启动时 → 打开特定网页，再到「外观 → 显示主页按钮」填同一地址。Firefox：设置 → 主页 → 自定义网址。Safari：设置 → 通用 → 主页。手机：浏览器菜单「添加到主屏幕」或上方「安装为应用」。</div>
+              <div class="row-2" style="margin-top:14px">
+                <div class="field"><label>点击收藏时</label><div class="segmented" id="openModeSeg" role="radiogroup" aria-label="打开方式"><button type="button" data-open-mode="new">新标签页打开</button><button type="button" data-open-mode="same">当前页打开</button></div></div>
+                <div class="field"><label for="engineSelect">网页搜索引擎</label><select class="input" id="engineSelect"></select></div>
+              </div>
+              <div class="note">这两项记在本浏览器的 Cookie 里，各设备可以各设各的。</div>
+            </div>
             <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
           </div>
         </section>
@@ -305,7 +344,7 @@
 
   <div class="modal-mask" id="homeModal">
     <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="homeModalTitle">
-      <div class="modal-head"><div><h3 id="homeModalTitle">自定义收藏首页</h3><div class="modal-sub">从各分组勾选要展示的网址，首页与分组内容保持同步。</div></div></div>
+      <div class="modal-head"><div><h3 id="homeModalTitle">自定义收藏首页</h3><div class="modal-sub">从站点看板与各分组勾选要展示的内容，首页与原位置保持同步。</div></div></div>
       <div id="homeChoices"></div>
       <div class="hint" id="homeSelectionCount" aria-live="polite"></div>
       <div class="hint danger-text" id="homeError" role="alert" hidden></div>
@@ -496,6 +535,25 @@
     $('themeSeg').addEventListener('click', (e) => { const b = e.target.closest('button[data-theme-opt]'); if (b) setTheme(b.dataset.themeOpt); });
     if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (readTheme() === 'system') applyTheme('system'); });
     applyTheme(readTheme());
+
+    // ===== 本机偏好（Cookie）=====
+    // 打开方式、搜索引擎、首页密度都是「这台设备怎么用」的事：手机和桌面可以各设各的，
+    // 所以不进 config.json。值域写死成白名单，Cookie 被改成别的也只会回落到默认值。
+    function readPref(name, allowed, fallback) {
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([a-z0-9_-]+)'));
+      return m && allowed.includes(m[1]) ? m[1] : fallback;
+    }
+    function writePref(name, value) { document.cookie = `${name}=${value}; max-age=31536000; path=/; SameSite=Lax`; }
+    const OPEN_MODES = ['new', 'same'];
+    function openMode() { return readPref('bh_open', OPEN_MODES, 'new'); }
+    // 收藏链接统一走这里取 target / rel：当作起始页用时，很多人更习惯在当前页直接打开。
+    function linkTargetAttrs() { return openMode() === 'same' ? 'rel="noopener noreferrer"' : 'target="_blank" rel="noopener noreferrer"'; }
+    function openUrl(url) {
+      const safe = safeUrl(url);
+      if (!safe) return false;
+      if (openMode() === 'same') location.href = safe; else window.open(safe, '_blank', 'noopener');
+      return true;
+    }
 
     // ===== Toast =====
     function toast(msg, kind) {
@@ -976,7 +1034,7 @@
     function findGroup(gid) { return libGroups().find(g => g.id === gid) || null; }
     function totalLinks() { return libGroups().reduce((n, g) => n + (g.links || []).length, 0); }
     function libPages() {
-      return [{ id: '@home', name: '收藏首页', icon: 'star', color: 'mint', count: libGroups().reduce((n, g) => n + (g.links || []).filter(l => l.show_on_home).length, 0) },
+      return [{ id: '@home', name: '收藏首页', icon: 'star', color: 'mint', count: homeSites().length + libGroups().reduce((n, g) => n + (g.links || []).filter(l => l.show_on_home).length, 0) },
         { id: 'monitor', name: '站点看板', icon: 'pulse', color: 'mint', count: (STATE.bookmarks || []).length }]
         .concat(libGroups().map(g => ({ id: g.id, name: g.name, icon: g.icon, color: g.color, count: (g.links || []).length })));
     }
@@ -1255,7 +1313,9 @@
         $('libTitle').textContent = '收藏首页';
         $('libDesc').textContent = '从各分组挑选常用网址，集中展示，一键直达。';
       }
-      $('libActionsHome').hidden = !isHome;
+      // 首页自带时钟 + 搜索，不再叠一层大横幅：手机上旧横幅会吃掉整个首屏。
+      header.hidden = isHome;
+      $('libToolbar').hidden = isHome;
       $('libActionsMonitor').hidden = !isMonitor;
       $('libActionsGroup').hidden = isMonitor || isHome;
       $('homePage').hidden = !isHome;
@@ -1277,30 +1337,147 @@
         (!q || `${g.name} ${l.name || ''} ${l.url || ''} ${l.desc || ''} ${(l.tags || []).join(' ')}`.toLowerCase().includes(q))) }))
         .filter(g => g.links.length);
     }
+    // 站点看板里被选上首页的站点。看板站点没有稳定 id，统一带着下标走。
+    function homeSites() {
+      return (STATE.bookmarks || []).map((b, i) => ({ b, i })).filter(({ b }) => b && b.show_on_home);
+    }
+
+    // ===== 收藏首页：图标（起始页密度）/ 卡片（完整信息）=====
+    const HOME_VIEWS = ['tiles', 'cards'];
+    function homeView() { return readPref('bh_home_view', HOME_VIEWS, 'tiles'); }
+    function setHomeView(view) { writePref('bh_home_view', view); renderHome(); }
+    $('homeViewToggle').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-home-view]');
+      if (btn) setHomeView(btn.dataset.homeView);
+    });
+
+    // 图标下那一小条指标：取首个启用字段，压成 4 列手机宽度（约 80px）也放得下的长度。
+    function compactFieldValue(f) {
+      const type = f.type || 'amount';
+      if (type === 'time') return relativeTime(f.raw).text || String(f.value);
+      if (type !== 'amount') return String(f.value);
+      const text = String(f.value).trim();
+      const num = /^-?[\d,]*\.?\d+$/.test(text) ? fmtNum(parseNum(text)) : text;
+      return f.unit ? `${num} ${f.unit}` : num;
+    }
+    function siteMetricHtml(b) {
+      const f = enabledFields(b)[0];
+      if (!f) return '';
+      const alert = bookmarkAlert(b);
+      let cls = alert === 'soon' ? ' is-warning' : alert ? ' is-error' : '';
+      let text, title = `${f.label}${f.updated_at ? ' · 更新于 ' + f.updated_at : ''}`;
+      if (f.error) { text = '取数失败'; cls = ' is-error'; title = `${f.label}：${f.error}`; }
+      else if (f.value == null || f.value === '') { text = '待刷新'; cls = ' is-stale'; }
+      else text = compactFieldValue(f);
+      if (alert && !f.error) title += ` · ${ALERT_META[alert].label}`;
+      return `<span class="tile-metric${cls}" title="${escapeHtml(title)}">${alert ? '<span class="tile-metric-dot"></span>' : ''}${escapeHtml(text)}</span>`;
+    }
+    function homeTileHtml(o) {
+      const safe = safeUrl(o.url);
+      const host = siteHost(o.url) || '未设置域名';
+      return `<div class="home-tile tone-${escapeHtml(o.tone)}" style="--hue:${hueOf(host)}">
+        <a class="tile-link" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(o.name)} · ${escapeHtml(o.url)}">
+          ${siteAvatarHtml(o.name, o.url, 'tile-avatar', o.emoji, o.customIcon)}
+          <span class="tile-title">${escapeHtml(o.name)}</span>
+          ${o.metric || `<span class="tile-host">${escapeHtml(host)}</span>`}
+        </a>
+        <details class="action-menu tile-menu">
+          <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(o.name)} 的更多操作">···</summary>
+          <div class="menu-popover">${o.menu}</div>
+        </details>
+      </div>`;
+    }
+    function homeLinkTileHtml(l, g) {
+      const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
+      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: l.custom_icon, tone: g.color, menu:
+        `<button onclick="editLink('${gid}','${lid}')">编辑</button>
+         <button onclick="copyLinkUrl('${gid}','${lid}')">复制网址</button>
+         <button onclick="openLibPage('${gid}')">前往「${escapeHtml(g.name)}」</button>
+         <div class="sep"></div>
+         <button onclick="toggleHomeLink('${gid}','${lid}')">从首页移除</button>` });
+    }
+    function homeSiteTileHtml(b, i) {
+      return homeTileHtml({ name: b.name, url: b.url, tone: 'mint', metric: siteMetricHtml(b), menu:
+        `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}
+         <button onclick="editBm(${i})">编辑</button>
+         <button onclick="openLibPage('monitor')">前往「站点看板」</button>
+         <div class="sep"></div>
+         <button onclick="toggleHomeSite(${i})">从首页移除</button>` });
+    }
+    function homeSectionHtml(page, title, iconName, tone, count, body) {
+      return `<section class="home-section tone-${escapeHtml(tone)}" style="--n:${Math.min(count, 12)}">
+        <div class="section-label"><button type="button" class="btn ghost sm" onclick="openLibPage('${escapeHtml(page)}')" title="打开「${escapeHtml(title)}」">${icon(iconName)} ${escapeHtml(title)}</button><span class="count">${count}</span></div>
+        ${body}
+      </section>`;
+    }
+    // 首页上的预警只是个入口：看板里有站点取数失败 / 到期，就在这里提一句，点了去看板处理。
+    function renderHomeNotice() {
+      const strip = $('homeNotice');
+      const counts = { error: 0, expired: 0, soon: 0 };
+      for (const b of STATE.bookmarks || []) { const k = bookmarkAlert(b); if (k) counts[k]++; }
+      const kinds = Object.keys(counts).filter(k => counts[k]);
+      strip.hidden = !kinds.length;
+      strip.innerHTML = kinds.map(k => `<button type="button" class="alert-chip ${ALERT_META[k].cls}" data-home-alert="${k}" title="到站点看板查看">${ALERT_META[k].icon} ${counts[k]} 个${ALERT_META[k].label}</button>`).join('');
+    }
+    $('homeNotice').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-home-alert]');
+      if (!btn) return;
+      bmAlertFilter = btn.dataset.homeAlert;
+      openLibPage('monitor');
+    });
+
     function renderHome() {
-      const groups = homeGroups($('bmSearch').value || '');
-      const count = groups.reduce((n, g) => n + g.links.length, 0);
-      const total = homeGroups().reduce((n, g) => n + g.links.length, 0);
-      $('bmVisibleCount').textContent = count === total ? `${total} 个网址` : `${count} / ${total} 个网址`;
-      $('homeList').innerHTML = groups.map(g => `<section class="home-section">
-        <div class="section-label"><button type="button" class="btn ghost sm" onclick="openLibPage('${escapeHtml(g.id)}')">${icon(g.icon)} ${escapeHtml(g.name)}</button><span class="count">${g.links.length}</span></div>
-        <div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>
-      </section>`).join('');
+      const view = homeView();
+      const tiles = view === 'tiles';
+      const query = $('bmSearch').value || '';
+      const q = query.trim().toLowerCase();
+      const groups = homeGroups(query);
+      const allSites = homeSites();
+      const sites = allSites.filter(({ b }) => !q || `站点看板 ${b.name || ''} ${b.url || ''} ${siteHost(b.url)}`.toLowerCase().includes(q));
+      const count = sites.length + groups.reduce((n, g) => n + g.links.length, 0);
+      const total = allSites.length + homeGroups().reduce((n, g) => n + g.links.length, 0);
+      const label = count === total ? `${total} 个网址` : `${count} / ${total} 个网址`;
+      $('bmVisibleCount').textContent = label;
+      $('homeCount').textContent = total ? `首页 ${label}` : '';
+      document.querySelectorAll('#homeViewToggle [data-home-view]').forEach(b => {
+        const on = b.dataset.homeView === view;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+      renderHomeNotice();
+      // 与侧栏顺序一致：站点看板在前，其后按分组顺序。
+      const sections = [];
+      if (sites.length) sections.push(homeSectionHtml('monitor', '站点看板', 'pulse', 'mint', sites.length, tiles
+        ? `<div class="tile-grid">${sites.map(({ b, i }) => homeSiteTileHtml(b, i)).join('')}</div>`
+        : `<div class="bookmark-grid">${sites.map(({ b, i }) => bookmarkCardHtml(b, i, { home: true })).join('')}</div>`));
+      for (const g of groups) sections.push(homeSectionHtml(g.id, g.name, g.icon, g.color, g.links.length, tiles
+        ? `<div class="tile-grid">${g.links.map(l => homeLinkTileHtml(l, g)).join('')}</div>`
+        : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`));
+      $('homeList').className = 'home-list is-' + view;
+      $('homeList').innerHTML = sections.join('');
       if (count) hideEmpty($('homeEmpty'));
       else showEmpty($('homeEmpty'), total
         ? { icon: 'search', title: '没有匹配的网址', text: '换个关键词试试，或清空搜索框。' }
-        : { icon: 'star', title: '把常用网址放到首页', text: '点击「自定义首页」从各分组选择，或在网址菜单中选择「展示到首页」。', actions: [{ label: '自定义首页', onclick: 'openHomeModal()' }] });
+        : { icon: 'star', title: '把常用网址放到首页', text: '点击「自定义首页」从站点看板和各分组里挑选，或在任意卡片的「···」菜单中选择「展示到首页」。', actions: [{ label: '自定义首页', onclick: 'openHomeModal()' }] });
       pumpFavicons();
     }
     function updateHomeSelectionCount() {
-      $('homeSelectionCount').textContent = `已选择 ${$('homeChoices').querySelectorAll('input:checked').length} 个网址`;
+      $('homeSelectionCount').textContent = `已选择 ${$('homeChoices').querySelectorAll('input:checked').length} 项`;
+    }
+    function homeChoiceHtml(attrs, name, url, checked) {
+      return `<label class="home-check"><input type="checkbox" ${attrs}${checked ? ' checked' : ''}><span><b>${escapeHtml(name)}</b><small>${escapeHtml(url)}</small></span></label>`;
     }
     function openHomeModal() {
       if (!guardAdmin()) return;
       $('homeError').hidden = true;
-      $('homeChoices').innerHTML = libGroups().map(g => `<fieldset class="home-choice-group"><legend>${escapeHtml(g.name)}</legend>
-        ${(g.links || []).map(l => `<label class="home-check"><input type="checkbox" data-home-group="${escapeHtml(g.id)}" data-home-link="${escapeHtml(l.id)}"${l.show_on_home ? ' checked' : ''}><span><b>${escapeHtml(l.name)}</b><small>${escapeHtml(l.url)}</small></span></label>`).join('') || '<p class="hint">这个分组还没有网址。</p>'}
-      </fieldset>`).join('') || '<p class="hint">请先新建分组并添加网址，再选择首页内容。</p>';
+      const sites = STATE.bookmarks || [];
+      const siteBlock = sites.length ? `<fieldset class="home-choice-group"><legend>站点看板</legend>
+        ${sites.map((b, i) => homeChoiceHtml(`data-home-site="${i}"`, b.name, b.url, b.show_on_home)).join('')}
+      </fieldset>` : '';
+      const groupBlocks = libGroups().map(g => `<fieldset class="home-choice-group"><legend>${escapeHtml(g.name)}</legend>
+        ${(g.links || []).map(l => homeChoiceHtml(`data-home-group="${escapeHtml(g.id)}" data-home-link="${escapeHtml(l.id)}"`, l.name, l.url, l.show_on_home)).join('') || '<p class="hint">这个分组还没有网址。</p>'}
+      </fieldset>`).join('');
+      $('homeChoices').innerHTML = (siteBlock + groupBlocks) || '<p class="hint">请先新建分组并添加网址，再选择首页内容。</p>';
       updateHomeSelectionCount();
       $('homeModal').classList.add('show');
       $('homeSave').focus();
@@ -1320,8 +1497,14 @@
       btn.disabled = true;
       $('homeError').hidden = true;
       try {
-        const links = Array.from($('homeChoices').querySelectorAll('input:checked')).map(input => ({ group: input.dataset.homeGroup, id: input.dataset.homeLink }));
-        const data = await linkApi('/api/library/home', 'PUT', { links });
+        const checked = Array.from($('homeChoices').querySelectorAll('input:checked'));
+        const links = checked.filter(input => input.dataset.homeLink).map(input => ({ group: input.dataset.homeGroup, id: input.dataset.homeLink }));
+        // 看板站点靠下标定位，带上网址让后端核对：别处刚排过序的话会拿到 409，而不是选错站点。
+        const bookmarks = checked.filter(input => input.dataset.homeSite !== undefined).map(input => {
+          const index = Number(input.dataset.homeSite);
+          return { index, url: ((STATE.bookmarks || [])[index] || {}).url || '' };
+        });
+        const data = await linkApi('/api/library/home', 'PUT', { links, bookmarks });
         if (!data.ok) throw new Error(data.error || '保存失败');
         $('homeModal').classList.remove('show');
         renderLibrary();
@@ -1330,6 +1513,14 @@
         $('homeError').textContent = e.message;
         $('homeError').hidden = false;
       } finally { btn.disabled = false; }
+    });
+    // 首页「＋ 添加」：默认勾上「展示在首页」，落到当前第一个分组（弹窗里可改）。
+    $('homeAddLink').addEventListener('click', () => {
+      if (!guardAdmin()) return;
+      const target = (libGroups()[0] || {}).id;
+      if (!target) { openGroupModal(null); toast('先建一个分组，再往里添加网址', 'ok'); return; }
+      openLinkModal(target, null, 'single');
+      $('lk_home').checked = true;
     });
     document.addEventListener('keydown', (event) => {
       const tag = document.activeElement && document.activeElement.tagName;
@@ -1349,7 +1540,15 @@
       if (event.key === '/' && !typing) {
         event.preventDefault();
         switchView('bookmarks');
-        $('bmSearch').focus();
+        (LIB.page === '@home' ? $('homeSearch') : $('bmSearch')).focus();
+        return;
+      }
+      // 起始页的手感：停在首页时不用先点搜索框，直接打字就开始搜。
+      // 只接管不带修饰键的可见字符，焦点挪过去后这个按键会照常输入进搜索框。
+      if (!typing && homeSearchReady() && event.key.length === 1 && event.key !== ' '
+          && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) {
+        $('homeSearch').focus();
+        return;
       }
       if (event.key === 'Escape') {
         const open = document.querySelector('.modal-mask.show');
@@ -1370,7 +1569,8 @@
       pop.style.maxHeight = '';
       pop.style.transform = '';
       const gap = 8;
-      const rect = menu.getBoundingClientRect();
+      // 菜单相对谁定位就按谁量空间：卡片里是「···」按钮本身，首页图标里是整块图标。
+      const rect = (pop.offsetParent || menu).getBoundingClientRect();
       // 移动端侧栏变成固定底栏，会盖住菜单：可用空间只算到底栏上沿。
       const nav = document.querySelector('.sidebar');
       const navTop = nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
@@ -1389,7 +1589,7 @@
     document.addEventListener('toggle', (e) => {
       const d = e.target;
       if (!(d instanceof HTMLElement) || !d.classList.contains('action-menu')) return;
-      const card = d.closest('.bookmark-card, .link-card');
+      const card = d.closest('.bookmark-card, .link-card, .home-tile');
       if (card) card.classList.toggle('menu-open', d.open);
       if (d.open) placeMenu(d);
     }, true);
@@ -1528,28 +1728,36 @@
         return;
       }
       hideEmpty(empty);
-      list.innerHTML = visible.map(({ b, i }) => {
-        const hasFields = enabledFields(b).length > 0;
-        const safe = safeUrl(b.url);
-        const host = siteHost(b.url) || '未设置域名';
-        const alert = bookmarkAlert(b);
-        return `
+      list.innerHTML = visible.map(({ b, i }) => bookmarkCardHtml(b, i, { filtering })).join('');
+      pumpFavicons();
+    }
+    // 看板页与首页「卡片」视图共用同一张卡片；首页上不排序（顺序跟随看板），所以收起移动项。
+    function bookmarkCardHtml(b, i, opts) {
+      const o = opts || {};
+      const total = (STATE.bookmarks || []).length;
+      const hasFields = enabledFields(b).length > 0;
+      const safe = safeUrl(b.url);
+      const host = siteHost(b.url) || '未设置域名';
+      const alert = bookmarkAlert(b);
+      const moves = o.home ? `<button onclick="openLibPage('monitor')">前往「站点看板」</button>` : `
+                <button onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''}>置顶</button>
+                <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
+                <button onclick="moveBm(${i},'down')" ${i === total - 1 ? 'disabled' : ''}>下移</button>`;
+      return `
         <article class="bookmark-card${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" data-card-id="${i}" style="--hue:${hueOf(host)}">
           <div class="bookmark-top">
             ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
             <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
-            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${filtering ? ' disabled' : ''}>${icon('grip')}</button>
+            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${o.filtering || o.home ? ' disabled' : ''}>${icon('grip')}</button>
           </div>
           ${fieldsBlockHtml(b)}
           <div class="bookmark-actions">
-            ${safe ? `<a class="btn sm open" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">打开站点 ↗</a>` : `<button class="btn sm open" disabled>网址不可用</button>`}
+            ${safe ? `<a class="btn sm open" href="${escapeHtml(safe)}" ${linkTargetAttrs()}>打开站点 ↗</a>` : `<button class="btn sm open" disabled>网址不可用</button>`}
             ${hasFields ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新全部启用字段" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
             <details class="action-menu">
               <summary class="menu-trigger" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
               <div class="menu-popover">
-                <button onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''}>置顶</button>
-                <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
-                <button onclick="moveBm(${i},'down')" ${i === bms.length - 1 ? 'disabled' : ''}>下移</button>
+                <button onclick="toggleHomeSite(${i})">${b.show_on_home ? '从首页移除' : '展示到首页'}</button>${moves}
                 <button onclick="editBm(${i})">编辑</button>
                 <div class="sep"></div>
                 <button class="danger-text" onclick="deleteBm(${i})">删除</button>
@@ -1557,8 +1765,18 @@
             </details>
           </div>
         </article>`;
-      }).join('');
-      pumpFavicons();
+    }
+    async function toggleHomeSite(i) {
+      if (!guardAdmin()) return;
+      const b = (STATE.bookmarks || [])[i];
+      if (!b) return;
+      const next = !b.show_on_home;
+      try {
+        const data = await linkApi(`/api/bookmarks/${i}/home`, 'PUT', { show_on_home: next, url: b.url });
+        if (!data.ok) throw new Error(data.error || '操作失败');
+        renderLibrary();
+        toast(next ? '已展示到首页' : '已从首页移除，站点看板中仍保留', 'ok');
+      } catch (e) { toast(e.message, 'err'); }
     }
 
     $('refreshAllBm').addEventListener('click', async () => {
@@ -1581,12 +1799,13 @@
       const bms = STATE.bookmarks || [];
       if (i < 0 || i >= bms.length) return false;
       const setBusy = (busy) => {
-        const card = $('bmList').querySelector(`[data-bm-index="${i}"]`);
-        if (!card) return;
-        card.classList.toggle('is-busy', busy);
-        if (busy) card.setAttribute('aria-busy', 'true'); else card.removeAttribute('aria-busy');
-        const btn = card.querySelector('.bm-refresh');
-        if (btn) { btn.disabled = busy; btn.innerHTML = busy ? '<span class="spinner"></span>' : '刷新'; }
+        // 同一个站点可能同时出现在看板页和首页的卡片视图里，两边一起标记。
+        document.querySelectorAll(`#bmList [data-bm-index="${i}"], #homeList [data-bm-index="${i}"]`).forEach(card => {
+          card.classList.toggle('is-busy', busy);
+          if (busy) card.setAttribute('aria-busy', 'true'); else card.removeAttribute('aria-busy');
+          const btn = card.querySelector('.bm-refresh');
+          if (btn) { btn.disabled = busy; btn.innerHTML = busy ? '<span class="spinner"></span>' : '刷新'; }
+        });
       };
       setBusy(true);
       const timeoutId = setTimeout(() => setBusy(false), 30000);  // 30s 强制恢复
@@ -1594,7 +1813,7 @@
         const resp = await fetch(`/api/bookmarks/${i}/refresh_balance`, { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
         if (data.bookmark) STATE.bookmarks[i] = data.bookmark;
-        if (LIB.page === 'monitor') renderBookmarks();
+        if (LIB.page === 'monitor' || LIB.page === '@home') renderCurrentLibraryPage();
         if (!data.ok) { if (!quiet) toast(data.error || '刷新失败', 'err'); return false; }
         if (!quiet) {
           const results = data.results || [];
@@ -1888,6 +2107,7 @@
       let data;
       try { data = await resp.json(); } catch (_) { data = { ok: false, error: 'HTTP ' + resp.status }; }
       if (data && Array.isArray(data.link_groups)) STATE.link_groups = data.link_groups;
+      if (data && Array.isArray(data.bookmarks)) STATE.bookmarks = data.bookmarks;
       return data;
     }
     function linkCardHtml(l, idx, g, total, searching) {
@@ -1898,7 +2118,7 @@
       const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, l.custom_icon);
       const alert = linkCheckState(l);
       return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}${alert ? ' check-' + alert : ''}" data-link-id="${lid}" data-card-id="${lid}" style="--hue:${hueOf(host)}">
-        <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? 'target="_blank" rel="noopener noreferrer"' : ''} title="${escapeHtml(l.url)}">
+        <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(l.url)}">
           ${avatar}
           <div class="link-body">
             <div class="link-name"><span>${escapeHtml(l.name)}</span>${l.pinned ? icon('pin', 'pin') : ''}${alert ? `<span class="check-badge ${escapeHtml(LINK_CHECK_META[alert].cls)}" title="${escapeHtml(linkCheckTitle(l))}">${LINK_CHECK_META[alert].icon}</span>` : ''}</div>
@@ -2658,7 +2878,8 @@
     // 全局搜索、页内搜索、排序、跳分组都有快捷键，但没人猜得到。
     const SHORTCUTS = [
       { keys: ['⌘/Ctrl', 'K'], desc: '全局搜索：跨全部分组找网址、看板站点与签到配置' },
-      { keys: ['/'], desc: '聚焦当前页面的搜索框' },
+      { keys: ['/'], desc: '聚焦当前页面的搜索框；在收藏首页直接打字也会开始搜索' },
+      { keys: ['Tab'], desc: '首页搜索框有内容时，切换网页搜索引擎' },
       { keys: ['#'], desc: '在全局搜索里输入 # 开头按标签筛选' },
       { keys: ['↑', '↓'], desc: '在全局搜索结果中上下选择' },
       { keys: ['Enter'], desc: '打开选中的网址' },
@@ -2835,10 +3056,9 @@
       }
       if (item.kind === 'bookmark' && jumpToGroup) { closeOmni(); switchView('bookmarks'); openLibPage('monitor'); return; }
       if (item.kind === 'config') { closeOmni(); switchView('configs'); return; }
-      const safe = safeUrl(item.url);
-      if (!safe) { toast('这条没有可打开的网址', 'err'); return; }
-      window.open(safe, '_blank', 'noopener');
+      if (!safeUrl(item.url)) { toast('这条没有可打开的网址', 'err'); return; }
       closeOmni();
+      openUrl(item.url);
     }
 
     // 标签点击：卡片整体是个 <a>，必须阻止默认跳转，改为打开标签筛选。
@@ -2868,6 +3088,200 @@
         e.preventDefault();
         closeOmni();
       }
+    });
+
+    // ===== 首页搜索：收藏优先，回落到网页搜索 =====
+    // 当作浏览器起始页用时，这个框就是地址栏的替身：先在全部收藏里找（不只是首页上那几个），
+    // 像网址就直接打开，都不是就交给搜索引擎。引擎只是个 URL 前缀，不加载任何第三方脚本。
+    const SEARCH_ENGINES = [
+      { id: 'google', name: 'Google', url: 'https://www.google.com/search?q=' },
+      { id: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q=' },
+      { id: 'baidu', name: '百度', url: 'https://www.baidu.com/s?wd=' },
+      { id: 'ddg', name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
+    ];
+    const HOME_SEARCH_LIMIT = 6;   // 下拉里最多列几条收藏，再多就该用 ⌘K 了
+    const HOME_SEARCH = { rows: [], active: 0 };
+    function currentEngine() {
+      const id = readPref('bh_engine', SEARCH_ENGINES.map(e => e.id), 'google');
+      return SEARCH_ENGINES.find(e => e.id === id) || SEARCH_ENGINES[0];
+    }
+    function setEngine(id) {
+      writePref('bh_engine', id);
+      renderEngine();
+      renderHomeSearch();
+    }
+    function cycleEngine() {
+      const i = SEARCH_ENGINES.indexOf(currentEngine());
+      setEngine(SEARCH_ENGINES[(i + 1) % SEARCH_ENGINES.length].id);
+    }
+    function renderEngine() {
+      const engine = currentEngine();
+      $('homeEngineName').textContent = engine.name;
+      $('engineSelect').innerHTML = SEARCH_ENGINES.map(e => `<option value="${e.id}"${e.id === engine.id ? ' selected' : ''}>${escapeHtml(e.name)}</option>`).join('');
+    }
+    // 「像网址」：带协议，或形如 域名.后缀 / localhost / IPv4，且中间没有空白。
+    function looksLikeUrl(text) {
+      const t = String(text || '').trim();
+      if (!t || /\s/.test(t)) return '';
+      if (/^https?:\/\//i.test(t)) return safeUrl(t);
+      if (/^(localhost|(\d{1,3}\.){3}\d{1,3}|([a-z0-9-]+\.)+[a-z]{2,})(:\d{1,5})?([/?#].*)?$/i.test(t)) return safeUrl('https://' + t);
+      return '';
+    }
+    function homeSearchReady() {
+      return STATE_LOADED && currentViewName() === 'bookmarks' && LIB.page === '@home'
+        && !document.querySelector('.modal-mask.show');
+    }
+    function homeSearchRows(raw) {
+      const text = String(raw || '').trim();
+      if (!text) return [];
+      const rows = [];
+      const direct = looksLikeUrl(text);
+      if (direct) rows.push({ type: 'url', url: direct });
+      for (const item of omniSearch(text).slice(0, HOME_SEARCH_LIMIT)) rows.push({ type: 'item', item });
+      // 像网址、库里又没有：顺手给个「收藏它」的入口。
+      if (direct && canEdit() && !rows.some(r => r.type === 'item' && siteOrigin(r.item.url) === siteOrigin(direct))) rows.push({ type: 'add', url: direct });
+      // #标签 是收藏库内部的筛选语法，丢给搜索引擎没有意义。
+      if (!text.startsWith('#')) rows.push({ type: 'web', query: text });
+      return rows;
+    }
+    function homeSearchRowHtml(row, i) {
+      const active = i === HOME_SEARCH.active;
+      const attrs = `class="home-search-row${active ? ' is-active' : ''}${row.type === 'item' ? ' tone-' + escapeHtml(row.item.color || 'mint') : ''}" role="option" aria-selected="${active}" data-home-row="${i}"`;
+      if (row.type === 'item') {
+        const item = row.item;
+        const avatar = item.kind === 'group'
+          ? `<span class="omni-ic tone-${escapeHtml(item.color || 'mint')}">${icon(item.icon || 'folder')}</span>`
+          : siteAvatarHtml(item.title, item.url, 'link-avatar omni-avatar', item.emoji, item.customIcon);
+        return `<button type="button" ${attrs}>${avatar}<span class="omni-text"><span class="omni-title"><span>${escapeHtml(item.title)}</span></span><span class="omni-sub">${escapeHtml(item.host || item.sub)}</span></span><span class="home-search-tag">${escapeHtml(item.kind === 'link' ? item.sub : OMNI_KIND_LABEL[item.kind])}</span></button>`;
+      }
+      const glyph = row.type === 'web' ? 'search' : row.type === 'add' ? 'plus' : 'globe';
+      const text = row.type === 'web' ? `用 <b>${escapeHtml(currentEngine().name)}</b> 搜索「${escapeHtml(row.query)}」`
+        : row.type === 'add' ? `收藏 <b>${escapeHtml(siteHost(row.url))}</b> 到收藏库…`
+        : `打开 <b>${escapeHtml(row.url)}</b>`;
+      return `<button type="button" ${attrs}><span class="omni-ic">${icon(glyph)}</span><span class="omni-text"><span class="omni-title"><span>${text}</span></span></span>${active ? '<kbd class="omni-kbd">↵</kbd>' : ''}</button>`;
+    }
+    function renderHomeSearch(keepActive) {
+      const list = $('homeSearchList');
+      HOME_SEARCH.rows = homeSearchRows($('homeSearch').value);
+      if (!keepActive || HOME_SEARCH.active >= HOME_SEARCH.rows.length) HOME_SEARCH.active = 0;
+      const open = HOME_SEARCH.rows.length > 0;
+      list.hidden = !open;
+      $('homeSearch').setAttribute('aria-expanded', String(open));
+      $('homeSearchBox').classList.toggle('is-open', open);
+      list.innerHTML = HOME_SEARCH.rows.map(homeSearchRowHtml).join('');
+      if (open) pumpFavicons();
+    }
+    function clearHomeSearch() {
+      $('homeSearch').value = '';
+      renderHomeSearch();
+    }
+    function runHomeSearchRow(row) {
+      if (!row) return;
+      if (row.type === 'item') { clearHomeSearch(); omniOpen(row.item, false); return; }
+      if (row.type === 'add') {
+        const target = (libGroups()[0] || {}).id;
+        if (!target) { toast('请先新建一个分组', 'err'); return; }
+        clearHomeSearch();
+        openLinkModal(target, null, 'single');
+        $('lk_url').value = row.url;
+        $('lk_home').checked = true;
+        refreshDupHint();
+        $('lk_name').focus();
+        return;
+      }
+      const url = row.type === 'web' ? currentEngine().url + encodeURIComponent(row.query) : row.url;
+      clearHomeSearch();
+      openUrl(url);
+    }
+    $('homeSearch').addEventListener('input', () => renderHomeSearch());
+    $('homeSearch').addEventListener('focus', () => renderHomeSearch(true));
+    $('homeSearch').addEventListener('keydown', (e) => {
+      const rows = HOME_SEARCH.rows;
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length) {
+        e.preventDefault();
+        HOME_SEARCH.active = (HOME_SEARCH.active + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
+        renderHomeSearch(true);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        runHomeSearchRow(rows[HOME_SEARCH.active]);
+      } else if (e.key === 'Tab' && !e.shiftKey && rows.length) {
+        // 只在下拉展开时接管 Tab；空框里 Tab 照常移动焦点，键盘用户不会被困住。
+        e.preventDefault();
+        cycleEngine();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if ($('homeSearch').value) clearHomeSearch(); else $('homeSearch').blur();
+      }
+    });
+    $('homeSearchList').addEventListener('click', (e) => {
+      const row = e.target.closest('[data-home-row]');
+      if (row) runHomeSearchRow(HOME_SEARCH.rows[Number(row.dataset.homeRow)]);
+    });
+    // 指针按下时别让输入框失焦，否则下拉会在 click 之前先被收起。
+    $('homeSearchList').addEventListener('mousedown', (e) => e.preventDefault());
+    $('homeEngineBtn').addEventListener('click', () => { cycleEngine(); $('homeSearch').focus(); });
+    document.addEventListener('click', (e) => {
+      if (!$('homeSearchBox').contains(e.target) && !$('homeSearchList').hidden) { $('homeSearchList').hidden = true; $('homeSearchBox').classList.remove('is-open'); }
+    });
+    // 只在有精确指针的设备上自动聚焦：手机上一进页面就弹键盘，会把半个首屏盖住。
+    function autofocusHomeSearch() {
+      const fine = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+      if (fine && homeSearchReady()) $('homeSearch').focus({ preventScroll: true });
+    }
+
+    // ----- 时钟与问候 -----
+    const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    function greetingFor(hour) {
+      if (hour < 5) return '夜深了';
+      if (hour < 9) return '早上好';
+      if (hour < 12) return '上午好';
+      if (hour < 14) return '中午好';
+      if (hour < 18) return '下午好';
+      if (hour < 23) return '晚上好';
+      return '夜深了';
+    }
+    function tickHeroClock() {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      $('heroClock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      $('heroGreeting').textContent = greetingFor(now.getHours());
+      $('heroDate').textContent = `${now.getMonth() + 1}月${now.getDate()}日 ${WEEKDAYS[now.getDay()]}`;
+    }
+    // 对准下一个整分再响一次，而不是固定周期轮询：一分钟只醒一次，分钟一跳就更新。
+    // （页面里刻意不出现周期定时器——死链检查的测试把它当作「没有后台自动探测」的护栏。）
+    // unref 只存在于 node：测试把这段脚本放进 node 里执行，不 unref 进程就永远不退出；
+    // 浏览器里定时器句柄是数字，这一行不起作用。
+    function scheduleHeroClock() {
+      tickHeroClock();
+      const timer = setTimeout(scheduleHeroClock, 60000 - (Date.now() % 60000) + 50);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    }
+    scheduleHeroClock();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) tickHeroClock(); });
+
+    // ----- 系统设置：首页与起始页 -----
+    function renderStartPrefs() {
+      const mode = openMode();
+      document.querySelectorAll('#openModeSeg [data-open-mode]').forEach(b => {
+        const on = b.dataset.openMode === mode;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', String(on));
+      });
+      $('startUrl').textContent = location.origin + '/';
+      renderEngine();
+    }
+    $('openModeSeg').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-open-mode]');
+      if (!btn) return;
+      writePref('bh_open', btn.dataset.openMode);
+      renderStartPrefs();
+      renderLibrary();   // 已渲染的卡片带着旧的 target，重绘一遍才生效
+      toast(btn.dataset.openMode === 'same' ? '收藏将在当前页打开' : '收藏将在新标签页打开', 'ok');
+    });
+    $('engineSelect').addEventListener('change', (e) => setEngine(e.target.value));
+    $('copyStartUrl').addEventListener('click', async () => {
+      toast((await copyText(location.origin + '/')) ? '地址已复制，粘贴到浏览器的主页设置里即可' : '复制失败，请手动复制', 'ok');
     });
 
     // ===== 历史 =====
@@ -3013,7 +3427,8 @@
     // ===== 初始化 =====
     renderLibrary();
     renderBookmarklet();
-    loadConfigs();
+    renderStartPrefs();
+    loadConfigs().then(autofocusHomeSearch);
   </script>
 </body>
 </html>
