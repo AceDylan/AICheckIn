@@ -207,3 +207,109 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.ok(removed);
             assert.equal(FAVICON_MEMO.get(bad.dataset.favicon), 'fail');
         """)
+
+    def test_engine_button_opens_a_menu_instead_of_cycling(self):
+        self.run_js("""
+            setEngineMenu(false);
+            assert.equal(engineMenuOpen(), false);
+            setEngineMenu(true);
+            assert.equal(engineMenuOpen(), true);
+            const html = $('homeEngineMenu').innerHTML;
+            for (const id of ['google', 'bing', 'baidu', 'ddg']) assert.ok(html.includes(`data-engine="${id}"`), id);
+            // 只有当前引擎带选中标记；打开菜单本身不改变引擎。
+            assert.equal((html.match(/is-current/g) || []).length, 1);
+            assert.ok(/is-current[^>]*data-engine="google"/.test(html));
+            assert.equal(currentEngine().id, 'google');
+            pickEngine('ddg');
+            assert.equal(currentEngine().id, 'ddg');
+            assert.equal($('homeEngineName').textContent, 'DuckDuckGo');
+            assert.equal(engineMenuOpen(), false);
+            assert.ok(document.cookie.includes('bh_engine=ddg'));
+            // 菜单开着时用 Tab 轮换，列表里的选中项要跟着变。
+            setEngineMenu(true);
+            cycleEngine();
+            assert.ok(/is-current[^>]*data-engine="google"/.test($('homeEngineMenu').innerHTML));
+        """)
+
+    def test_password_field_is_only_mounted_on_locked_settings(self):
+        # 页面上只要存在密码框，手机浏览器就会把首页搜索框当成「用户名」来提示 / 填充已存密码。
+        self.run_js("""
+            let mounted = 0, removed = 0;
+            ADMIN_PWD.isConnected = false;
+            ADMIN_PWD.remove = () => { ADMIN_PWD.isConnected = false; removed++; };
+            $('adminPwdSlot').appendChild = (el) => { assert.equal(el, ADMIN_PWD); el.isConnected = true; mounted++; };
+            STATE.admin_required = true;
+            STATE.admin_unlocked = false;
+            // 锁定态停在首页：不挂。
+            syncAdminPwd();
+            assert.deepEqual([mounted, ADMIN_PWD.isConnected], [0, false]);
+            // 进系统设置：挂上，且不重复挂。
+            switchView('settings');
+            assert.deepEqual([mounted, ADMIN_PWD.isConnected], [1, true]);
+            syncAdminPwd();
+            assert.equal(mounted, 1);
+            // 解锁后立刻摘掉，并清空残留输入。
+            ADMIN_PWD.value = 'typed-but-not-submitted';
+            STATE.admin_unlocked = true;
+            renderSettings();
+            assert.deepEqual([removed, ADMIN_PWD.isConnected, ADMIN_PWD.value], [1, false, '']);
+            // 重新锁定仍在设置页：挂回；离开设置页：再摘掉。
+            STATE.admin_unlocked = false;
+            renderSettings();
+            assert.equal(ADMIN_PWD.isConnected, true);
+            switchView('bookmarks');
+            assert.equal(ADMIN_PWD.isConnected, false);
+            // 没设管理密码的实例永远不需要它。
+            STATE.admin_required = false;
+            switchView('settings');
+            assert.equal(ADMIN_PWD.isConnected, false);
+        """)
+
+
+class StartPageFormsMarkupTest(unittest.TestCase):
+    """搜索框与管理密码框必须各自成表单：两者都「无表单」时会被浏览器归成同一个虚拟登录表单。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from app import app
+        cls.html = app.test_client().get('/').get_data(as_text=True)
+
+    def block(self, start, end):
+        begin = self.html.index(start)
+        return self.html[begin:self.html.index(end, begin)]
+
+    def test_search_lives_in_its_own_search_form(self):
+        form = self.block('<form class="home-search-bar" id="homeSearchForm"', '</form>')
+        self.assertIn('role="search"', form)
+        self.assertIn('id="homeSearch" name="q" type="search" autocomplete="off"', form)
+        for hint in ('data-1p-ignore', 'data-lpignore="true"', 'data-bwignore', 'data-form-type="other"'):
+            self.assertIn(hint, form)
+        self.assertNotIn('type="password"', form)
+        # 隐式提交（手机键盘的「搜索」键）要被接住，不能真的把表单提交出去。
+        self.assertIn("$('homeSearchForm').addEventListener('submit'", self.html)
+
+    def test_password_has_its_own_form_with_a_username_anchor(self):
+        self.assertEqual(self.html.count('type="password"'), 1)
+        form = self.block('<form class="admin-form" id="adminForm"', '</form>')
+        self.assertIn('type="password"', form)
+        self.assertIn('autocomplete="current-password"', form)
+        self.assertIn('autocomplete="username"', form)
+        self.assertIn('<button type="submit" class="btn sm" id="unlockBtn">', form)
+        self.assertNotIn('id="homeSearch"', form)
+        # 密码只经请求头发送；表单提交必须被拦下，否则会以 GET 把密码带进地址栏。
+        submit = self.block("$('adminForm').addEventListener('submit'", "});")
+        self.assertIn('e.preventDefault();', submit)
+        self.assertIn("'X-Admin-Password': pwd", submit)
+
+    def test_password_input_is_detached_at_boot(self):
+        boot = self.block("const ADMIN_PWD = $('adminPwd');", 'function syncAdminPwd()')
+        self.assertIn('ADMIN_PWD.remove();', boot)
+
+    def test_engine_button_is_a_dropdown_trigger(self):
+        self.assertIn('id="homeEngineBtn" title="选择网页搜索引擎"', self.html)
+        self.assertIn('aria-haspopup="listbox"', self.html)
+        self.assertIn('id="homeEngineMenu" role="listbox"', self.html)
+        click = self.block("$('homeEngineBtn').addEventListener('click'", "});")
+        self.assertIn('setEngineMenu(open);', click)
+        self.assertNotIn('cycleEngine', click)
+

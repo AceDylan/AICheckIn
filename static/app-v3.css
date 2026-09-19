@@ -984,8 +984,22 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
   color: var(--text-2); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .14s ease;
 }
-.home-engine-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
-.home-engine-btn .ic { width: 12px; height: 12px; stroke-width: 2.4; }
+.home-engine-btn:hover, .home-engine.is-open .home-engine-btn { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
+.home-engine-btn .ic { width: 12px; height: 12px; stroke-width: 2.4; transition: transform .16s ease; }
+.home-engine { position: relative; flex: 0 0 auto; }
+.home-engine.is-open .home-engine-btn .ic { transform: rotate(180deg); }
+.home-engine-menu {
+  position: absolute; top: calc(100% + 10px); left: -2px; z-index: 5; min-width: 176px; padding: 6px;
+  border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2); box-shadow: var(--shadow-pop);
+  animation: modal-in .14s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.home-engine-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 38px; padding: 0 10px 0 12px;
+  border: 0; border-radius: 9px; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 620; text-align: left; cursor: pointer;
+}
+.home-engine-option:hover, .home-engine-option:focus-visible { background: var(--surface-hover); color: var(--text); outline: none; }
+.home-engine-option.is-current { color: var(--accent); }
+.home-engine-option .ic { width: 15px; height: 15px; stroke-width: 2.4; }
 .home-search-input { flex: 1; min-width: 0; height: 40px; padding: 0 10px; border: 0; outline: none; background: transparent; color: var(--text); font-size: 15.5px; }
 .home-search-input::placeholder { color: var(--text-3); }
 .home-search-input::-webkit-search-cancel-button { cursor: pointer; }
@@ -1058,6 +1072,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .tile-menu .menu-popover { width: 152px; right: auto; left: calc(50% - 76px); }
 @media (hover: none) { .tile-menu { display: none; } }
 
+.admin-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; margin: 0; }
 .start-url { flex: 1; min-width: 0; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-input); color: var(--accent); font-family: var(--mono); font-size: 12px; }
 .start-steps { margin-top: 10px; color: var(--text-3); font-size: 11.5px; line-height: 1.7; }
 
@@ -1155,6 +1170,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   .home-search.is-open .home-search-bar { border-radius: 16px 16px 0 0; }
   .home-search-input { font-size: 16px; }   /* 小于 16px iOS 会在聚焦时放大整页 */
   .home-search-kbd { display: none; }
+  .home-engine-option { min-height: 46px; font-size: 14.5px; }
   .home-notice { justify-content: flex-start; margin-top: 12px; }
   .home-toolbar { margin: 16px 0 14px; }
   .home-toolbar .btn.sm { padding: 0 10px; }
