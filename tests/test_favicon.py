@@ -339,7 +339,7 @@ class FaviconUiTest(unittest.TestCase):
         self.assertNotIn('<div class="link-avatar is-emoji"', self.html)
 
     def test_failed_icon_is_removed_instead_of_showing_broken_image(self):
-        self.assertIn("if (state === 'ok') { img.classList.add('is-ready'); markIconResolution(img); } else img.remove();", self.html)
+        self.assertIn("if (state === 'ok') { img.classList.add('is-ready'); markIconResolution(img); markIconTone(img); } else img.remove();", self.html)
         self.assertIn("FAVICON_MEMO.set(origin, state)", self.html)
         # 已知失败的站点不再渲染 <img>，避免每次重绘都打一次 404。
         self.assertIn("FAVICON_MEMO.get(origin) !== 'fail'", self.html)

@@ -454,6 +454,20 @@ details > summary::-webkit-details-marker { display: none; }
 .avatar-img[data-favicon].is-ready ~ .avatar-upload { opacity: 0; }
 .avatar-img.is-ready ~ .avatar-text { opacity: 0; }
 .avatar-text { position: relative; line-height: 1; transition: opacity .18s ease; }
+/* 图标底板跟着图标自身的明暗走（脚本量过像素后在头像上挂 icon-light / icon-dark，见 markIconTone）：
+   透明底的浅色 logo 垫深色底板，否则在浅色底板 / 浅色页面上是一片纯白；透明底的深色 logo 垫浅色底板，
+   否则在深色主题和壁纸上糊成一团黑。彩色图标、自带底色的图标不挂类，保持各自的默认底板。
+   只换底板和描边，不给图标本身加反色 / 滤镜，图标颜色保持原样；悬停、忙碌等状态只动位移和透明度，底板不变。
+   描边让深色底板落在深色壁纸上、浅色底板落在浅色页面上也分得出边界。 */
+.icon-light { --icon-plate: #1b2231; --icon-ring: rgba(255, 255, 255, .2); }
+.icon-dark { --icon-plate: #f4f6fa; --icon-ring: rgba(15, 23, 42, .14); }
+:is(.site-avatar, .mini-avatar, .link-avatar, .tile-avatar):is(.icon-light, .icon-dark) { background: var(--icon-plate); border-color: var(--icon-ring); }
+/* 强制颜色模式会把背景统一换成系统底色，白色 logo 又会消失：量过明暗的底板保留自己的颜色。 */
+@media (forced-colors: active) { .icon-light, .icon-dark { forced-color-adjust: none; } }
+@media (prefers-contrast: more) {
+  .icon-light { --icon-ring: rgba(255, 255, 255, .6); }
+  .icon-dark { --icon-ring: rgba(15, 23, 42, .55); }
+}
 .site-copy { min-width: 0; flex: 1; }
 .site-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 740; letter-spacing: -.015em; }
 .site-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; color: var(--text-3); font-size: 11.5px; }
@@ -1048,17 +1062,18 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
   color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
   font-size: 19px; font-weight: 820; letter-spacing: -.02em; text-transform: uppercase;
-  box-shadow: var(--shadow-1), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  box-shadow: var(--shadow-1), inset 0 0 0 1px var(--icon-ring, rgba(255, 255, 255, .08));
   transition: transform .18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .18s ease;
 }
 .tile-avatar.is-emoji { font-size: 30px; text-transform: none; }
-/* 图标满幅铺进圆角方块。很多 logo 是给浅色标签栏画的透明底深色图，拿到图后统一垫一块浅色底板，
-   深色主题和壁纸上也不会糊成一团黑。不支持 :has() 的浏览器保留色块底，只是没这层保险。 */
+/* 图标满幅铺进圆角方块。很多 logo 是给浅色标签栏画的透明底深色图，拿到图后默认垫一块浅色底板，
+   深色主题和壁纸上也不会糊成一团黑；量出是浅色 logo 的（icon-light）改垫深色底板，见上方「图标底板」。
+   不支持 :has() 的浏览器保留色块底，只是没这层保险。 */
 .tile-avatar .avatar-img { padding: 0; object-fit: cover; border-radius: inherit; }
-.tile-avatar:has(.avatar-img.is-ready) { background: #f4f6fa; }
+.tile-avatar:has(.avatar-img.is-ready) { background: var(--icon-plate, #f4f6fa); }
 /* 原图不到 64px 的小 favicon 不放大：按接近原尺寸居中摆在底板上，保持锐利。 */
 .tile-avatar .avatar-img.is-lowres { inset: 50% auto auto 50%; width: 32px; height: 32px; object-fit: contain; border-radius: 6px; transform: translate(-50%, -50%); }
-.home-tile:hover .tile-avatar, .tile-link:focus-visible .tile-avatar { transform: translateY(-2px) scale(1.04); box-shadow: var(--shadow-2), inset 0 0 0 1px rgba(255, 255, 255, .1); }
+.home-tile:hover .tile-avatar, .tile-link:focus-visible .tile-avatar { transform: translateY(-2px) scale(1.04); box-shadow: var(--shadow-2), inset 0 0 0 1px var(--icon-ring, rgba(255, 255, 255, .1)); }
 .tile-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 640; line-height: 1.35; letter-spacing: -.01em; }
 .tile-metric {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 4px; padding: 1px 7px; overflow: hidden;
@@ -1111,11 +1126,12 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-list.is-minimal .section-label { display: none; }
 
 /* ==========================================================================
-   首页外观：壁纸层 + 遮罩 + 半透明搜索框 / 导航（只在收藏首页生效）
-   <html> 上的两个开关由 applyHomeLook() 维护：
-     .home-wall-on  首页且启用壁纸 —— 首页固定「深色场景 + 白字」，主题切换只影响其它页面
-     .home-rail     首页且导航选了图标栏（仅桌面宽度）
-   毛玻璃（backdrop-filter）只给搜索框和导航这两三块大面；图标、小组件一律用半透明实底，手机上不掉帧。
+   外观：壁纸层 + 遮罩 + 半透明面板 / 导航（全部页面生效）
+   <html> 上的两个开关由 applyLook() 维护，都不看当前在哪个页面——首页、分组、看板、签到、设置是同一套样子：
+     .wall-on   启用了壁纸 —— 整个工作区（.app-shell：侧栏 + 全部视图）固定「深色玻璃 + 白字」；
+                弹窗、命令面板、提示条在 .app-shell 之外，仍跟随深 / 浅主题
+     .nav-rail  导航选了图标栏（仅桌面宽度）
+   毛玻璃（backdrop-filter）只给搜索框、导航、页头这几块大面；卡片、图标、小组件一律用半透明实底，手机上不掉帧。
    ========================================================================== */
 .home-wall {
   position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; visibility: hidden;
@@ -1131,10 +1147,13 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
     rgb(4 7 12 / calc(var(--wall-dim, .4) + .12)) 0%, rgb(4 7 12 / var(--wall-dim, .4)) 28%,
     rgb(4 7 12 / var(--wall-dim, .4)) 68%, rgb(4 7 12 / calc(var(--wall-dim, .4) + .16)) 100%);
 }
-html.home-wall-on .home-wall { opacity: 1; visibility: visible; transition: opacity .35s ease; }
+html.wall-on .home-wall { opacity: 1; visibility: visible; transition: opacity .35s ease; }
+/* 壁纸层之下的页面底色、根滚动条也跟着场景走：浅色主题下滚动条轨道 / 橡皮筋回弹不会露出一条白边。 */
+html.wall-on body { background: #0c1017; }
+html.wall-on::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .26); }
 
-/* 壁纸场景里的令牌：不论深浅主题，首页内容区与导航统一用这一套（白字 + 半透明深色面）。 */
-html.home-wall-on #view-bookmarks, html.home-wall-on .sidebar {
+/* 壁纸场景里的令牌：不论深浅主题、不论哪个页面，工作区统一用这一套（白字 + 半透明深色面）。 */
+html.wall-on .app-shell {
   color-scheme: dark;
   --surface: rgba(13, 17, 26, .66); --surface-2: rgba(13, 17, 26, .5); --surface-hover: rgba(255, 255, 255, .14); --surface-input: rgba(13, 17, 26, .5);
   --border: rgba(255, 255, 255, .14); --border-strong: rgba(255, 255, 255, .26);
@@ -1147,76 +1166,83 @@ html.home-wall-on #view-bookmarks, html.home-wall-on .sidebar {
   --avatar-sat: 70%; --avatar-l: 74%; --avatar-bg-a: .34;
   color: var(--text);
 }
-html.home-wall-on #view-bookmarks .tone-mint, html.home-wall-on .sidebar .tone-mint { --tone: #5eead4; --tone-soft: rgba(94, 234, 212, .2); }
-html.home-wall-on #view-bookmarks .tone-sky, html.home-wall-on .sidebar .tone-sky { --tone: #7dd3fc; --tone-soft: rgba(125, 211, 252, .2); }
-html.home-wall-on #view-bookmarks .tone-violet, html.home-wall-on .sidebar .tone-violet { --tone: #c4b5fd; --tone-soft: rgba(196, 181, 253, .2); }
-html.home-wall-on #view-bookmarks .tone-amber, html.home-wall-on .sidebar .tone-amber { --tone: #fcd34d; --tone-soft: rgba(252, 211, 77, .2); }
-html.home-wall-on #view-bookmarks .tone-rose, html.home-wall-on .sidebar .tone-rose { --tone: #fda4af; --tone-soft: rgba(253, 164, 175, .2); }
-html.home-wall-on #view-bookmarks .tone-slate, html.home-wall-on .sidebar .tone-slate { --tone: #cbd5e1; --tone-soft: rgba(203, 213, 225, .2); }
+html.wall-on .app-shell .tone-mint { --tone: #5eead4; --tone-soft: rgba(94, 234, 212, .2); }
+html.wall-on .app-shell .tone-sky { --tone: #7dd3fc; --tone-soft: rgba(125, 211, 252, .2); }
+html.wall-on .app-shell .tone-violet { --tone: #c4b5fd; --tone-soft: rgba(196, 181, 253, .2); }
+html.wall-on .app-shell .tone-amber { --tone: #fcd34d; --tone-soft: rgba(252, 211, 77, .2); }
+html.wall-on .app-shell .tone-rose { --tone: #fda4af; --tone-soft: rgba(253, 164, 175, .2); }
+html.wall-on .app-shell .tone-slate { --tone: #cbd5e1; --tone-soft: rgba(203, 213, 225, .2); }
 
-/* 直接压在画面上的字：白字 + 投影，局部亮斑上也读得出来。 */
-html.home-wall-on .hero-clock { text-shadow: 0 2px 18px rgba(0, 0, 0, .45); }
-html.home-wall-on .hero-meta, html.home-wall-on .tile-title, html.home-wall-on .home-toolbar .toolbar-meta,
-html.home-wall-on .home-section .section-label .btn { text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 0 10px rgba(0, 0, 0, .4); }
-html.home-wall-on .tile-title { font-weight: 620; }
-html.home-wall-on .home-section .section-label::after { background: rgba(255, 255, 255, .18); }
+/* 直接压在画面上的字（不在任何面板里）：白字 + 投影，局部亮斑上也读得出来。 */
+html.wall-on .hero-clock { text-shadow: 0 2px 18px rgba(0, 0, 0, .45); }
+html.wall-on .hero-meta, html.wall-on .tile-title, html.wall-on .toolbar-meta, html.wall-on .app-shell .section-label,
+html.wall-on .workspace-subheader h2, html.wall-on .workspace-subheader p, html.wall-on .back-link, html.wall-on .run-meta { text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 0 10px rgba(0, 0, 0, .4); }
+html.wall-on .tile-title { font-weight: 620; }
+html.wall-on .home-section .section-label::after { background: rgba(255, 255, 255, .18); }
 /* 小字号的指标胶囊、计数角标不靠投影，直接给近实底。 */
-html.home-wall-on .tile-metric, html.home-wall-on .home-section .section-label .count { background: rgba(8, 12, 20, .78); }
-html.home-wall-on .tile-metric { color: var(--accent); }
-html.home-wall-on .tile-metric.is-warning { color: var(--warning); }
-html.home-wall-on .tile-metric.is-error { color: var(--danger); }
-html.home-wall-on .tile-metric.is-stale { color: var(--text-2); }
-html.home-wall-on .home-view-toggle, html.home-wall-on .home-toolbar .btn.ghost, html.home-wall-on .chip, html.home-wall-on .alert-chip { background: rgba(10, 14, 22, .6); border-color: rgba(255, 255, 255, .16); color: var(--text-2); }
-html.home-wall-on .home-view-toggle button.active { background: rgba(255, 255, 255, .18); color: #fff; box-shadow: none; }
-html.home-wall-on .chip.active { background: rgba(255, 255, 255, .2); border-color: var(--tone, var(--accent)); color: #fff; }
-html.home-wall-on .alert-chip.is-error, html.home-wall-on .alert-chip.is-expired { color: var(--danger); }
-html.home-wall-on .alert-chip.is-soon { color: var(--warning); }
-html.home-wall-on .empty-state { background: rgba(10, 14, 22, .62); }
+html.wall-on .tile-metric, html.wall-on .home-section .section-label .count { background: rgba(8, 12, 20, .78); }
+html.wall-on .tile-metric { color: var(--accent); }
+html.wall-on .tile-metric.is-warning { color: var(--warning); }
+html.wall-on .tile-metric.is-error { color: var(--danger); }
+html.wall-on .tile-metric.is-stale { color: var(--text-2); }
+html.wall-on .home-view-toggle, html.wall-on .home-toolbar .btn.ghost, html.wall-on .chip, html.wall-on .alert-chip { background: rgba(10, 14, 22, .6); border-color: rgba(255, 255, 255, .16); color: var(--text-2); }
+html.wall-on .home-view-toggle button.active { background: rgba(255, 255, 255, .18); color: #fff; box-shadow: none; }
+html.wall-on .chip.active { background: rgba(255, 255, 255, .2); border-color: var(--tone, var(--accent)); color: #fff; }
+html.wall-on .alert-chip.is-error, html.wall-on .alert-chip.is-expired { color: var(--danger); }
+html.wall-on .alert-chip.is-soon { color: var(--warning); }
+html.wall-on .empty-state { background: rgba(10, 14, 22, .62); }
+/* 直接落在画面上的错误条：淡红半透明底在亮画面上托不住字，换成近实底。 */
+html.wall-on .app-shell .error { background: rgba(58, 16, 28, .84); }
 /* 浮层（菜单、搜索下拉）压在画面上必须是实底，半透明会和壁纸搅在一起。 */
-html.home-wall-on #view-bookmarks .menu-popover, html.home-wall-on .home-search-dropdown, html.home-wall-on .home-engine-menu { background: #141a27; }
-html.home-wall-on .home-search-row .omni-ic { background: rgba(255, 255, 255, .08); }
+html.wall-on .app-shell .menu-popover, html.wall-on .home-search-dropdown, html.wall-on .home-engine-menu { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
+html.wall-on .home-search-row .omni-ic { background: rgba(255, 255, 255, .08); }
+/* 分组页一屏几十张卡片：每张都开毛玻璃会掉帧，壁纸上改用半透明实底。 */
+html.wall-on .link-card { backdrop-filter: none; -webkit-backdrop-filter: none; }
 
-/* 毛玻璃：搜索框与导航。 */
-html.home-wall-on .home-search-bar, html.home-wall-on .sidebar {
+/* 毛玻璃：搜索框与导航（页头 .view-header 自带 blur，跟着半透明的 --surface 自然成玻璃）。 */
+html.wall-on .home-search-bar, html.wall-on .sidebar {
   background: rgba(14, 18, 28, .5);
   backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
 }
-html.home-wall-on .home-search-bar { border-color: rgba(255, 255, 255, .24); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
-html.home-wall-on .home-search.is-open .home-search-bar { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
-html.home-wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); }
-html.home-wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
+html.wall-on .home-search-bar { border-color: rgba(255, 255, 255, .24); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
+html.wall-on .home-search.is-open .home-search-bar { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
+html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); }
+html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 /* 降级：不支持毛玻璃、或用户要求减少透明度时，换成足够实的底色，保证字照样读得清。 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html.home-wall-on .home-search-bar, html.home-wall-on .sidebar { background: rgba(14, 18, 28, .88); }
+  html.wall-on .home-search-bar, html.wall-on .sidebar { background: rgba(14, 18, 28, .88); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  html.home-wall-on .home-search-bar, html.home-wall-on .sidebar { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  html.home-wall-on #view-bookmarks { --surface: #141a27; --surface-2: #1a2131; --surface-input: #141a27; }
+  html.wall-on .home-search-bar, html.wall-on .sidebar { background: #141a27; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.wall-on .view-header { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.wall-on .app-shell { --surface: #141a27; --surface-2: #1a2131; --surface-input: #141a27; }
 }
 
-/* 首页图标栏：只在收藏首页把 252px 侧栏收成一条细栏，其它页面照旧。每个按钮都带 title / aria-label 当提示。 */
+/* 图标栏：把 252px 侧栏收成一条细栏，全部页面一致（切页不再来回伸缩）。每个按钮都带 title / aria-label 当提示。 */
 .app-shell { transition: grid-template-columns .22s cubic-bezier(0.16, 1, 0.3, 1); }
+.nav-toggle-arrow { transform-box: fill-box; transform-origin: center; transition: transform .2s ease; }
 @media (min-width: 761px) {
-  html.home-rail { --sidebar-w: 72px; }
-  html.home-rail .sidebar { align-items: center; padding: 18px 10px 14px; }
-  html.home-rail .brand { padding: 0 0 14px; }
-  html.home-rail .brand > div:last-child, html.home-rail .keys-hint, html.home-rail .nav-label,
-  html.home-rail .tab-text, html.home-rail .tab .nav-count, html.home-rail .sub-text, html.home-rail .subnav .nav-count,
-  html.home-rail .omni-trigger span, html.home-rail .omni-kbd, html.home-rail .install-btn span, html.home-rail .lock-pill span { display: none; }
-  html.home-rail .omni-trigger, html.home-rail .tab, html.home-rail .install-btn { width: 44px; min-height: 42px; padding: 0; justify-content: center; }
-  html.home-rail .tabs { align-items: center; width: 100%; }
-  html.home-rail .tab.active::before { left: -10px; }
-  html.home-rail .tab .dot { position: absolute; top: 8px; right: 8px; }
-  html.home-rail .subnav { align-items: center; gap: 4px; margin: 4px 0; padding-left: 0; }
-  html.home-rail .subnav-item { position: relative; width: 44px; min-height: 36px; padding: 0; justify-content: center; border-left: 0; border-radius: 10px; }
-  html.home-rail .subnav-item.active { box-shadow: inset 0 0 0 1px var(--tone, var(--accent)); }
-  html.home-rail .subnav-item .issue-dot { position: absolute; top: 1px; right: 1px; min-width: 14px; padding: 0 3px; font-size: 9px; line-height: 14px; }
-  html.home-rail .sidebar-foot { flex-direction: column; width: 100%; padding: 10px 0 0; }
-  html.home-rail .lock-pill { flex: 0 0 auto; width: 38px; height: 34px; padding: 0; justify-content: center; }
-  html.home-rail .lock-pill svg { width: 15px; height: 15px; }
+  html.nav-rail { --sidebar-w: 72px; }
+  html.nav-rail .sidebar { align-items: center; padding: 18px 10px 14px; }
+  html.nav-rail .brand { padding: 0 0 14px; }
+  html.nav-rail .brand > div:last-child, html.nav-rail .keys-hint, html.nav-rail .nav-label,
+  html.nav-rail .tab-text, html.nav-rail .tab .nav-count, html.nav-rail .sub-text, html.nav-rail .subnav .nav-count,
+  html.nav-rail .omni-trigger span, html.nav-rail .omni-kbd, html.nav-rail .install-btn span, html.nav-rail .lock-pill span { display: none; }
+  html.nav-rail .omni-trigger, html.nav-rail .tab, html.nav-rail .install-btn { width: 44px; min-height: 42px; padding: 0; justify-content: center; }
+  html.nav-rail .tabs { align-items: center; width: 100%; }
+  html.nav-rail .tab.active::before { left: -10px; }
+  html.nav-rail .tab .dot { position: absolute; top: 8px; right: 8px; }
+  html.nav-rail .subnav { align-items: center; gap: 4px; margin: 4px 0; padding-left: 0; }
+  html.nav-rail .subnav-item { position: relative; width: 44px; min-height: 36px; padding: 0; justify-content: center; border-left: 0; border-radius: 10px; }
+  html.nav-rail .subnav-item.active { box-shadow: inset 0 0 0 1px var(--tone, var(--accent)); }
+  html.nav-rail .subnav-item .issue-dot { position: absolute; top: 1px; right: 1px; min-width: 14px; padding: 0 3px; font-size: 9px; line-height: 14px; }
+  html.nav-rail .sidebar-foot { flex-direction: column; width: 100%; padding: 10px 0 0; }
+  html.nav-rail .lock-pill { flex: 0 0 auto; width: 38px; height: 34px; padding: 0; justify-content: center; }
+  html.nav-rail .lock-pill svg { width: 15px; height: 15px; }
+  html.nav-rail .nav-toggle-arrow { transform: scaleX(-1); }
 }
 
-/* 首页外观弹窗 */
+/* 外观弹窗 */
 .home-look-btn .ic { width: 14px; height: 14px; }
 .wall-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
 .wall-choice { display: flex; flex-direction: column; gap: 6px; padding: 5px 5px 7px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); color: var(--text-2); font-size: 11.5px; font-weight: 650; cursor: pointer; transition: all .14s ease; }
@@ -1342,7 +1368,7 @@ html.home-wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
   .tile-grid { grid-template-columns: repeat(var(--span, 4), minmax(0, 1fr)); gap: 14px 4px; }
   .tile-link { padding: 4px 2px; }
   .tile-link:active .tile-avatar { transform: scale(.94); }
-  .home-tile:hover .tile-avatar { transform: none; box-shadow: var(--shadow-1); }
+  .home-tile:hover .tile-avatar { transform: none; box-shadow: var(--shadow-1), inset 0 0 0 1px var(--icon-ring, rgba(255, 255, 255, .08)); }
   .tile-avatar { width: 56px; height: 56px; flex-basis: 56px; margin-bottom: 6px; border-radius: 16px; transition: transform .12s ease; }
   .tile-title { font-size: 11.5px; font-weight: 620; }
   .tile-metric { margin-top: 3px; padding: 0 5px; font-size: 9.5px; }

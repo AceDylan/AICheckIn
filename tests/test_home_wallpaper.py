@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""首页壁纸：自定义上传接口的权限 / 校验 / 缓存，内置素材的体积预算与清单一致性，
-以及「只在首页生效、不为壁纸放宽 CSP、降级路径齐全」这些页面侧的护栏。"""
+"""壁纸：自定义上传接口的权限 / 校验 / 缓存，内置素材的体积预算与清单一致性，
+以及「全部页面同一套场景与导航、不为壁纸放宽 CSP、降级路径齐全」这些页面侧的护栏。"""
 import json
 import os
 import re
@@ -230,8 +230,88 @@ class WallpaperPageGuardsTest(unittest.TestCase):
         for selector in (".home-tile", ".tile-link", ".tile-avatar", ".widget-link", ".home-widget", ".tile-metric"):
             for rule in re.findall(r"(?:^|\})\s*([^{}]*%s[^{}]*)\{([^}]*)\}" % re.escape(selector), self.css):
                 self.assertNotIn("backdrop-filter: blur", rule[1], rule[0].strip())
-        glass = re.search(r"html\.home-wall-on \.home-search-bar, html\.home-wall-on \.sidebar \{([^}]*)\}", self.css)
+        glass = re.search(r"html\.wall-on \.home-search-bar, html\.wall-on \.sidebar \{([^}]*)\}", self.css)
         self.assertIn("backdrop-filter", glass.group(1))
+        # 壁纸扩到全部页面后，分组页一屏几十张卡片：卡片自带的 blur 在壁纸场景里必须关掉。
+        self.assertIn("html.wall-on .link-card { backdrop-filter: none; -webkit-backdrop-filter: none; }", self.css)
+
+    def test_wallpaper_scene_covers_the_whole_workspace(self):
+        # 回归：场景令牌曾经只挂在 #view-bookmarks 和 .sidebar 上，离开收藏首页就变回工作台样式，观感割裂。
+        # 现在挂在 .app-shell（侧栏 + 全部视图）上；弹窗 / 命令面板 / 提示条在它之外，仍跟随深浅主题。
+        tokens = re.search(r"html\.wall-on \.app-shell \{([^}]*)\}", self.css).group(1)
+        for decl in ("color-scheme: dark", "--surface: rgba(", "--text: #ffffff", "--border: rgba("):
+            self.assertIn(decl, tokens)
+        self.assertNotIn("#view-bookmarks", self.css[self.css.index("html.wall-on .home-wall"):self.css.index("/* 外观弹窗 */")])
+        for gone in ("home-wall-on", "home-rail"):
+            self.assertNotIn(gone, self.css)
+            self.assertNotIn(gone, self.html)
+        shell = self.html[self.html.index('<div class="app-shell">'):self.html.index("</main>")]
+        for view in ('id="view-bookmarks"', 'id="view-checkin"', 'id="view-settings"', 'class="sidebar"'):
+            self.assertIn(view, shell)
+        for overlay in ('id="homeLookModal"', 'id="omniModal"'):
+            self.assertGreater(self.html.index(overlay), self.html.index("</main>"))
+        # 浅色主题的分组色调不能压过场景色调：场景选择器的优先级必须更高。
+        self.assertIn("html.wall-on .app-shell .tone-mint {", self.css)
+        # 浮层压在画面上必须是实底；根滚动条 / 页面底色跟着场景走，浅色主题下不露白边。
+        self.assertRegex(self.css, r"html\.wall-on \.app-shell \.menu-popover[^{]*\{ background: #141a27;")
+        self.assertIn("html.wall-on body { background: #0c1017; }", self.css)
+
+    def test_look_does_not_depend_on_the_current_page(self):
+        block = self.html[self.html.index("function applyLook()"):self.html.index("// 侧栏底部的收起 / 展开")]
+        for page_state in ("LIB.page", "currentViewName", "onHomePage"):
+            self.assertNotIn(page_state, block)
+        self.assertIn("root.classList.toggle('wall-on', !!w);", block)
+        self.assertIn("root.classList.toggle('nav-rail', rail);", block)
+        # 导航形态在样式加载前就定下来（<head> 里的第一段脚本），打开页面时侧栏不会先宽后窄地跳一下。
+        head = self.html[:self.html.index("</head>")]
+        self.assertIn("bh_home_nav=full", head)
+        self.assertIn("classList.add('nav-rail')", head)
+        # 文案不再说「只影响收藏首页」。
+        self.assertNotIn("只影响收藏首页", self.html)
+        self.assertIn("对全部页面生效", self.html)
+
+    def test_sidebar_offers_a_collapse_toggle_with_tooltips(self):
+        self.assertIn('<button class="icon-btn nav-toggle" id="navToggle" type="button"', self.html)
+        self.assertIn("writePref('bh_home_nav', homeNavPref() === 'rail' ? 'full' : 'rail');", self.html)
+        # 图标栏里文字全部收起，靠 title 当提示：三个主标签、搜索入口、新建分组都要有。
+        for needle in ('data-view="bookmarks" title="收藏库"', 'data-view="checkin" title="签到中心"',
+                       'data-view="settings" title="系统设置"', 'id="omniOpen" type="button" title="搜索全部收藏"',
+                       'data-act="add-group" title="新建分组"'):
+            self.assertIn(needle, self.html)
+
+    def test_icon_plates_keep_single_colour_logos_visible(self):
+        # 回归：白色透明 logo 垫在浅色底板上显示成一片纯白。底板按图标明暗二选一，且两种组合的对比度都要够。
+        def lum(hex_color):
+            chans = [int(hex_color[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
+            lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in chans]
+            return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+        dark_plate = re.search(r"\.icon-light \{ --icon-plate: (#[0-9a-f]{6});", self.css).group(1)
+        light_plate = re.search(r"\.icon-dark \{ --icon-plate: (#[0-9a-f]{6});", self.css).group(1)
+        light_min = float(re.search(r"const ICON_LIGHT_LUM = ([0-9.]+);", self.html).group(1))
+        dark_max = float(re.search(r"const ICON_DARK_LUM = ([0-9.]+);", self.html).group(1))
+        # 被判成「浅色图标」的最暗像素压在深色底板上、被判成「深色图标」的最亮像素压在浅色底板上，都不低于 4.5:1。
+        self.assertGreaterEqual((light_min + 0.05) / (lum(dark_plate) + 0.05), 4.5)
+        self.assertGreaterEqual((lum(light_plate) + 0.05) / (dark_max + 0.05), 4.5)
+        # ……而它们留在原来的底板上确实看不清（不到 1.6:1 / 2:1），所以才需要换。
+        self.assertLess((lum(light_plate) + 0.05) / (light_min + 0.05), 1.6)
+        # 四种头像共用这套底板；首页大图标的默认浅色底板让位给量出来的结果。
+        self.assertIn(":is(.site-avatar, .mini-avatar, .link-avatar, .tile-avatar):is(.icon-light, .icon-dark) "
+                      "{ background: var(--icon-plate); border-color: var(--icon-ring); }", self.css)
+        self.assertIn(".tile-avatar:has(.avatar-img.is-ready) { background: var(--icon-plate, #f4f6fa); }", self.css)
+        # 只换底板，不动图标本身的颜色：头像 / 图标规则里不能出现滤镜、反色、混合模式。
+        for selector, body in re.findall(r"(?:^|\})\s*([^{}]*(?:avatar|icon-light|icon-dark)[^{}]*)\{([^}]*)\}", self.css):
+            for banned in ("filter:", "invert(", "mix-blend-mode"):
+                if banned == "filter:" and "backdrop-filter" in body:
+                    continue
+                self.assertNotIn(banned, body, selector.strip())
+        # 无障碍：强制颜色模式下底板保留自己的颜色（否则背景被系统色替换，白色 logo 又看不见），高对比下描边加重。
+        self.assertIn("@media (forced-colors: active) { .icon-light, .icon-dark { forced-color-adjust: none; } }", self.css)
+        contrast = self.css[self.css.index("@media (prefers-contrast: more) {"):]
+        self.assertIn(".icon-light { --icon-ring:", contrast[:contrast.index("}\n}") + 3])
+        # 成功加载的自动图标与上传的备用图都会量。
+        self.assertIn("markIconResolution(img); markIconTone(img);", self.html)
+        self.assertIn('onload="uploadedIconReady(this)"', self.html)
 
     def test_degradation_paths_exist(self):
         self.assertIn("@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))", self.css)
@@ -243,7 +323,7 @@ class WallpaperPageGuardsTest(unittest.TestCase):
         self.assertIn("if (!url || saveDataOn()) return;", self.html)
 
     def test_rail_is_desktop_only(self):
-        start = self.css.index("html.home-rail { --sidebar-w: 72px; }")
+        start = self.css.index("html.nav-rail { --sidebar-w: 72px; }")
         media = self.css.rfind("@media", 0, start)
         self.assertEqual(self.css[media:self.css.index("{", media)].strip(), "@media (min-width: 761px)")
 
@@ -270,7 +350,7 @@ class WallpaperPageGuardsTest(unittest.TestCase):
             self.assertIn("writePref('%s'" % name, self.html)
 
     def test_service_worker_caches_wallpapers_first_and_was_bumped(self):
-        self.assertGreaterEqual(int(re.search(r"bh-shell-v(\d+)", self.sw).group(1)), 8)
+        self.assertGreaterEqual(int(re.search(r"bh-shell-v(\d+)", self.sw).group(1)), 9)
         self.assertIn("url.pathname.startsWith('/static/wallpapers/')", self.sw)
         # 接口（含 /api/wallpaper）仍然完全不经过 SW。
         self.assertLess(self.sw.index("if (url.pathname.startsWith('/api/')) return;"),

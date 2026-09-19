@@ -31,6 +31,7 @@ class LibraryHomeUiTest(unittest.TestCase):
             'globalThis.__RESPONSES = ' + json.dumps(responses) + ';',
             "const assert = require('node:assert/strict');",
             "document.querySelectorAll('.tab').forEach(t => { t.addEventListener = (name, fn) => { t[name] = fn; }; });",
+            "{ const t = document.getElementById('navToggle'); t.addEventListener = (name, fn) => { t[name] = fn; }; }",
             _inline_script(),
             'setTimeout(async () => { try {', assertions,
             'assert.deepEqual(__CALLS.errors, []); assert.deepEqual(__CALLS.rejections, []);',
@@ -163,23 +164,47 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.deepEqual([img(16), img(32), img(64), img(180), img(0)], [true, true, false, false, false]);
         """)
 
-    def test_wallpaper_follows_the_page_and_the_cookie(self):
+    def test_wallpaper_and_rail_are_global_and_follow_the_cookie(self):
         self.run_js("""
             const root = document.documentElement, layer = $('homeWall');
-            // 默认启用内置壁纸，只在收藏首页生效；首页同时收成图标栏。
+            const look = () => [root.classList.contains('wall-on'), root.classList.contains('nav-rail')];
+            // 默认启用内置壁纸 + 图标栏，而且不看当前在哪个页面：首页、看板、分组、签到、设置都是同一套。
             assert.equal(currentWallpaper().id, 'aurora');
-            assert.ok(root.classList.contains('home-wall-on') && root.classList.contains('home-rail'));
+            assert.deepEqual(look(), [true, true]);
             assert.equal(layer.style['--wall-color'], '#112f49');
             openLibPage('monitor');
-            assert.ok(!root.classList.contains('home-wall-on') && !root.classList.contains('home-rail'));
+            assert.deepEqual(look(), [true, true]);
+            openLibPage('second');
+            assert.deepEqual(look(), [true, true]);
+            switchView('checkin');
+            assert.deepEqual(look(), [true, true]);
             switchView('settings');
-            assert.ok(!root.classList.contains('home-wall-on'));
+            assert.deepEqual(look(), [true, true]);
             document.querySelector('.tab[data-view="bookmarks"]').click();
-            assert.ok(root.classList.contains('home-wall-on'));
-            // 关掉壁纸 / 换成完整侧栏：各自独立。
+            assert.deepEqual(look(), [true, true]);
+            // 关掉壁纸 / 换成完整侧栏：各自独立，同样对所有页面生效。
             document.cookie = 'bh_wallpaper=off; bh_home_nav=full';
-            applyHomeLook();
-            assert.ok(!root.classList.contains('home-wall-on') && !root.classList.contains('home-rail'));
+            applyLook();
+            assert.deepEqual(look(), [false, false]);
+            switchView('settings');
+            assert.deepEqual(look(), [false, false]);
+            document.cookie = 'bh_wallpaper=dusk; bh_home_nav=full';   // 替身里的 cookie 是整串覆盖，不是罐子
+            openLibPage('monitor');
+            assert.deepEqual(look(), [true, false]);
+            assert.equal(layer.style['--wall-color'], '#573352');
+            // 侧栏底部的按钮和外观弹窗是同一个偏好：点一下收起，再点一下展开，提示文字跟着换。
+            $('navToggle').click();
+            assert.deepEqual([homeNavPref(), look()[1], $('navToggle').title], ['rail', true, '展开侧栏']);
+            $('navToggle').click();
+            assert.deepEqual([homeNavPref(), look()[1], $('navToggle').title], ['full', false, '收起侧栏']);
+            // 高对比 / 强制颜色：壁纸整个让路，导航形态不受影响。
+            const mm = globalThis.matchMedia;
+            globalThis.matchMedia = (q) => ({ matches: q.includes('forced-colors'), addEventListener() {} });
+            applyLook();
+            assert.deepEqual(look(), [false, false]);
+            globalThis.matchMedia = mm;
+            applyLook();
+            assert.deepEqual(look(), [true, false]);
             // Cookie 被改成别的值只会回落到默认，不会拿去拼地址。
             document.cookie = 'bh_wallpaper=../../evil; bh_wp_dim=9; bh_home_nav=x';
             assert.deepEqual([wallPref(), wallDimPref(), homeNavPref()], ['aurora', 'medium', 'rail']);
@@ -222,6 +247,70 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.equal(String(wallDimFor({ lum: 0.92 })).length <= 4, true);
             document.cookie = 'bh_wp_dim=strong';
             assert.equal(wallDimFor({ lum: 0.3 }), WALL_DIMS.strong);
+        """)
+
+    def test_icon_plate_follows_the_icons_own_brightness(self):
+        # 回归：透明底的白色 logo 垫在浅色底板上是一片纯白（壁纸首页上尤其显眼）。底板按图标自身明暗来选。
+        self.run_js("""
+            const px = (n, rgba) => { const out = []; for (let i = 0; i < n; i++) out.push(...rgba); return out; };
+            const clear = (n) => px(n, [0, 0, 0, 0]);
+            // 透明底 + 白色 / 浅黄图形 → 'light'（换深色底板）；透明底 + 黑色 / 深蓝图形 → 'dark'（换浅色底板）。
+            assert.equal(iconToneFromPixels(px(200, [255, 255, 255, 255]).concat(clear(376))), 'light');
+            assert.equal(iconToneFromPixels(px(200, [255, 210, 30, 255]).concat(clear(376))), 'light');
+            assert.equal(iconToneFromPixels(px(200, [36, 41, 47, 255]).concat(clear(376))), 'dark');
+            assert.equal(iconToneFromPixels(px(200, [10, 37, 64, 255]).concat(clear(376))), 'dark');
+            // 彩色图标保持默认底板：不因为「不够白也不够黑」就乱换。
+            assert.equal(iconToneFromPixels(px(200, [255, 69, 0, 255]).concat(clear(376))), '');
+            assert.equal(iconToneFromPixels(px(120, [255, 255, 255, 255]).concat(px(120, [20, 20, 20, 255]), clear(336))), '');
+            // 彩色圆底 + 白色小图形（多数像素是彩色）不算浅色图标。
+            assert.equal(iconToneFromPixels(px(300, [40, 160, 230, 255]).concat(px(100, [255, 255, 255, 255]), clear(176))), '');
+            // 自带底色、几乎铺满的图标：底板露不出来，不挂类；全透明的空图也一样。
+            assert.equal(iconToneFromPixels(px(560, [255, 255, 255, 255]).concat(clear(16))), '');
+            assert.equal(iconToneFromPixels(clear(576)), '');
+            // 半透明的抗锯齿边缘按不透明度计权，近乎透明的像素忽略。
+            assert.equal(iconToneFromPixels(px(150, [255, 255, 255, 255]).concat(px(400, [0, 0, 0, 20]), clear(26))), 'light');
+
+            // markIconTone：量一次、按站点记住，只在头像容器上挂类；图标本身不加任何滤镜 / 反色。
+            let draws = 0, boom = false, pixels = px(200, [255, 255, 255, 255]).concat(clear(376));
+            const realCreate = document.createElement;
+            document.createElement = (tag) => tag !== 'canvas' ? realCreate(tag) : {
+                getContext: () => ({ clearRect() {}, drawImage() { draws++; },
+                    getImageData: () => { if (boom) throw new Error('tainted'); return { data: pixels }; } }) };
+            const avatar = makeEl('avatar'), img = makeEl('img');
+            img.parentElement = avatar;
+            img.dataset.favicon = 'https://white-logo.example';
+            markIconTone(img);
+            assert.deepEqual([avatar.classList.contains('icon-light'), avatar.classList.contains('icon-dark'), draws], [true, false, 1]);
+            assert.deepEqual(Object.keys(img.style), []);
+            assert.ok(!img.classList.contains('icon-light'));
+            markIconTone(img);
+            assert.equal(draws, 1);
+            // 换成深色图标的站点：类跟着换，不会两个都挂着。
+            pixels = px(200, [0, 0, 0, 255]).concat(clear(376));
+            const other = makeEl('img2');
+            other.parentElement = avatar;
+            other.dataset.favicon = 'https://black-logo.example';
+            markIconTone(other);
+            assert.deepEqual([avatar.classList.contains('icon-light'), avatar.classList.contains('icon-dark')], [false, true]);
+            // 上传的备用图：自动图标已经就位时不再量；自动图标缺席时才由它决定底板。
+            const upload = makeEl('upload'), auto = makeEl('auto'), plate = makeEl('plate');
+            upload.parentElement = plate;
+            upload.previousElementSibling = auto;
+            auto.classList.add('is-ready');
+            uploadedIconReady(upload);
+            assert.deepEqual([upload.classList.contains('is-ready'), plate.classList.contains('icon-dark'), draws], [true, false, 2]);
+            auto.classList.remove('is-ready');
+            uploadedIconReady(upload);
+            assert.deepEqual([plate.classList.contains('icon-dark'), draws], [true, 3]);
+            // 读像素抛异常（解码失败之类）：回到默认底板，不报错；已经从文档里摘掉的图标直接跳过。
+            document.createElement = realCreate;
+            boom = true;
+            const img3 = makeEl('img3');
+            img3.parentElement = plate;
+            img3.dataset.favicon = 'https://broken.example';
+            markIconTone(img3);
+            assert.ok(!plate.classList.contains('icon-light') && !plate.classList.contains('icon-dark'));
+            markIconTone(makeEl('orphan'));
         """)
 
     def test_site_metric_states_stay_short(self):
