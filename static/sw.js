@@ -7,7 +7,7 @@
  * 外壳（/ 与 /static/*）走 stale-while-revalidate：先用缓存秒开，后台再更新，
  * 下一次访问就是新版本。CACHE_VERSION 改了会清掉所有旧缓存。
  */
-const CACHE_VERSION = 'bh-shell-v5';
+const CACHE_VERSION = 'bh-shell-v6';
 const SHELL = [
   '/',
   '/static/app-v3.css',

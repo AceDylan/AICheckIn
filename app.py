@@ -817,6 +817,8 @@ def normalize_bookmark(bookmark):
         f["enabled"] = bool(f.get("enabled", True))
         cleaned.append(f)
     bookmark["fields"] = cleaned
+    # 旧数据没有这个键；统一成 bool，首页选择与网址分组里的 show_on_home 同义。
+    bookmark["show_on_home"] = bool(bookmark.get("show_on_home"))
     return sync_legacy_balance(bookmark)
 
 
@@ -1012,7 +1014,9 @@ def clean_bookmark(payload, existing=None):
     if errors:
         raise ValueError("；".join(errors))
 
-    item = {"name": name, "url": url, "fields": fields}
+    # 编辑弹窗不带 show_on_home：缺省沿用旧值，免得改个名字就把站点从首页摘掉。
+    show_on_home = bool(payload.get("show_on_home", (existing_norm or {}).get("show_on_home", False)))
+    item = {"name": name, "url": url, "fields": fields, "show_on_home": show_on_home}
     return sync_legacy_balance(item)
 
 
@@ -1226,6 +1230,7 @@ def public_bookmark(bookmark):
         "name": bookmark.get("name", ""),
         "url": bookmark.get("url", ""),
         "fields": [public_field(f) for f in bookmark.get("fields") or [] if isinstance(f, dict)],
+        "show_on_home": bool(bookmark.get("show_on_home")),
         # 旧键镜像仅用于展示，本身不含凭据；balance_config（含请求头）刻意不下发。
         "balance": bookmark.get("balance", ""),
         "balance_updated_at": bookmark.get("balance_updated_at", ""),
@@ -2846,9 +2851,36 @@ def _save_store_or_error(store):
     return None
 
 
+def _home_response(store):
+    """首页相关写操作的统一响应：分组与看板站点一起回，前端一次就地更新。"""
+    return _link_groups_response(store, bookmarks=[public_bookmark(b) for b in store["bookmarks"]])
+
+
+def _bookmark_home_target(store, item):
+    """校验首页选择里的一条看板站点，返回下标；格式不对抛 ValueError，对不上号抛 LookupError。
+
+    看板站点没有稳定 id，只能用下标定位。下标会因为别处的排序 / 删除而错位，
+    所以同时带上网址做核对：对不上就让前端刷新重选，而不是悄悄选中另一个站点。
+    """
+    if not isinstance(item, dict):
+        raise ValueError("首页站点格式无效")
+    idx, url = item.get("index"), item.get("url")
+    if not isinstance(idx, int) or isinstance(idx, bool) or not isinstance(url, str):
+        raise ValueError("首页站点格式无效")
+    bookmarks = store["bookmarks"]
+    if idx < 0 or idx >= len(bookmarks) or bookmarks[idx].get("url") != url:
+        raise LookupError("站点已调整顺序或被删除，请刷新后重新选择")
+    return idx
+
+
 @app.put("/api/library/home")
 def api_library_home():
-    """一次保存首页选择；以分组 + 链接 id 定位，不复制链接数据。"""
+    """一次保存首页选择；以分组 + 链接 id 定位，不复制链接数据。
+
+    links 必填（网址分组里的选择）；bookmarks 可选（站点看板里的选择，
+    形如 [{"index": 0, "url": "https://…"}]）。不带 bookmarks 键时看板的选择保持不变，
+    旧客户端因此不会把看板站点从首页清掉。
+    """
     guard = _guard_admin()
     if guard:
         return guard
@@ -2856,6 +2888,9 @@ def api_library_home():
     selections = payload.get("links") if isinstance(payload, dict) else None
     if not isinstance(selections, list):
         return jsonify({"ok": False, "error": "请选择首页网址"}), 400
+    site_selections = payload.get("bookmarks")
+    if site_selections is not None and not isinstance(site_selections, list):
+        return jsonify({"ok": False, "error": "首页站点格式无效"}), 400
     store, err = _load_store_or_error()
     if err:
         return err
@@ -2868,13 +2903,52 @@ def api_library_home():
         if key not in known:
             return jsonify({"ok": False, "error": "网址已移动或删除，请刷新后重新选择"}), 409
         selected.add(key)
+    selected_sites = None
+    if site_selections is not None:
+        selected_sites = set()
+        for item in site_selections:
+            try:
+                selected_sites.add(_bookmark_home_target(store, item))
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            except LookupError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 409
+    # 全部校验通过才动数据：任何一条不合法都不应留下半截修改。
     for group in store["link_groups"]:
         for link in group["links"]:
             link["show_on_home"] = (group["id"], link["id"]) in selected
+    if selected_sites is not None:
+        for idx, bookmark in enumerate(store["bookmarks"]):
+            bookmark["show_on_home"] = idx in selected_sites
     err = _save_store_or_error(store)
     if err:
         return err
-    return _link_groups_response(store)
+    return _home_response(store)
+
+
+@app.put("/api/bookmarks/<int:idx>/home")
+def api_bookmark_home(idx):
+    """单个看板站点「展示到首页 / 从首页移除」。只改这一个标记，不碰接口字段与快照。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get("show_on_home"), bool):
+        return jsonify({"ok": False, "error": "缺少 show_on_home"}), 400
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    try:
+        target = _bookmark_home_target(store, {"index": idx, "url": payload.get("url")})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    store["bookmarks"][target]["show_on_home"] = payload["show_on_home"]
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return _home_response(store)
 
 
 @app.post("/api/link_groups")
