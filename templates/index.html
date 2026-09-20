@@ -100,7 +100,7 @@
             <div class="home-top">
               <header class="home-hero" aria-label="时间与问候">
                 <div class="hero-clock" id="heroClock" aria-hidden="true">--:--</div>
-                <div class="hero-meta"><span id="heroGreeting">你好</span><span class="hero-divider" aria-hidden="true">·</span><time id="heroDate"></time></div>
+                <div class="hero-meta"><span id="heroGreeting">你好</span><span class="hero-divider" aria-hidden="true">·</span><span class="hero-date"><time id="heroDate"></time> <span class="hero-weekday" id="heroWeekday"></span></span></div>
                 <button type="button" class="home-tools-toggle" id="homeToolsToggle" aria-expanded="false" aria-controls="homeTools" title="首页设置" aria-label="首页设置"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
               </header>
               <div class="home-toolbar" id="homeTools">
@@ -258,7 +258,7 @@
               <div class="note">这两项记在本浏览器的 Cookie 里，各设备可以各设各的。</div>
               <div class="controls" style="margin-top:12px"><button type="button" class="btn sm ghost" id="openHomeLook">壁纸 / 遮罩 / 导航…</button></div>
             </div>
-            <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。</div></div></div>
+            <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。启用壁纸时，整个界面（含弹窗）固定为深色场景。</div></div></div>
           </div>
         </section>
       </div>
@@ -2049,10 +2049,19 @@
         : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`, 0, { folded: folds.includes(g.id) }));
       $('homeList').innerHTML = sections.join('');
       if (count) hideEmpty($('homeEmpty'));
-      else showEmpty($('homeEmpty'), total
-        ? { icon: 'search', title: '没有匹配的网址', text: '换个关键词试试，或清空搜索框。' }
-        : { icon: 'star', title: '把常用网址放到首页', text: '从站点看板和各分组里挑选要放上来的网址，或在任意卡片的「···」菜单中选择「展示到首页」。之后点右上角的「编辑」可以拖动排序。', actions: [{ label: '自定义首页', onclick: 'openHomeModal()' }] });
+      else showEmpty($('homeEmpty'), homeEmptyOpts(total));
       pumpFavicons();
+    }
+    // 首页空着有三种原因，引导各不相同：筛选没命中；库里有网址、只是一个都没放上首页；库本身就是空的（刚部署）。
+    // 最后一种再引去「自定义首页」只会看到一张空表，没有东西可勾——直接给「建分组 / 添加网址 / 导入备份」。
+    function homeEmptyOpts(total) {
+      if (total) return { icon: 'search', title: '没有匹配的网址', text: '换个关键词试试，或清空搜索框。' };
+      if (totalLinks() + (STATE.bookmarks || []).length) return { icon: 'star', title: '把常用网址放到首页', text: '从站点看板和各分组里挑选要放上来的网址，或在任意卡片的「···」菜单中选择「展示到首页」。之后点右上角的「编辑」可以拖动排序。', actions: [{ label: '自定义首页', onclick: 'openHomeModal()' }] };
+      if (!canEdit()) return { icon: 'lock', title: '这里还没有网址', text: '解锁管理权限后，就可以添加网址或导入备份。', actions: [{ label: '去解锁', onclick: "switchView('settings')" }] };
+      const first = libGroups().length
+        ? { label: '＋ 添加第一个网址', onclick: "$('homeAddLink').click()" }
+        : { label: '＋ 新建第一个分组', onclick: 'openGroupModal(null)' };
+      return { icon: 'star', title: '从第一个网址开始', text: '网址按分组收纳，勾选「展示到首页」的会出现在这里。已有 JSON 导出或备份的话，也可以一次导入。', actions: [first, { label: '导入 JSON / 备份', ghost: true, onclick: "$('importCfg').click()" }] };
     }
     // ===== 首页待办 =====
     // 数据在服务端的 data/todos.json（读写都要管理权限，未解锁时 /api/configs 不下发）；
@@ -2060,7 +2069,7 @@
     const TODO_PREFS = ['open', 'closed', 'off'];
     // queue：写操作排成一队按序发出；inflight：队里还有几个没回来；resync：队里有失败的，清空后向服务端重新要一份；
     // moveJob：还没发出去的那次挪动（连按方向键时并成一次请求）。
-    const TODO = { editing: '', queue: Promise.resolve(), inflight: 0, resync: false, moveJob: null };
+    const TODO = { editing: '', queue: Promise.resolve(), inflight: 0, resync: false, moveJob: null, clearTimer: 0, clearCount: 0 };
     const TODO_SORT = { row: null, list: null, pointerId: null, x: 0, y: 0, lastY: 0, grabY: 0, active: false, raf: 0, endedAt: 0 };
     const TODO_MENU = { id: '', top: 0 };
     // 没选过时的默认值看版面：宽屏有右侧一列放得下，默认展开；窄屏 / 手机上待办叠在图标上方，
@@ -2126,6 +2135,7 @@
       $('todoList').hidden = !pending.length;
       $('todoDone').hidden = !done.length;
       $('todoDoneLabel').textContent = `已完成 ${done.length}`;
+      if (TODO.clearTimer && done.length !== TODO.clearCount) resetTodoClear();
       $('todoDoneList').innerHTML = done.map(t => todoItemHtml(t, false)).join('');
     }
     // 重绘会把焦点丢回 <body>：键盘用户每勾一条就得从页头重新 Tab 过来。这里把焦点放回同一条（或相邻的一条）。
@@ -2398,11 +2408,37 @@
       writePref('bh_home_todo', todoPref() === 'closed' ? 'open' : 'closed');
       renderTodos();
     });
+    // 「清除已完成」原地二次确认（和字段编辑器的删除一个路数）：第一下只把按钮变成「确认清除 N 条？」，
+    // 3 秒内再点才真删；超时、失焦、按 Esc 都还原。不用原生 confirm——它会把整页卡住，样子也和别处脱节。
+    const TODO_CLEAR_MS = 3000;
+    function resetTodoClear() {
+      const btn = $('todoClear');
+      clearTimeout(TODO.clearTimer);
+      TODO.clearTimer = 0;
+      if (!btn.classList.contains('confirming')) return;
+      btn.classList.remove('confirming');
+      btn.textContent = '清除已完成';
+    }
     $('todoClear').addEventListener('click', async (e) => {
       e.preventDefault();   // 按钮在 <summary> 里：别顺带把「已完成」折叠起来
-      const n = todoItems().filter(t => t.done).length;
-      if (!n || !confirm(`删除 ${n} 条已完成的待办？`)) return;
+      const btn = e.currentTarget, n = todoItems().filter(t => t.done).length;
+      if (!n) { resetTodoClear(); return; }
+      if (!btn.classList.contains('confirming')) {
+        btn.classList.add('confirming');
+        btn.textContent = `确认清除 ${n} 条？`;
+        TODO.clearCount = n;
+        $('todoLive').textContent = `再按一次，删除 ${n} 条已完成的待办；3 秒后自动取消。`;
+        TODO.clearTimer = setTimeout(resetTodoClear, TODO_CLEAR_MS);
+        return;
+      }
+      resetTodoClear();
       await todoRun(() => todoApi('/api/todos/clear_done', 'POST'), '', undefined, () => { STATE.todos = todoItems().filter(t => !t.done); });
+    });
+    $('todoClear').addEventListener('blur', resetTodoClear);
+    $('todoClear').addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !e.currentTarget.classList.contains('confirming')) return;
+      e.preventDefault(); e.stopPropagation();
+      resetTodoClear();
     });
     $('homeTodo').addEventListener('change', (e) => {
       const box = e.target.closest('[data-todo-check]'), row = box && box.closest('[data-todo]');
@@ -4477,7 +4513,17 @@
       $('homeSearchBox').classList.toggle('is-open', open);
       list.innerHTML = HOME_SEARCH.rows.map(homeSearchRowHtml).join('');
       if (open) pumpFavicons();
+      fitHomeSearchList();
     }
+    // 手机上虚拟键盘只缩小「可视视口」，布局视口不变，vh / dvh 都不跟着缩：下拉按 60vh 算会伸到键盘底下，
+    // 最后一行「用 xx 搜索」正好被盖住。这里量出搜索框下沿到可视视口下沿还剩多少，写进 --dd-max，样式里与原上限取小。
+    function fitHomeSearchList() {
+      const vv = window.visualViewport;
+      if (!vv || $('homeSearchList').hidden) return;
+      const room = Math.floor(vv.offsetTop + vv.height - $('homeSearchBox').getBoundingClientRect().bottom - 8);
+      $('homeSearchBox').style.setProperty('--dd-max', Math.max(132, room) + 'px');
+    }
+    if (window.visualViewport) for (const type of ['resize', 'scroll']) window.visualViewport.addEventListener(type, fitHomeSearchList);
     function clearHomeSearch() {
       $('homeSearch').value = '';
       renderHomeSearch();
@@ -4581,7 +4627,8 @@
       const pad = (n) => String(n).padStart(2, '0');
       $('heroClock').textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
       $('heroGreeting').textContent = greetingFor(now.getHours());
-      $('heroDate').textContent = `${now.getMonth() + 1}月${now.getDate()}日 ${WEEKDAYS[now.getDay()]}`;
+      $('heroDate').textContent = `${now.getMonth() + 1}月${now.getDate()}日`;
+      $('heroWeekday').textContent = WEEKDAYS[now.getDay()];
     }
     // 对准下一个整分再响一次，而不是固定周期轮询：一分钟只醒一次，分钟一跳就更新。
     // （页面里刻意不出现周期定时器——死链检查的测试把它当作「没有后台自动探测」的护栏。）

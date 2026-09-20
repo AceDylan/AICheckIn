@@ -166,6 +166,14 @@ class StyleGuardTest(unittest.TestCase):
         self.assertIn("position: fixed", menu)
         self.assertNotIn("backdrop-filter", menu)
 
+    def test_clear_done_confirm_state_is_styled_and_timed_without_polling(self):
+        html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        block = html[html.index("function resetTodoClear()"):html.index("$('homeTodo').addEventListener('change'")]
+        self.assertNotIn("confirm(", block)
+        self.assertIn("setTimeout(resetTodoClear, TODO_CLEAR_MS)", block)
+        self.assertNotIn("setInterval", block)
+        self.assertIn(".todo-clear:hover, .todo-clear.confirming {", self.css)
+
     def test_degradation_paths(self):
         self.assertRegex(self.todo, r"@media \(forced-colors: active\) \{ \.todo-check \{ border-color: CanvasText; \}")
         self.assertIn("@media (prefers-reduced-motion: reduce) { #todoCollapse .ic", self.todo)
@@ -193,6 +201,7 @@ class TodoRenderTest(unittest.TestCase):
             "const assert = require('node:assert/strict');",
             "document.querySelectorAll('.tab').forEach(t => { t.addEventListener = (name, fn) => { t[name] = fn; }; });",
             "{ const t = document.getElementById('navToggle'); t.addEventListener = (name, fn) => { t[name] = fn; }; }",
+            "{ const t = document.getElementById('todoClear'); t.on = {}; t.addEventListener = (name, fn) => { t.on[name] = fn; }; }",
             _inline_script(),
             'setTimeout(async () => { try {', assertions,
             'assert.deepEqual(__CALLS.errors, []); assert.deepEqual(__CALLS.rejections, []);',
@@ -366,6 +375,42 @@ class TodoRenderTest(unittest.TestCase):
             assert.equal($('todoList').innerHTML, 'MID-DRAG');                  // 拖到一半不换 DOM
             TODO_SORT.active = false; renderTodos();
             assert.ok($('todoList').innerHTML.includes('data-todo="t1"'));
+        """)
+
+    def test_clear_done_confirms_in_place_instead_of_a_native_dialog(self):
+        """「清除已完成」：第一下只换文案，第二下才发请求；失焦 / Esc / 条数变了都还原。全程不碰原生 confirm。"""
+        self.run_js("""
+            globalThis.confirm = () => { throw new Error('native confirm must not be used'); };
+            const btn = $('todoClear'), ev = () => ({ preventDefault() {}, stopPropagation() {}, currentTarget: btn, key: 'Escape' });
+            const cleared = () => __CALLS.fetches.filter(u => u.includes('/api/todos/clear_done')).length;
+            await btn.on.click(ev());
+            assert.ok(btn.classList.contains('confirming'));
+            assert.equal(btn.textContent, '确认清除 1 条？');
+            assert.ok($('todoLive').textContent.includes('再按一次'));
+            assert.equal(cleared(), 0);
+            // 失焦、Esc 都取消
+            btn.on.blur(ev());
+            assert.ok(!btn.classList.contains('confirming'));
+            assert.equal(btn.textContent, '清除已完成');
+            await btn.on.click(ev());
+            btn.on.keydown(ev());
+            assert.ok(!btn.classList.contains('confirming'));
+            // 确认期间已完成的条数变了：按钮上的数字不作数，还原
+            await btn.on.click(ev());
+            STATE.todos.find(t => t.id === 't1').done = true;
+            renderTodos();
+            assert.ok(!btn.classList.contains('confirming'));
+            assert.equal(cleared(), 0);
+            // 连点两下才真删
+            await btn.on.click(ev());
+            assert.equal(btn.textContent, '确认清除 2 条？');
+            await btn.on.click(ev());
+            assert.equal(cleared(), 1);
+            assert.ok(!btn.classList.contains('confirming'));
+            assert.deepEqual(todoItems().filter(t => t.done), []);
+            // 没有已完成的：点了也不进确认态
+            await btn.on.click(ev());
+            assert.ok(!btn.classList.contains('confirming'));
         """)
 
     def test_neighbour_lookup_stays_inside_the_same_list(self):

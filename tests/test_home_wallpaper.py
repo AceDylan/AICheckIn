@@ -237,7 +237,7 @@ class WallpaperPageGuardsTest(unittest.TestCase):
 
     def test_wallpaper_scene_covers_the_whole_workspace(self):
         # 回归：场景令牌曾经只挂在 #view-bookmarks 和 .sidebar 上，离开收藏首页就变回工作台样式，观感割裂。
-        # 现在挂在 .app-shell（侧栏 + 全部视图）上；弹窗 / 命令面板 / 提示条在它之外，仍跟随深浅主题。
+        # 现在挂在 .app-shell（侧栏 + 全部视图）上；弹窗 / 命令面板 / 提示条在它之外，用文件顶部的深色令牌（见 test_ui_polish）。
         tokens = re.search(r"html\.wall-on \.app-shell \{([^}]*)\}", self.css).group(1)
         for decl in ("color-scheme: dark", "--surface: rgba(", "--text: #ffffff", "--border: rgba("):
             self.assertIn(decl, tokens)

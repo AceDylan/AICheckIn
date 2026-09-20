@@ -78,6 +78,40 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.ok($('homeEmpty').innerHTML.includes('自定义首页'));
         """)
 
+    def test_empty_home_guides_by_cause(self):
+        """首页空着的三种原因各有引导；库本身是空的（新部署）不能再引去「自定义首页」——那里只有一张空表。"""
+        self.run_js("""
+            const empty = () => $('homeEmpty').innerHTML;
+            // 1) 筛选没命中
+            $('bmSearch').value = 'zzz-no-such-site';
+            renderHome();
+            assert.ok(empty().includes('没有匹配的网址') && !empty().includes('<button'));
+            $('bmSearch').value = '';
+            // 2) 库里有网址，只是都没上首页
+            STATE.bookmarks.forEach(b => { b.show_on_home = false; });
+            STATE.link_groups.forEach(g => g.links.forEach(l => { l.show_on_home = false; }));
+            renderHome();
+            assert.ok(empty().includes('openHomeModal()') && empty().includes('自定义首页'));
+            // 3) 有分组、没有任何网址：添加第一个网址 + 导入
+            STATE.bookmarks = [];
+            STATE.link_groups.forEach(g => { g.links = []; });
+            renderHome();
+            assert.ok(!empty().includes('自定义首页'));
+            assert.ok(empty().includes('添加第一个网址') && empty().includes("$('homeAddLink').click()"));
+            assert.ok(empty().includes('导入 JSON / 备份') && empty().includes("$('importCfg').click()"));
+            assert.ok(empty().includes('class="btn ghost sm"'));
+            // 4) 连分组都没有：先建分组
+            STATE.link_groups = [];
+            renderHome();
+            assert.ok(empty().includes('新建第一个分组') && empty().includes('openGroupModal(null)'));
+            assert.ok(!empty().includes('添加第一个网址'));
+            // 5) 访客（未解锁）看不到写操作，只给解锁入口
+            STATE.admin_required = true; STATE.admin_unlocked = false;
+            renderHome();
+            assert.ok(empty().includes('去解锁') && empty().includes("switchView('settings')"));
+            assert.ok(!empty().includes('importCfg') && !empty().includes('openGroupModal'));
+        """)
+
     def test_dashboard_sites_join_the_home_in_every_density(self):
         self.run_js("""
             assert.deepEqual(homeSites().map(x => x.i), [0]);

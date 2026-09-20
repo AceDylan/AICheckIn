@@ -3,7 +3,10 @@
    现代设计令牌驱动的深色 / 浅色双主题；收藏库子页面（链接分组）+ 站点看板 + 签到工具。
    ========================================================================== */
 
-:root {
+/* 深色令牌（默认主题）。壁纸场景里的浮层——弹窗 / 命令面板 / 提示条 / 待办排序菜单——在 .app-shell 之外，
+   也固定用这一套：令牌直接声明在浮层自己身上，压过 <html> 上浅色主题传下来的值（见文件后部「外观」一节）。
+   --text-3 用于 11–12px 的小字（域名、副标题、快捷键提示）：在 --bg / --surface / --surface-2 / --surface-input 上都 ≥ 4.5:1。 */
+:root, html.wall-on .modal-mask, html.wall-on .toast-wrap, html.wall-on .todo-sort-menu {
   color-scheme: dark;
   --bg: #0c1017;
   --bg-glow: rgba(45, 212, 191, .09);
@@ -17,7 +20,7 @@
   --border-strong: rgba(255, 255, 255, .16);
   --text: #f8fafc;
   --text-2: #94a3b8;
-  --text-3: #64748b;
+  --text-3: #8292a8;
   --accent: #2dd4bf;
   --accent-strong: #14b8a6;
   --accent-ink: #042f2e;
@@ -33,16 +36,18 @@
   --shadow-1: 0 1px 3px rgba(0, 0, 0, .3), 0 2px 6px rgba(0, 0, 0, .15);
   --shadow-2: 0 8px 26px -4px rgba(0, 0, 0, .45), 0 3px 8px -2px rgba(0, 0, 0, .25);
   --shadow-pop: 0 20px 50px -8px rgba(0, 0, 0, .65), 0 0 0 1px rgba(255, 255, 255, .1);
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
-  --sidebar-w: 252px;
   --avatar-sat: 68%;
   --avatar-l: 68%;
   --avatar-bg-a: .16;
   --scrim: rgba(5, 8, 14, .76);
   --toast-bg: #161e2e;
+}
+:root {
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --sidebar-w: 252px;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
 }
@@ -84,12 +89,12 @@ html[data-theme="light"] {
 }
 
 /* 分组色调（分组图标、页面点缀、链接卡片描边） */
-.tone-mint { --tone: #2dd4bf; --tone-soft: rgba(45, 212, 191, .15); }
-.tone-sky { --tone: #38bdf8; --tone-soft: rgba(56, 189, 248, .15); }
-.tone-violet { --tone: #a78bfa; --tone-soft: rgba(167, 139, 250, .15); }
-.tone-amber { --tone: #fbbf24; --tone-soft: rgba(251, 191, 36, .15); }
-.tone-rose { --tone: #fb7185; --tone-soft: rgba(251, 113, 133, .15); }
-.tone-slate { --tone: #94a3b8; --tone-soft: rgba(148, 163, 184, .15); }
+.tone-mint, html.wall-on .modal-mask .tone-mint { --tone: #2dd4bf; --tone-soft: rgba(45, 212, 191, .15); }
+.tone-sky, html.wall-on .modal-mask .tone-sky { --tone: #38bdf8; --tone-soft: rgba(56, 189, 248, .15); }
+.tone-violet, html.wall-on .modal-mask .tone-violet { --tone: #a78bfa; --tone-soft: rgba(167, 139, 250, .15); }
+.tone-amber, html.wall-on .modal-mask .tone-amber { --tone: #fbbf24; --tone-soft: rgba(251, 191, 36, .15); }
+.tone-rose, html.wall-on .modal-mask .tone-rose { --tone: #fb7185; --tone-soft: rgba(251, 113, 133, .15); }
+.tone-slate, html.wall-on .modal-mask .tone-slate { --tone: #94a3b8; --tone-soft: rgba(148, 163, 184, .15); }
 html[data-theme="light"] .tone-mint { --tone: #0d9488; --tone-soft: rgba(13, 148, 136, .12); }
 html[data-theme="light"] .tone-sky { --tone: #0284c7; --tone-soft: rgba(2, 132, 199, .12); }
 html[data-theme="light"] .tone-violet { --tone: #7c3aed; --tone-soft: rgba(124, 58, 237, .12); }
@@ -1050,10 +1055,13 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-search-kbd kbd:not(:first-child) { margin-left: 5px; }
 .home-search:not(.is-open) .home-search-kbd { display: none; }
 .home-search-dropdown {
-  position: absolute; inset-inline: 0; top: 100%; max-height: min(60vh, 440px); overflow-y: auto; padding: 6px;
+  position: absolute; inset-inline: 0; top: 100%; max-height: min(60vh, 440px, var(--dd-max, 440px)); overflow-y: auto; padding: 6px;
   border: 1px solid var(--accent); border-top: 0; border-radius: 0 0 18px 18px;
   background: var(--surface); box-shadow: var(--shadow-pop); overscroll-behavior: contain;
 }
+/* --dd-max 由脚本按可视视口算出（虚拟键盘弹起时 vh / dvh 都不缩，见 fitHomeSearchList）；dvh 只管地址栏收放。
+   带 var() 的声明解析期一律算合法，不认识 dvh 的浏览器会在计算期整条作废、退成 none——所以必须包在 @supports 里。 */
+@supports (height: 1dvh) { .home-search-dropdown { max-height: min(60dvh, 440px, var(--dd-max, 440px)); } }
 .home-search-row {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 12px;
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
@@ -1251,7 +1259,8 @@ html.wall-on .home-arrange-bar { background: #141a27; }
    外观：壁纸层 + 遮罩 + 半透明面板 / 导航（全部页面生效）
    <html> 上的两个开关由 applyLook() 维护，都不看当前在哪个页面——首页、分组、看板、签到、设置是同一套样子：
      .wall-on   启用了壁纸 —— 整个工作区（.app-shell：侧栏 + 全部视图）固定「深色玻璃 + 白字」；
-                弹窗、命令面板、提示条在 .app-shell 之外，仍跟随深 / 浅主题
+                弹窗、命令面板、提示条、待办排序菜单在 .app-shell 之外，同样固定深色（实底，令牌见文件顶部）：
+                浅色主题下不再从深色场景里弹出一块纯白弹窗
      .nav-rail  导航选了图标栏（仅桌面宽度）
    毛玻璃（backdrop-filter）只给搜索框、导航、页头这几块大面；卡片、图标、小组件一律用半透明实底，手机上不掉帧。
    ========================================================================== */
@@ -1272,6 +1281,8 @@ html.wall-on .home-arrange-bar { background: #141a27; }
 html.wall-on .home-wall { opacity: 1; visibility: visible; transition: opacity .35s ease; }
 /* 壁纸层之下的页面底色、根滚动条也跟着场景走：浅色主题下滚动条轨道 / 橡皮筋回弹不会露出一条白边。 */
 html.wall-on body { background: #0c1017; }
+/* 浮层的深色令牌声明在文件顶部；color 是继承来的计算值（浅色主题下是深色字），要在浮层上重新取一次。 */
+html.wall-on .modal-mask, html.wall-on .toast-wrap, html.wall-on .todo-sort-menu { color: var(--text); }
 html.wall-on::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .26); }
 
 /* 壁纸场景里的令牌：不论深浅主题、不论哪个页面，工作区统一用这一套（白字 + 半透明深色面）。 */
@@ -1470,8 +1481,10 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
   /* 起始页在手机上：问候与时钟并成一行，首屏留给搜索和四列图标。 */
   .home-hero { flex-direction: row; align-items: baseline; justify-content: space-between; padding: 2px 44px 0 4px; }
   .home-tools-toggle { top: -3px; }
-  .hero-clock { font-size: 30px; }
-  .hero-meta { font-size: 12.5px; }
+  .hero-clock { flex: 0 0 auto; font-size: 30px; }
+  /* 问候 + 日期只占一行：12 月的长日期在 360px 级的屏上会折成两行、把搜索框顶下去。放不下就省略，不换行。 */
+  .hero-meta { display: block; min-width: 0; overflow: hidden; font-size: 12.5px; white-space: nowrap; text-overflow: ellipsis; }
+  .hero-divider { margin: 0 .45em; }
   .home-search { margin-top: 12px; }
   .home-search-bar { min-height: 48px; border-radius: 16px; }
   .home-search.is-open .home-search-bar { border-radius: 16px 16px 0 0; }
@@ -1519,6 +1532,8 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
   .picker-foot .hint { flex-basis: 100%; }
   .picker-foot .spacer { display: none; }
 }
+/* 比 360px 还窄（小屏 + 系统字号放大）：先收起星期，问候和日期留全。 */
+@media (max-width: 359px) { .hero-weekday { display: none; } }
 @media (max-width: 400px) {
   .overview { grid-template-columns: 1fr; }
   .tab { min-width: 50px; }
@@ -1601,7 +1616,8 @@ html.wall-on .home-todo { --todo-actions-bg: #1a2130; }
 .todo-done > summary::before { content: ""; width: 6px; height: 6px; margin: 0 4px 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .16s ease; }
 .todo-done[open] > summary::before { transform: rotate(45deg); }
 .todo-clear { margin-left: auto; padding: 3px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
-.todo-clear:hover { background: var(--danger-soft); color: var(--danger); }
+.todo-clear:hover, .todo-clear.confirming { background: var(--danger-soft); color: var(--danger); }
+.todo-clear.confirming { font-weight: 700; box-shadow: inset 0 0 0 1px rgba(251, 113, 133, .3); }
 .todo-done .todo-list { max-height: 176px; margin-top: 2px; }
 /* ---------- 待办排序 ----------
    把手常驻但很淡（看得见才知道能拖），行悬停 / 聚焦时显形。它同时是三样东西：触摸拖拽的唯一起点
