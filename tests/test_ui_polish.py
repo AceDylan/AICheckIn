@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
-"""界面打磨的样式护栏：小字对比度、壁纸场景里的浮层、键盘弹起时的搜索下拉、手机时钟行不换行。"""
+"""界面打磨的护栏：小字对比度、壁纸场景里的浮层、键盘弹起时的搜索下拉、手机时钟行不换行、图标栏的即时提示。"""
+import copy
+import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
+
+from tests.test_script_boot import NODE, STUB, RESPONSES, _inline_script
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,6 +93,95 @@ class UiPolishStyleTest(unittest.TestCase):
         self.assertIn("@media (max-width: 359px) { .hero-weekday { display: none; } }", self.css)
         self.assertIn('<span class="hero-date"><time id="heroDate"></time> <span class="hero-weekday" id="heroWeekday"></span></span>', self.html)
         self.assertIn("$('heroWeekday').textContent = WEEKDAYS[now.getDay()];", self.html)
+
+    def test_rail_tip_is_a_body_level_fixed_hint(self):
+        # 侧栏的导航是滚动区，伸出去的伪元素会被裁掉：提示必须是 <body> 下的 fixed 节点，且不接收指针。
+        self.assertLess(self.html.index('id="railTip"'), self.html.index('<div class="app-shell">'))
+        self.assertIn('<div class="rail-tip" id="railTip" aria-hidden="true" hidden></div>', self.html)
+        rule = re.search(r"\.rail-tip \{([^}]*)\}", self.css).group(1)
+        for decl in ("position: fixed", "pointer-events: none", "white-space: nowrap", "text-overflow: ellipsis"):
+            self.assertIn(decl, rule)
+        self.assertNotIn("backdrop-filter", rule)
+        self.assertIn(".rail-tip[hidden] { display: none; }", self.css)
+        # 固定深底浅字：不依赖主题令牌，壁纸 / 浅色页面上都 ≥ 4.5:1。
+        self.assertGreaterEqual(contrast("#f8fafc", "#161e2e"), 4.5)
+        block = self.html[self.html.index("const RAIL_TIP = "):self.html.index("// ===== Toast =====")]
+        for needle in ("e.pointerType !== 'touch'", "t.matches(':focus-visible')", "bar.addEventListener('focusout', hideRailTip)",
+                       "!e.buttons", "railTipKey(t) === RAIL_TIP.mute", "bar.addEventListener('scroll', hideRailTip, true)",
+                       "if (e.key === 'Escape') hideRailTip();", "text.offsetParent !== null"):
+            self.assertIn(needle, block)
+        self.assertNotIn("setInterval", block)
+        self.assertNotIn("innerHTML", block)   # 分组名是用户数据：只走 textContent
+
+
+@unittest.skipIf(NODE is None, '未安装 node')
+class RailTipBehaviourTest(unittest.TestCase):
+    def run_js(self, assertions):
+        script = '\n'.join([
+            Path(STUB).read_text(),
+            'globalThis.__RESPONSES = ' + json.dumps(copy.deepcopy(RESPONSES)) + ';',
+            "const assert = require('node:assert/strict');",
+            "document.querySelectorAll('.tab').forEach(t => { t.addEventListener = (name, fn) => { t[name] = fn; }; });",
+            "{ const t = document.getElementById('navToggle'); t.addEventListener = (name, fn) => { t[name] = fn; }; }",
+            _inline_script(),
+            'setTimeout(async () => { try {', assertions,
+            'assert.deepEqual(__CALLS.errors, []); assert.deepEqual(__CALLS.rejections, []);',
+            "console.log('ok'); } catch(e) { console.error(e); process.exitCode = 1; } }, 30);",
+        ])
+        proc = subprocess.run([NODE], input=script, text=True, capture_output=True, timeout=15)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('ok', proc.stdout)
+
+    def test_tip_shows_only_for_collapsed_labels_and_restores_the_native_title(self):
+        self.run_js("""
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+            function item(attrs, text, textVisible) {
+                const a = { ...attrs };
+                return { dataset: {}, isConnected: true, attrs: a,
+                    getAttribute: (k) => (k in a ? a[k] : null), hasAttribute: (k) => k in a,
+                    setAttribute: (k, v) => { a[k] = String(v); }, removeAttribute: (k) => { delete a[k]; },
+                    querySelector: () => (text === null ? null : { textContent: text, offsetParent: textVisible ? {} : null }),
+                    getBoundingClientRect: () => ({ top: 100, right: 60, height: 36 }) };
+            }
+            const tip = $('railTip');
+            tip.hidden = true;
+            // 图标栏：文字被收起 → 出提示；名字只走 textContent（不解析 HTML）
+            const group = item({ title: '<b>开发</b>｜按住拖动可调整顺序（Alt+↑/↓）' }, '<b>开发</b>', false);
+            showRailTip(group, 0);
+            assert.equal(group.attrs.title, undefined);                       // 原生 title 暂存，不会一秒后再叠一层
+            assert.equal(group.attrs['aria-label'], '<b>开发</b>｜按住拖动可调整顺序（Alt+↑/↓）');   // 可访问名称还在
+            await sleep(5);
+            assert.equal(tip.hidden, false);
+            assert.equal(tip.textContent, '<b>开发</b>');
+            assert.equal(tip.innerHTML, '');
+            assert.equal(tip.style.left, '70px');
+            assert.equal(tip.style.top, '118px');
+            hideRailTip();
+            assert.equal(tip.hidden, true);
+            assert.equal(group.attrs.title, '<b>开发</b>｜按住拖动可调整顺序（Alt+↑/↓）');
+            assert.ok(!('aria-label' in group.attrs) && !group.dataset.railTitle && !group.dataset.railAria);
+            // 自带 aria-label 的入口：还原时不能把它删掉
+            const tab = item({ title: '收藏库', 'aria-label': '收藏库' }, '收藏库', false);
+            showRailTip(tab, 0); await sleep(5); hideRailTip();
+            assert.deepEqual(tab.attrs, { title: '收藏库', 'aria-label': '收藏库' });
+            // 完整侧栏 / 手机底栏：文字看得见 → 不出提示、不动 title
+            const full = item({ title: '收藏库' }, '收藏库', true);
+            showRailTip(full, 0); await sleep(5);
+            assert.equal(tip.hidden, true);
+            assert.equal(full.attrs.title, '收藏库');
+            // 悬停延时内就移开 / 节点被重绘换掉：不出提示
+            showRailTip(group, 20); hideRailTip(); await sleep(30);
+            assert.equal(tip.hidden, true);
+            const gone = item({ title: 'x' }, 'x', false);
+            showRailTip(gone, 0); gone.isConnected = false; await sleep(5);
+            assert.equal(tip.hidden, true);
+            // 导航重绘会收起提示
+            showRailTip(group, 0); await sleep(5);
+            assert.equal(tip.hidden, false);
+            renderLibNav();
+            assert.equal(tip.hidden, true);
+            assert.equal(railTipLabel(item({ 'aria-label': '全局搜索' }, null)), '全局搜索');
+        """)
 
 
 if __name__ == "__main__":

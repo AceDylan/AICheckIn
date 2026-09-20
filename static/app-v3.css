@@ -1376,6 +1376,17 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
   html.nav-rail .lock-pill svg { width: 15px; height: 15px; }
   html.nav-rail .nav-toggle-arrow { transform: scaleX(-1); }
 }
+/* 图标栏的即时名字提示（showRailTip）：挂在 <body> 下 fixed 定位，侧栏的滚动区不会裁掉它。
+   固定深底浅字，压在壁纸和浅色页面上都清楚；只是悬停 / 聚焦的附属说明，不接收指针。 */
+.rail-tip {
+  position: fixed; z-index: 40; max-width: 240px; padding: 6px 10px; overflow: hidden; transform: translateY(-50%);
+  border: 1px solid rgba(255, 255, 255, .14); border-radius: 9px; background: #161e2e; color: #f8fafc; box-shadow: 0 8px 22px -6px rgba(0, 0, 0, .55);
+  font-size: 12.5px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; pointer-events: none;
+  animation: rail-tip-in .12s ease-out both;
+}
+.rail-tip[hidden] { display: none; }
+@keyframes rail-tip-in { from { opacity: 0; transform: translate(-4px, -50%); } to { opacity: 1; transform: translateY(-50%); } }
+@media (forced-colors: active) { .rail-tip { border-color: CanvasText; } }
 
 /* 外观弹窗 */
 .home-look-btn .ic { width: 14px; height: 14px; }

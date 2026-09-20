@@ -32,6 +32,7 @@
   <!-- 壁纸层：选了壁纸就垫在全部页面之下；图片同源（CSP img-src 'self'），加载前先露出主色占位。 -->
   <div class="home-wall" id="homeWall" aria-hidden="true"></div>
   <div class="toast-wrap" id="toasts" aria-live="polite"></div>
+  <div class="rail-tip" id="railTip" aria-hidden="true" hidden></div>
 
   <div class="app-shell">
     <aside class="sidebar" aria-label="主导航">
@@ -890,6 +891,77 @@
       applyLook();
     });
 
+    // 图标栏里文字全收起来了，分组一多只能靠原生 title 认，而它要悬停一秒多才出来。这里给侧栏一个即时提示：
+    // 指针停 120ms 或键盘聚焦时，在图标右侧显示名字；只在标签文字确实被收起时出现（完整侧栏、手机底栏里不出现）。
+    // 提示挂在 <body> 下用 fixed 定位——侧栏的导航是滚动区，伸出去的伪元素会被裁掉。
+    // 显示期间把原生 title 暂存起来（否则一秒后两个提示叠在一起），同时补上 aria-label 保住可访问名称，离开时原样还原。
+    const RAIL_TIP = { el: null, timer: 0, mute: '' };
+    const RAIL_TIP_TARGETS = '.tab, .subnav-item, .omni-trigger, .install-btn, .lock-pill';
+    const RAIL_TIP_TEXT = '.tab-text, .sub-text, span:not([class])';
+    function railTipLabel(el) {
+      const text = el.querySelector(RAIL_TIP_TEXT);
+      return ((text && text.textContent) || el.getAttribute('aria-label') || (el.getAttribute('title') || '').split('｜')[0] || '').trim();
+    }
+    function railTipKey(el) { return el.dataset.lib || el.dataset.view || el.dataset.act || el.id || el.className; }
+    function hideRailTip() {
+      const el = RAIL_TIP.el;
+      clearTimeout(RAIL_TIP.timer);
+      RAIL_TIP.el = null;
+      $('railTip').hidden = true;
+      if (!el) return;
+      if (el.dataset.railTitle) { el.setAttribute('title', el.dataset.railTitle); delete el.dataset.railTitle; }
+      if (el.dataset.railAria) { el.removeAttribute('aria-label'); delete el.dataset.railAria; }
+    }
+    function showRailTip(el, delay) {
+      if (RAIL_TIP.el === el) return;
+      hideRailTip();
+      const text = el.querySelector(RAIL_TIP_TEXT), label = railTipLabel(el);
+      if (!label || !text || text.offsetParent !== null) return;   // 标签文字看得见：用不着提示
+      RAIL_TIP.el = el;
+      const title = el.getAttribute('title');
+      if (title) {
+        el.dataset.railTitle = title;
+        el.removeAttribute('title');
+        if (!el.hasAttribute('aria-label')) { el.setAttribute('aria-label', title); el.dataset.railAria = '1'; }
+      }
+      RAIL_TIP.timer = setTimeout(() => {
+        if (RAIL_TIP.el !== el || !el.isConnected) { hideRailTip(); return; }
+        const tip = $('railTip'), r = el.getBoundingClientRect(), bar = el.closest && el.closest('.sidebar');
+        tip.textContent = label;
+        // 贴着侧栏外沿出，不压在图标栏自己身上
+        tip.style.left = Math.round(Math.max(r.right + 10, bar ? bar.getBoundingClientRect().right + 8 : 0)) + 'px';
+        tip.style.top = Math.round(r.top + r.height / 2) + 'px';
+        tip.hidden = false;
+      }, delay);
+    }
+    {
+      const bar = document.querySelector('.sidebar');
+      if (bar) {
+        // 刚点过的那一项先静音：点击会重绘导航，指针还停在原处，新节点上的 pointerover 不该把提示再弹出来；指针离开这一项后解除。
+        // 按着键（拖动排序途中）划过别的入口也不出。
+        bar.addEventListener('pointerover', (e) => {
+          const t = e.pointerType !== 'touch' && !e.buttons && e.target.closest(RAIL_TIP_TARGETS);
+          if (!t || railTipKey(t) === RAIL_TIP.mute) return;
+          RAIL_TIP.mute = '';
+          showRailTip(t, 120);
+        });
+        bar.addEventListener('pointerout', (e) => {
+          const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(RAIL_TIP_TARGETS);
+          if (RAIL_TIP.mute && (!to || railTipKey(to) !== RAIL_TIP.mute)) RAIL_TIP.mute = '';
+          if (RAIL_TIP.el && !RAIL_TIP.el.contains(e.relatedTarget)) hideRailTip();
+        });
+        bar.addEventListener('focusin', (e) => { const t = e.target.closest(RAIL_TIP_TARGETS); if (t && t.matches(':focus-visible')) showRailTip(t, 0); });
+        bar.addEventListener('focusout', hideRailTip);
+        bar.addEventListener('pointerdown', (e) => {              // 点下去 / 开始拖动排序：提示让路
+          const t = e.target.closest(RAIL_TIP_TARGETS);
+          RAIL_TIP.mute = t ? railTipKey(t) : '';
+          hideRailTip();
+        });
+        bar.addEventListener('scroll', hideRailTip, true);       // 分组列表滚动后位置就不对了
+        bar.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideRailTip(); });
+      }
+    }
+
     // ===== Toast =====
     function toast(msg, kind) {
       const el = document.createElement('div');
@@ -1390,6 +1462,7 @@
 
     function renderLibNav() {
       const pages = libPages();
+      hideRailTip();
       $('bmNavCount').textContent = (STATE.bookmarks || []).length + totalLinks();
       // 首页和站点看板固定，只有分组参与排序。
       // 每一项都带 title：侧栏收成图标栏后文字看不见，靠它当提示。
