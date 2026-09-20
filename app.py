@@ -3590,7 +3590,7 @@ FAVICON_OK_TTL = 7 * 24 * 3600        # 抓到图标后的缓存有效期
 FAVICON_FAIL_TTL = 6 * 3600           # 失败的负缓存有效期，避免反复抓死站
 # 单个图标体积上限：不少站点直接拿几百 KB 的 Logo.png 当 favicon，卡太死会白白丢图标。
 FAVICON_MAX_BYTES = 512 * 1024
-FAVICON_HTML_MAX_BYTES = 256 * 1024   # 首页 HTML 只读前若干字节用于找 <link rel=icon>
+FAVICON_HTML_MAX_BYTES = 256 * 1024   # 首页 HTML 只读前若干字节用于找 <link rel=icon>（超出即截断）
 FAVICON_TIMEOUT = 5                   # 单次请求超时（秒）
 FAVICON_BUDGET = 12                   # 单个 origin 的总抓取时间预算（秒）
 FAVICON_MAX_CANDIDATES = 4
@@ -3717,8 +3717,12 @@ def _favicon_curl_requests():
     return _favicon_curl["mod"]
 
 
-def _favicon_urllib_get(url, proxy, timeout, max_bytes):
-    """标准库抓取。返回 (data, content_type, final_url, status)，status=0 表示根本没连上。"""
+def _favicon_urllib_get(url, proxy, timeout, max_bytes, truncate=False):
+    """标准库抓取。返回 (data, content_type, final_url, status)，status=0 表示根本没连上。
+
+    truncate=True 时超过 max_bytes 只截断前 max_bytes 字节（首页 HTML 用：<link rel=icon>
+    都写在 <head> 里，截断不影响解析）；默认超限即整份丢弃（图标本体截一半就是坏图）。
+    """
     req = urllib.request.Request(url, headers=dict(_FAVICON_HEADERS))
     handlers = [_FaviconRedirectHandler()]
     # urllib 的 ProxyHandler 不支持 socks；配的是 socks 时交给下面的 curl_cffi 分支。
@@ -3731,8 +3735,12 @@ def _favicon_urllib_get(url, proxy, timeout, max_bytes):
             if status != 200:
                 return None, "", "", status
             data = resp.read(max_bytes + 1)
-            if not data or len(data) > max_bytes:
+            if not data:
                 return None, "", "", status
+            if len(data) > max_bytes:
+                if not truncate:
+                    return None, "", "", status
+                data = data[:max_bytes]
             ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             return data, ctype, resp.geturl() or url, status
     except urllib.error.HTTPError as exc:
@@ -3745,8 +3753,10 @@ def _favicon_urllib_get(url, proxy, timeout, max_bytes):
         return None, "", "", 0
 
 
-def _favicon_curl_get(url, proxy, timeout, max_bytes):
-    """用 curl_cffi 的 Chrome 指纹重试；同时是 socks 代理下唯一能走通的路径。"""
+def _favicon_curl_get(url, proxy, timeout, max_bytes, truncate=False):
+    """用 curl_cffi 的 Chrome 指纹重试；同时是 socks 代理下唯一能走通的路径。
+
+    truncate 的含义与 _favicon_urllib_get 一致。"""
     curl_requests = _favicon_curl_requests()
     if curl_requests is None:
         return None, "", "", 0
@@ -3763,25 +3773,29 @@ def _favicon_curl_get(url, proxy, timeout, max_bytes):
         if status != 200:
             return None, "", "", status
         data = resp.content or b""
-        if not data or len(data) > max_bytes:
+        if not data:
             return None, "", "", status
+        if len(data) > max_bytes:
+            if not truncate:
+                return None, "", "", status
+            data = data[:max_bytes]
         ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         return data, ctype, str(resp.url or url), status
     except Exception:  # noqa: BLE001 - 可选路径，失败即放弃该候选
         return None, "", "", 0
 
 
-def _favicon_http_get(url, proxy, timeout, max_bytes):
-    """抓取单个 URL，最多读 max_bytes 字节。
+def _favicon_http_get(url, proxy, timeout, max_bytes, truncate=False):
+    """抓取单个 URL，最多读 max_bytes 字节；truncate=True 时超限只截断而不丢弃。
 
     返回 (data, content_type, final_url, status)；status=0 表示连都没连上（DNS / 超时 / TLS）。
     """
     socks = bool(proxy) and proxy.lower().startswith("socks")
     if not socks:
-        data, ctype, final_url, status = _favicon_urllib_get(url, proxy, timeout, max_bytes)
+        data, ctype, final_url, status = _favicon_urllib_get(url, proxy, timeout, max_bytes, truncate)
         if data is not None or status not in _FAVICON_WAF_STATUSES:
             return data, ctype, final_url, status
-    return _favicon_curl_get(url, proxy, timeout, max_bytes)
+    return _favicon_curl_get(url, proxy, timeout, max_bytes, truncate)
 
 
 def _favicon_attrs(chunk):
@@ -3889,7 +3903,10 @@ def _favicon_fetch(origin, proxy):
     """按候选顺序抓取图标，返回 (data, mime)；全部失败返回 (None, "")。"""
     deadline = time.monotonic() + FAVICON_BUDGET
     candidates = []
-    page, ctype, final_url, status = _favicon_http_get(origin + "/", proxy, FAVICON_TIMEOUT, FAVICON_HTML_MAX_BYTES)
+    # 首页超过 FAVICON_HTML_MAX_BYTES 时截断而不是整份丢弃：<link rel=icon> 都在 <head> 里，
+    # 前 256KB 足够解析；整份丢弃会让首页大的站点白白退化成只试 /favicon.ico。
+    page, ctype, final_url, status = _favicon_http_get(
+        origin + "/", proxy, FAVICON_TIMEOUT, FAVICON_HTML_MAX_BYTES, truncate=True)
     # 首页连都连不上（内网地址、域名不存在、端口关闭）时，同 origin 的 /favicon.ico 也一定连不上，
     # 再试一次只是让整个请求多等一个超时；HTTP 错误码（403/404…）则说明服务活着，值得继续试。
     if page is None and status == 0:

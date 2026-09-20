@@ -6,12 +6,56 @@ import re
 import shutil
 import time
 import unittest
+import urllib.error
+import urllib.request
 
 from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
 from app import app, favicon_candidates, favicon_origin, sniff_image_mime  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-png-body"
 ICO = b"\x00\x00\x01\x00" + b"fake-ico-body"
+
+
+class _FakeHTTPResponse(object):
+    """够 _favicon_urllib_get 用的最小响应对象：支持 with、按字节数 read、headers、geturl。"""
+
+    def __init__(self, body, ctype, url):
+        self._body = body
+        self._pos = 0
+        self._url = url
+        self.status = 200
+        self.headers = {"Content-Type": ctype}
+
+    def read(self, amount=None):
+        end = len(self._body) if amount is None else min(len(self._body), self._pos + amount)
+        chunk = self._body[self._pos:end]
+        self._pos = end
+        return chunk
+
+    def geturl(self):
+        return self._url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeOpener(object):
+    """伪造 urllib 的 opener：让用例跑到真正的 _favicon_urllib_get（体积上限就在那里判）。"""
+
+    def __init__(self, mapping, calls):
+        self.mapping = mapping
+        self.calls = calls
+
+    def open(self, req, timeout=None):
+        url = req.full_url
+        self.calls.append(url)
+        hit = self.mapping.get(url)
+        if hit is None:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return _FakeHTTPResponse(hit[0], hit[1], url)
 
 
 class OriginTest(unittest.TestCase):
@@ -138,7 +182,7 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         calls = self.calls
         real = app_module._favicon_http_get
 
-        def fake(url, proxy, timeout, max_bytes):
+        def fake(url, proxy, timeout, max_bytes, truncate=False):
             calls.append(url)
             hit = mapping.get(url)
             return (hit[0], hit[1], url, 200) if hit else (None, "", "", 404)
@@ -218,10 +262,10 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         real_urllib = app_module._favicon_urllib_get
         real_curl = app_module._favicon_curl_get
 
-        def fake_urllib(url, proxy, timeout, max_bytes):
+        def fake_urllib(url, proxy, timeout, max_bytes, truncate=False):
             return (None, "", "", 403)
 
-        def fake_curl(url, proxy, timeout, max_bytes):
+        def fake_curl(url, proxy, timeout, max_bytes, truncate=False):
             curl_calls.append(url)
             body = (PNG, "image/png") if url.endswith("/favicon.ico") else (b"<html></html>", "text/html")
             return body[0], body[1], url, 200
@@ -262,7 +306,7 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         # 连不上的 origin（内网地址 / 域名不存在）不该再去试 /favicon.ico，否则要多等一个超时。
         calls = self.calls
         real = app_module._favicon_http_get
-        app_module._favicon_http_get = lambda url, *a: calls.append(url) or (None, "", "", 0)
+        app_module._favicon_http_get = lambda url, *a, **kw: calls.append(url) or (None, "", "", 0)
         self.addCleanup(setattr, app_module, "_favicon_http_get", real)
         self.assertEqual(self.client.get("/api/favicon?u=http://self.example:8080/panel").status_code, 404)
         self.assertEqual(calls, ["http://self.example:8080/"])
@@ -296,6 +340,41 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(resp.mimetype, "image/x-icon")
         self.assertEqual(self.calls, ["https://demo.example/", "https://demo.example/apple-touch-icon.png",
                                       "https://demo.example/f.ico"])
+
+    def _patch_transport(self, mapping):
+        """比 _patch_http 低一层：保留 app 自己的体积上限判断，只把网络换掉。"""
+        calls = self.calls
+        real = urllib.request.build_opener
+        urllib.request.build_opener = lambda *handlers: _FakeOpener(mapping, calls)
+        self.addCleanup(setattr, urllib.request, "build_opener", real)
+
+    def test_huge_homepage_still_yields_the_icon_declared_in_its_head(self):
+        """回归：首页 HTML 超过 FAVICON_HTML_MAX_BYTES 时曾被整份丢弃，连 <head> 里写好的图标都用不上。"""
+        body = (b'<html><head><link rel="icon" sizes="192x192" href="/static/i.png"></head><body>'
+                + b"x" * (app_module.FAVICON_HTML_MAX_BYTES + 64 * 1024) + b"</body></html>")
+        self.assertGreater(len(body), app_module.FAVICON_HTML_MAX_BYTES)
+        self._patch_transport({
+            "https://demo.example/": (body, "text/html"),
+            "https://demo.example/static/i.png": (PNG, "image/png"),
+        })
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200, resp.get_data()[:200])
+        self.assertEqual(resp.get_data(), PNG)
+        self.assertIn("https://demo.example/static/i.png", self.calls,
+                      "首页超限时应当按上限截断后继续解析 <head>，而不是退化成只试约定路径")
+
+    def test_oversized_icon_body_is_still_refused_instead_of_truncated(self):
+        """截断只给首页 HTML 用：图标本体超限必须整份拒收，截一半就是坏图。"""
+        huge = PNG + b"x" * app_module.FAVICON_MAX_BYTES
+        self._patch_transport({
+            "https://demo.example/": (b'<head><link rel="icon" sizes="192x192" href="/huge.png"></head>', "text/html"),
+            "https://demo.example/huge.png": (huge, "image/png"),
+            "https://demo.example/favicon.ico": (ICO, "image/x-icon"),
+        })
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200, resp.get_data()[:200])
+        self.assertIn("https://demo.example/huge.png", self.calls)
+        self.assertEqual(resp.get_data(), ICO, "超限的图标不该被截断后当成图标返回")
 
     def _write_legacy_cache(self, origin, data):
         key = app_module._favicon_key(origin)
