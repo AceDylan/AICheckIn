@@ -44,6 +44,7 @@ class BookmarkFieldsApiTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()   # shutdown 只停循环，监听套接字要另外关，否则留下 ResourceWarning
 
     def test_full_flow(self):
         base = "http://127.0.0.1:%d" % self.port

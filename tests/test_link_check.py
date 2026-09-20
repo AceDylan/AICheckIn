@@ -89,6 +89,7 @@ class ProbeTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()   # shutdown 只停循环，监听套接字要另外关，否则留下 ResourceWarning
 
     def test_live_url(self):
         self.assertEqual(probe_link(self.base + "/status/200"), ("ok", 200))
@@ -160,6 +161,7 @@ class CheckApiTest(StoreIsolationMixin, unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()   # shutdown 只停循环，监听套接字要另外关，否则留下 ResourceWarning
 
     def setUp(self):
         super(CheckApiTest, self).setUp()
