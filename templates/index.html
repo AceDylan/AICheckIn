@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="dark"{% if embedded %} data-embedded="1"{% endif %}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -16,6 +16,13 @@
       document.documentElement.setAttribute('data-theme', t);
       // 导航形态同理（默认图标栏）：全站生效，先定下来，免得侧栏先画成 252px 再缩回去。
       if (!/(?:^|; )bh_home_nav=full(?:;|$)/.test(document.cookie)) document.documentElement.classList.add('nav-rail');
+      // 被嵌在 iframe 里（例如 HaloWebUI 的 /hub）：后端看到 Sec-Fetch-Dest: iframe 时已经在 <html> 上标了
+      // data-embedded。这里按实际情况再校正一次——Service Worker 缓存的外壳不分「顶层 / 被嵌入」，
+      // 老浏览器也不发 Sec-Fetch-*，两头都可能标错；读不到 top（跨源限制）本身就说明在别人的框里。
+      var framed;
+      try { framed = window.self !== window.top; } catch (_) { framed = true; }
+      if (framed) document.documentElement.setAttribute('data-embedded', '1');
+      else document.documentElement.removeAttribute('data-embedded');
     })();
     // 页面数据提前出发：主脚本在这份 HTML 的最后面，等它下载、解析完再发请求，白白晚了一个来回。
     // 这里先把 /api/configs 发出去，主脚本的第一次 loadConfigs() 直接接手结果；失败就交回 null，由它按老路重发。
@@ -904,7 +911,10 @@
     }
     function writePref(name, value) { document.cookie = `${name}=${value}; max-age=31536000; path=/; SameSite=Lax`; }
     const OPEN_MODES = ['new', 'same'];
-    function openMode() { return readPref('bh_open', OPEN_MODES, 'new'); }
+    // 被嵌在别的页面里（<html data-embedded>，见页头脚本）时只能开新标签页：在框里「当前页打开」会把
+    // 整个框导航到外站，多半还被对方的 X-Frame-Options 拒掉，剩一块白屏。偏好本身不改，回到独立窗口照旧。
+    const EMBEDDED = document.documentElement.getAttribute('data-embedded') === '1';
+    function openMode() { return EMBEDDED ? 'new' : readPref('bh_open', OPEN_MODES, 'new'); }
     // 收藏链接统一走这里取 target / rel：当作起始页用时，很多人更习惯在当前页直接打开。
     function linkTargetAttrs() { return openMode() === 'same' ? 'rel="noopener noreferrer"' : 'target="_blank" rel="noopener noreferrer"'; }
     function openUrl(url) {
@@ -913,6 +923,16 @@
       if (openMode() === 'same') location.href = safe; else window.open(safe, '_blank', 'noopener');
       return true;
     }
+    // 兜底：被嵌入时，任何指向外站却没带 target 的链接（以后新加的也算）在点下去的那一刻补成新标签页。
+    if (EMBEDDED) document.addEventListener('click', (e) => {
+      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a || a.target === '_blank') return;
+      let dest;
+      try { dest = new URL(a.getAttribute('href'), location.href); } catch (_) { return; }
+      if (!/^https?:$/.test(dest.protocol) || dest.origin === location.origin) return;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+    }, true);
 
     // ===== 外观：壁纸 / 遮罩 / 导航形态（全部页面生效）=====
     // 这一段必须放在路由初始化之前：switchView 在脚本顶部就会被调用，它要用到这里的常量。
@@ -5724,6 +5744,7 @@
         const on = b.dataset.openMode === mode;
         b.classList.toggle('active', on);
         b.setAttribute('aria-checked', String(on));
+        if (EMBEDDED && b.dataset.openMode === 'same') { b.disabled = true; b.title = '嵌入在其它页面中时，收藏一律在新标签页打开'; }
       });
       $('startUrl').textContent = location.origin + '/';
       renderEngine();
@@ -5996,7 +6017,19 @@
       if (!name && text && text !== fromText) name = text.split(/\r?\n/)[0].trim().slice(0, 60);
       return { url, name };
     }
+    // 经 /embed/enter 换票失败时，后端把原因挂在 ?sso= 上带回来：说一句为什么没自动解锁，框里仍可手动输密码。
+    const SSO_NOTICES = {
+      expired: '自动登录票据已过期（两台服务器的时钟可能没对上），可刷新重试或手动解锁',
+      replayed: '自动登录票据已被用过，刷新页面会重新换一张',
+      signature: '自动登录票据验签失败：两端的 HUB_TRUSTED_EMBED_ADMIN_SECRET 不一致',
+      throttled: '尝试过于频繁，请稍后再试',
+    };
+    function consumeSsoNotice() {
+      const reason = new URLSearchParams(location.search).get('sso');
+      if (reason) toast(SSO_NOTICES[reason] || '自动登录没有成功，可手动解锁', 'err');
+    }
     function consumeShareParams() {
+      consumeSsoNotice();
       const share = pendingShare();
       // 无论有没有命中，都把查询串清掉：刷新页面不该重复弹窗，地址栏也别一直挂着。
       if (location.search) history.replaceState(null, '', location.pathname + location.hash);

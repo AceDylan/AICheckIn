@@ -25,6 +25,11 @@ services:
       GYQD_PRIVATE: "${GYQD_PRIVATE:-0}"
       # 后台定时调度开关，1 启用 0 关闭。
       GYQD_SCHEDULER: "1"
+      # 被自己的 HaloWebUI 嵌入（可选）：iframe 白名单 + 受信任嵌入方的共享密钥，值都放 .env。
+      # 密钥由管理员部署时现场生成，绝不要写进本文件；两项留空 = 不允许外站嵌入、免密入口关闭。
+      HUB_FRAME_ANCESTORS: "${HUB_FRAME_ANCESTORS:-}"
+      HUB_TRUSTED_EMBED_ADMIN_SECRET: "${HUB_TRUSTED_EMBED_ADMIN_SECRET:-}"
+      HUB_TRUSTED_EMBED_SESSION_TTL: "${HUB_TRUSTED_EMBED_SESSION_TTL:-43200}"
     volumes:
       # 挂载可写数据目录：存放 config.json 与 history.json，支持页面在线增删改。
       # 首次使用：mkdir -p data && cp config.example.json data/config.json

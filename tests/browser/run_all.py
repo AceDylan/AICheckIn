@@ -10,7 +10,7 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SUITES = ("verify", "verify_polish", "verify_railtip", "verify_transport", "verify_deck")
+SUITES = ("verify", "verify_polish", "verify_railtip", "verify_transport", "verify_deck", "verify_embed")
 
 
 def run(name):

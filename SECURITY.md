@@ -91,7 +91,46 @@
   页面据此渲染解锁面板（而不是把人怼到 403 白屏上）；
 - 仍然开放的只有应用外壳（`/`、`/static/*`、`/sw.js`）、`/api/health`
   （容器 HEALTHCHECK 在调，堵掉会让容器被反复重启）与 `/api/auth`、`/api/logout`；
+  配了受信任嵌入方时再加上 `/embed/enter`、`/api/embed/handshake`（同样是解锁入口，靠签名票据把关，见下一节）；
 - 没设管理密码时私密模式不生效（无从校验），启动日志会明确告警。
+
+### 被自己的 HaloWebUI 嵌入：iframe 白名单与共享管理员会话（可选）
+
+两项都默认关闭，互相独立，通常一起用。
+
+**1. iframe 白名单 `HUB_FRAME_ANCESTORS`**
+
+- 默认只允许同源嵌入：`X-Frame-Options: SAMEORIGIN` + CSP `frame-ancestors 'self'`，任何外站都嵌不进来。
+- 要让另一个站点嵌入，逐个写出它的完整源，例如 `HUB_FRAME_ANCESTORS=https://host.acedylan.us:3001`。
+  此时 CSP 变为 `frame-ancestors 'self' https://host.acedylan.us:3001`，并且不再发 `X-Frame-Options`
+  （它表达不了「同源 + 指定站点」，`ALLOW-FROM` 早已废弃；现代浏览器以 `frame-ancestors` 为准）。
+- **不支持通配符**：`*`、`https://*.example.com`、带路径的地址、裸域名都会被丢弃并在启动日志里点名。
+  写错的后果是「嵌不进来」，而不是「谁都能嵌」。`http://` 只放行 `localhost` / `127.0.0.1`（本机调试）。
+- 页面被嵌入时（后端看 `Sec-Fetch-Dest: iframe`，页面脚本再用 `window.top` 校正一次）所有外链一律开新标签页，
+  「当前页打开」的偏好暂不生效——否则会把整个框导航到外站。
+
+**2. 共享管理员会话 `HUB_TRUSTED_EMBED_ADMIN_SECRET`**
+
+让「HaloWebUI 的管理员已登录」等于「这里已解锁」，框里不用再输一遍管理密码。方向是单向的：
+HaloWebUI → 本站。反过来（用本站的管理密码登录 HaloWebUI）没有做，也不应该做。
+
+- 密钥流转：管理员部署时现场生成一个随机值（`python3 -c "import secrets; print(secrets.token_hex(32))"`），
+  分别写进**两台机器各自的 `.env`**（本站与 HaloWebUI 用同名变量 `HUB_TRUSTED_EMBED_ADMIN_SECRET`）。
+  它**绝不入库**，不下发给浏览器，不出现在任何 URL、日志或接口响应里；少于 32 个字符会被忽略（视同未配置）。
+- 票据：HaloWebUI 后端确认当前用户是它的管理员后，用密钥签一张
+  `v1.<用途>.<过期时间戳>.<nonce>.<HMAC-SHA256>`，浏览器把 iframe 指向 `/embed/enter?ticket=…`。
+  本站依次验签名、用途、有效期（只认 5 分钟以内，HaloWebUI 实际签 2 分钟）、nonce 未用过，
+  通过后下发的就是 `/api/auth` 那枚 HMAC 会话 Cookie（同一套签发与校验代码），再 `303` 跳到不带票据的地址。
+- 票据会出现在 URL 里（因此也会进反代的访问日志），所以它**一次性 + 短命**：进日志的那一刻已经作废。
+  验签失败、格式不对计入上面的防爆破计数；过期 / 重放不计数（那说明对方确实持有密钥，多半是两台机器时钟没对上）。
+- 经票据换来的会话默认 12 小时（`HUB_TRUSTED_EMBED_SESSION_TTL`，HaloWebUI 每次打开 `/hub` 都会重新换票）；
+  浏览器里已有一枚有效会话（比如用密码解锁的 30 天会话）时不会被这枚短的顶掉。
+- `POST /api/embed/handshake`：HaloWebUI 启动时带一张 `probe` 用途的票据来，只回答「密钥一致、时钟没偏」，
+  不下发任何凭据；`probe` 票据换不了会话（用途写在签名里）。
+- nonce 记在进程内存里：当前 Dockerfile 是 gunicorn 单 worker，够用；改成多 worker 必须换成共享存储，
+  否则同一张票据在不同 worker 上各能用一次。
+- **谁持有这个密钥，谁就是本站管理员**。它的保管等级与 `GYQD_ADMIN_PASSWORD` 相同；怀疑泄露就两边同时换掉。
+  换密钥不会让已下发的会话失效——要一并踢掉就同时改管理密码（会话签名密钥里含管理密码）。
 
 ### 实现要点
 
@@ -144,8 +183,9 @@
   全局桶用于兜底伪造 `X-Forwarded-For` 换头重试的情况。
 - 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，https 下加 `Secure`；令牌是服务端 HMAC 签名，
   浏览器端不保存任何明文密码。
-- 所有响应带 `X-Content-Type-Options` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`
-  / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'none'`），`/api/*` 默认 `no-store`。
+- 所有响应带 `X-Content-Type-Options` / `X-Frame-Options: SAMEORIGIN` / `Referrer-Policy: no-referrer`
+  / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'self'`），`/api/*` 默认 `no-store`。
+  配了 `HUB_FRAME_ANCESTORS` 白名单后 `frame-ancestors` 追加白名单里的源、`X-Frame-Options` 不再下发（见上一节）。
 - 传输压缩：文本类响应（HTML / CSS / JS / JSON，≥ 1 KB）在客户端声明支持时用 gzip 压缩。**会回真实凭据的接口不压缩**
   （`/api/configs/<idx>/secret`、`/api/bookmarks/<idx>/secret`、`/api/configs/export`；有测试保证新增的 `*_secret` 端点必须进这张名单）：
   「压缩 + 可观测的密文长度」是 BREACH 一类攻击的前提。其余接口的响应里没有请求方可控的回显，会话 Cookie 又是 `SameSite=Lax`
@@ -174,6 +214,9 @@
 | `GYQD_LOGIN_WINDOW` | `900` | 失败计数窗口 / 锁定时长（秒） |
 | `GYQD_MAX_REQUEST_BYTES` | `4194304` | 请求体上限（字节）。超出回 413，防止大 body 撑爆单 worker 内存 |
 | `GYQD_BACKUP_DAYS` | `7` | 配置文件每日留档保留天数。`0` 只保留一份 `.bak` |
+| `HUB_FRAME_ANCESTORS` | 空 | 允许把本站嵌进 iframe 的外站白名单（完整的源，空格分隔，不支持通配符）。空 = 只许同源 |
+| `HUB_TRUSTED_EMBED_ADMIN_SECRET` | 空 | 受信任嵌入方（HaloWebUI）的共享密钥，≥ 32 字符。部署时现场生成，**绝不入库**。空 = 免密入口关闭 |
+| `HUB_TRUSTED_EMBED_SESSION_TTL` | `43200` | 经票据换来的管理员会话有效期（秒），范围 300 ～ 30 天 |
 
 ---
 

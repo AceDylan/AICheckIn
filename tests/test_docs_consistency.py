@@ -22,10 +22,10 @@ class EnvVarDocsTest(unittest.TestCase):
         self.security = _read("SECURITY.md")
 
     def used_in_code(self):
-        return set(re.findall(r'os\.environ\.get\("(GYQD_[A-Z_]+)"', self.code))
+        return set(re.findall(r'os\.environ\.get\("((?:GYQD|HUB)_[A-Z_]+)"', self.code))
 
     def documented(self):
-        return set(re.findall(r"`(GYQD_[A-Z_]+)`", self.security))
+        return set(re.findall(r"`((?:GYQD|HUB)_[A-Z_]+)`", self.security))
 
     def test_every_env_var_is_documented(self):
         missing = sorted(self.used_in_code() - self.documented())
@@ -38,13 +38,15 @@ class EnvVarDocsTest(unittest.TestCase):
 
     def test_env_example_covers_the_deployment_critical_ones(self):
         example = _read(".env.example")
-        for name in ("GYQD_ADMIN_PASSWORD", "GYQD_PRIVATE", "GYQD_HSTS"):
+        for name in ("GYQD_ADMIN_PASSWORD", "GYQD_PRIVATE", "GYQD_HSTS",
+                     "HUB_FRAME_ANCESTORS", "HUB_TRUSTED_EMBED_ADMIN_SECRET"):
             self.assertIn(name, example, "%s 应当在 .env.example 里有位置" % name)
 
     def test_compose_passes_through_what_env_example_offers(self):
         # .env 里填了却没被 compose 透传进容器 = 静默失效。
         compose = _read("docker-compose.yml")
-        for name in ("GYQD_ADMIN_PASSWORD", "GYQD_PRIVATE", "GYQD_HSTS"):
+        for name in ("GYQD_ADMIN_PASSWORD", "GYQD_PRIVATE", "GYQD_HSTS",
+                     "HUB_FRAME_ANCESTORS", "HUB_TRUSTED_EMBED_ADMIN_SECRET"):
             self.assertIn(name, compose, "%s 没有在 docker-compose.yml 里透传" % name)
 
 

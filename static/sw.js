@@ -12,7 +12,9 @@
  * 用到哪张缓存哪张。上传的自定义壁纸在 /api/wallpaper，和其它接口一样不经过这里，
  * 由带内容哈希的地址 + HTTP 长缓存负责。
  */
-const CACHE_VERSION = 'bh-shell-v15';
+// v16：响应头里的 frame-ancestors 从 'none' 改成了可配置的白名单。缓存里的旧外壳带着旧的 CSP 头，
+// 不换版本号的话，被允许嵌入的站点拿到的仍是那份「禁止嵌入」的缓存。
+const CACHE_VERSION = 'bh-shell-v16';
 const SHELL = [
   '/',
   '/static/app-v3.css',
