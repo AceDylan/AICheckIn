@@ -82,55 +82,60 @@
 **未设置 `GYQD_ADMIN_PASSWORD` 时上表整列放开**——这是给本地 / 内网部署留的口子，
 公网部署务必设置。
 
-### 私密模式（可选）
+### 私密模式（默认开启）
 
-上表里「未解锁访客」那一列仍然能看到收藏库的网址清单——首页本来就是设计给人直接
-打开的导航页。如果你不想让公网路人看到自建服务的地址与站点清单，设 `GYQD_PRIVATE=1`：
+「未解锁访客」那一列本来还能看到收藏库的网址清单——首页曾经是设计给人直接打开的导航页。
+现在**设了管理密码就默认私密**：收藏、看板、AI 聊天的入口统统登录后才出现，接口同样不给数据。
 
-- 未解锁时 **所有** 接口都回 403，`/api/configs` 只回一个不含任何数据的空壳，
-  页面据此渲染解锁面板（而不是把人怼到 403 白屏上）；
+- 未解锁时 **所有** 接口都回 403，`/api/configs` 只回一个不含任何数据的空壳（`locked: true`，`chat: null`），
+  页面据此只渲染解锁面板（侧栏只剩「系统设置」；地址栏手敲 `#bookmarks` 也一样只到解锁面板）；
 - 仍然开放的只有应用外壳（`/`、`/static/*`、`/sw.js`）、`/api/health`
   （容器 HEALTHCHECK 在调，堵掉会让容器被反复重启）与 `/api/auth`、`/api/logout`；
-  配了受信任嵌入方时再加上 `/embed/enter`、`/api/embed/handshake`（同样是解锁入口，靠签名票据把关，见下一节）；
-- 没设管理密码时私密模式不生效（无从校验），启动日志会明确告警。
+- 确实要把首页当公开导航页给路人看的，显式设 `HUB_PUBLIC_LIBRARY=1`。旧开关 `GYQD_PRIVATE=1` 仍然强制私密
+  （压过 `HUB_PUBLIC_LIBRARY`）；`GYQD_PRIVATE=0` 不再有任何作用——部署里的 `.env` 多半原样留着这一行，
+  继续认它就等于「默认公开」；
+- 没设管理密码时私密模式不生效（无从校验），启动日志与部署自检都会明确告警。
 
-### 被自己的 HaloWebUI 嵌入：iframe 白名单与共享管理员会话（可选）
+### 「AI 聊天」标签页：嵌入自己的 HaloWebUI（可选）
 
-两项都默认关闭，互相独立，通常一起用。
+方向：**本站是外层页面，HaloWebUI 在 iframe 里**。反过来（HaloWebUI 嵌本站）的那一版已整体撤掉，
+本站自己不再被任何页面嵌入。
 
-**1. iframe 白名单 `HUB_FRAME_ANCESTORS`**
+**1. iframe 的口子 `HUB_CHAT_URL`**
 
-- 默认只允许同源嵌入：`X-Frame-Options: SAMEORIGIN` + CSP `frame-ancestors 'self'`，任何外站都嵌不进来。
-- 要让另一个站点嵌入，逐个写出它的完整源，例如 `HUB_FRAME_ANCESTORS=https://host.acedylan.us:3001`。
-  此时 CSP 变为 `frame-ancestors 'self' https://host.acedylan.us:3001`，并且不再发 `X-Frame-Options`
-  （它表达不了「同源 + 指定站点」，`ALLOW-FROM` 早已废弃；现代浏览器以 `frame-ancestors` 为准）。
-- **不支持通配符**：`*`、`https://*.example.com`、带路径的地址、裸域名都会被丢弃并在启动日志里点名。
-  写错的后果是「嵌不进来」，而不是「谁都能嵌」。`http://` 只放行 `localhost` / `127.0.0.1`（本机调试）。
-- 页面被嵌入时（后端看 `Sec-Fetch-Dest: iframe`，页面脚本再用 `window.top` 校正一次）所有外链一律开新标签页，
-  「当前页打开」的偏好暂不生效——否则会把整个框导航到外站。
+- 页面 CSP 的 `frame-src` 只为这一个源开口（`default-src 'self'` 下外站一律嵌不进来）；不配就没有这个标签页。
+- **只接受完整的源**：`*`、`https://*.example.com`、带路径的地址、裸域名都会被丢弃并在启动日志里点名。
+  `http://` 只放行 `localhost` / `127.0.0.1`（本机调试）。
+- 地址只随 `/api/configs` 发给已解锁的人；未解锁连「有没有 AI 聊天、它在哪」都不说。
+- iframe 带 `sandbox`（不给 `allow-top-navigation`：框里的页面无论如何不能把外层的本站整个带走）与
+  `referrerpolicy="no-referrer"`。页面脚本只把指向 `HUB_CHAT_URL` 的地址放进框里，别的一概不放。
+- HaloWebUI 那边要在自己的 `frame-ancestors` 里写上本站（它的 HUB_URL），否则浏览器拒绝渲染——页面会提示。
 
-**2. 共享管理员会话 `HUB_TRUSTED_EMBED_ADMIN_SECRET`**
+**2. 免登录 `HUB_TRUSTED_EMBED_ADMIN_SECRET`**
 
-让「HaloWebUI 的管理员已登录」等于「这里已解锁」，框里不用再输一遍管理密码。方向是单向的：
-HaloWebUI → 本站。反过来（用本站的管理密码登录 HaloWebUI）没有做，也不应该做。
+让「本站管理员已解锁」等于「HaloWebUI 已登录」。方向单向：本站 → HaloWebUI。两个站不同主机，Cookie 互相读不到，
+靠一张签名票据过桥。
 
 - 密钥流转：管理员部署时现场生成一个随机值（`python3 -c "import secrets; print(secrets.token_hex(32))"`），
-  分别写进**两台机器各自的 `.env`**（本站与 HaloWebUI 用同名变量 `HUB_TRUSTED_EMBED_ADMIN_SECRET`）。
-  它**绝不入库**，不下发给浏览器，不出现在任何 URL、日志或接口响应里；少于 32 个字符会被忽略（视同未配置）。
-- 票据：HaloWebUI 后端确认当前用户是它的管理员后，用密钥签一张
-  `v1.<用途>.<过期时间戳>.<nonce>.<HMAC-SHA256>`，浏览器把 iframe 指向 `/embed/enter?ticket=…`。
-  本站依次验签名、用途、有效期（只认 5 分钟以内，HaloWebUI 实际签 2 分钟）、nonce 未用过，
-  通过后下发的就是 `/api/auth` 那枚 HMAC 会话 Cookie（同一套签发与校验代码），再 `303` 跳到不带票据的地址。
-- 票据会出现在 URL 里（因此也会进反代的访问日志），所以它**一次性 + 短命**：进日志的那一刻已经作废。
-  验签失败、格式不对计入上面的防爆破计数；过期 / 重放不计数（那说明对方确实持有密钥，多半是两台机器时钟没对上）。
-- 经票据换来的会话默认 12 小时（`HUB_TRUSTED_EMBED_SESSION_TTL`，HaloWebUI 每次打开 `/hub` 都会重新换票）；
-  浏览器里已有一枚有效会话（比如用密码解锁的 30 天会话）时不会被这枚短的顶掉。
-- `POST /api/embed/handshake`：HaloWebUI 启动时带一张 `probe` 用途的票据来，只回答「密钥一致、时钟没偏」，
-  不下发任何凭据；`probe` 票据换不了会话（用途写在签名里）。
-- nonce 记在进程内存里：当前 Dockerfile 是 gunicorn 单 worker，够用；改成多 worker 必须换成共享存储，
-  否则同一张票据在不同 worker 上各能用一次。
-- **谁持有这个密钥，谁就是本站管理员**。它的保管等级与 `GYQD_ADMIN_PASSWORD` 相同；怀疑泄露就两边同时换掉。
-  换密钥不会让已下发的会话失效——要一并踢掉就同时改管理密码（会话签名密钥里含管理密码）。
+  分别写进**两台机器各自的 `.env`**（本站与 HaloWebUI 用同名变量）。它**绝不入库**，不下发给浏览器，
+  不出现在任何 URL、日志或接口响应里；少于 32 个字符会被忽略（视同未配置）。
+- 票据：已解锁的管理员打开标签页时，页面 `POST /api/chat/ticket`，本站签一张
+  `v2.<用途>.<过期时间戳>.<nonce>.<签发方源>.<接收方源>.<HMAC-SHA256>`（两个源 base64url；密钥经
+  `sha256("hub-chat-admin|" + 共享密钥)` 派生，与已撤掉的反方向用不同前缀，旧票据在哪边都不认）。
+  iframe 指向 `<HUB_CHAT_URL>/auth#hub_ticket=…`——票据放在 `#` 后面，不进反代日志，也不进 Referer。
+  HaloWebUI 依次验签名、用途、有效期（本站签 60 秒，它最长认 120 秒）、签发方 = 它配置的 HUB_URL、
+  接收方 = 浏览器填的 `Origin`、nonce 未用过，全部通过才签发它自己的（较短的）会话。每次打开都是新票。
+- **绝不签票的情况**（标签页照样能打开，只是要在框里自己登录，页面顶部说明原因）：
+  没设管理密码（人人都是「管理员」）；管理密码短于 12 位；**管理密码曾以明文出现在本仓库的公开历史里**
+  （代码里只存它的 SHA-256 用来比对，明文早就在历史里，这里不增加任何信息）——那个密码等于人尽皆知，
+  换掉之前它只配打开本站，不配替 HaloWebUI 开门；换掉 `GYQD_ADMIN_PASSWORD` 后自动恢复免登录。
+- 启动握手：本站后台向 HaloWebUI `POST /api/v1/hub/handshake` 送一张 `probe` 用途的票据，只问「你认不认我们的票」
+  并拿回它的白名单，用来把「密钥不一致 / 对面没配 / 白名单没写本站」说成人话；换不到任何凭据，从不阻塞启动。
+  明确失败时不再签票（签了也是白送对面一次「验签失败」的计数）；连不上（`unreachable`）照签——管理员的浏览器是自己直连的。
+- `HUB_PUBLIC_ORIGIN`：本站对外的源，写进票据的「签发方」。通常不用配（取浏览器请求里的 `Origin`，页面脚本改不了）；
+  反代改写了 Host / 协议、取出来不对时才需要。配了它，启动时就能握手；没配就等第一个管理员打开标签页时再握。
+- **持有这个密钥 + 本站管理密码的人就是 HaloWebUI 的管理员**。它的保管等级与 `GYQD_ADMIN_PASSWORD` 相同；
+  怀疑泄露就两边同时换掉。
 
 ### 实现要点
 
@@ -183,9 +188,8 @@ HaloWebUI → 本站。反过来（用本站的管理密码登录 HaloWebUI）�
   全局桶用于兜底伪造 `X-Forwarded-For` 换头重试的情况。
 - 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，https 下加 `Secure`；令牌是服务端 HMAC 签名，
   浏览器端不保存任何明文密码。
-- 所有响应带 `X-Content-Type-Options` / `X-Frame-Options: SAMEORIGIN` / `Referrer-Policy: no-referrer`
-  / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'self'`），`/api/*` 默认 `no-store`。
-  配了 `HUB_FRAME_ANCESTORS` 白名单后 `frame-ancestors` 追加白名单里的源、`X-Frame-Options` 不再下发（见上一节）。
+- 所有响应带 `X-Content-Type-Options` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`
+  / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'none'`；`frame-src` 只为 `HUB_CHAT_URL` 开口），`/api/*` 默认 `no-store`。
 - 传输压缩：文本类响应（HTML / CSS / JS / JSON，≥ 1 KB）在客户端声明支持时用 gzip 压缩。**会回真实凭据的接口不压缩**
   （`/api/configs/<idx>/secret`、`/api/bookmarks/<idx>/secret`、`/api/configs/export`；有测试保证新增的 `*_secret` 端点必须进这张名单）：
   「压缩 + 可观测的密文长度」是 BREACH 一类攻击的前提。其余接口的响应里没有请求方可控的回显，会话 Cookie 又是 `SameSite=Lax`
@@ -203,7 +207,8 @@ HaloWebUI → 本站。反过来（用本站的管理密码登录 HaloWebUI）�
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `GYQD_ADMIN_PASSWORD` | 空 | 管理密码。空 = 完全开放，公网必须设置 |
-| `GYQD_PRIVATE` | `0` | 设 `1` 开启私密模式：未解锁时连只读浏览也不给 |
+| `HUB_PUBLIC_LIBRARY` | `0` | 设 `1` 才把收藏库公开给未解锁的访客；默认设了管理密码就是私密模式 |
+| `GYQD_PRIVATE` | `0` | 旧开关：`1` 强制私密（压过 `HUB_PUBLIC_LIBRARY`）；`0` 无作用 |
 | `GYQD_CONFIG_FILE` | `/app/data/config.json` | 配置文件路径，其所在目录同时存放历史 / 指标 / 图标缓存 |
 | `GYQD_HSTS` | `0` | 设 `1` 时在 https 请求上下发 HSTS（会波及整个域名） |
 | `GYQD_SCHEDULER` | `1` | 设 `0` 关掉后台线程：定时签到、当日补签与站点数据自动刷新都不再跑 |
@@ -214,9 +219,9 @@ HaloWebUI → 本站。反过来（用本站的管理密码登录 HaloWebUI）�
 | `GYQD_LOGIN_WINDOW` | `900` | 失败计数窗口 / 锁定时长（秒） |
 | `GYQD_MAX_REQUEST_BYTES` | `4194304` | 请求体上限（字节）。超出回 413，防止大 body 撑爆单 worker 内存 |
 | `GYQD_BACKUP_DAYS` | `7` | 配置文件每日留档保留天数。`0` 只保留一份 `.bak` |
-| `HUB_FRAME_ANCESTORS` | 空 | 允许把本站嵌进 iframe 的外站白名单（完整的源，空格分隔，不支持通配符）。空 = 只许同源 |
-| `HUB_TRUSTED_EMBED_ADMIN_SECRET` | 空 | 受信任嵌入方（HaloWebUI）的共享密钥，≥ 32 字符。部署时现场生成，**绝不入库**。空 = 免密入口关闭 |
-| `HUB_TRUSTED_EMBED_SESSION_TTL` | `43200` | 经票据换来的管理员会话有效期（秒），范围 300 ～ 30 天 |
+| `HUB_CHAT_URL` | 空 | 「AI 聊天」标签页里嵌的 HaloWebUI（完整的源，不支持通配符）。空 = 没有这个标签页 |
+| `HUB_TRUSTED_EMBED_ADMIN_SECRET` | 空 | 与 HaloWebUI 共享的密钥，≥ 32 字符，用来替已解锁的管理员签票免登录。部署时现场生成，**绝不入库**。空 = 框里自己登录 |
+| `HUB_PUBLIC_ORIGIN` | 空 | 本站对外的源，写进票据的签发方。通常不用配（取浏览器的 `Origin`） |
 
 ---
 

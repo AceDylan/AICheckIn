@@ -214,35 +214,42 @@ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5525/api/health
 
 ---
 
-## 嵌进自己的 HaloWebUI（可选）
+## 「AI 聊天」标签页：把自己的 HaloWebUI 嵌进来（可选）
 
-想在 HaloWebUI 里直接用这个书签库（它的 `/hub` 页面用 iframe 嵌入本站），需要两项配置，都写在本机的 `.env` 里，
+左侧标签栏多一个「AI 聊天」，点进去就是 HaloWebUI（本站是外层页面，HaloWebUI 在 iframe 里）。
+一个地方管书签、随时点进去聊天；入口和地址都只给已登录（解锁）的人。配置写在本机的 `.env` 里，
 **不要写进任何会入库的文件**：
 
 ```bash
-# 1. 允许 HaloWebUI 的地址把本站嵌进 iframe（完整的源，不支持通配符；默认只许同源）
-HUB_FRAME_ANCESTORS=https://host.acedylan.us:3001
+# 1. HaloWebUI 的完整源（协议 + 主机 + 端口，不带路径、不支持通配符）。留空 = 没有这个标签页。
+HUB_CHAT_URL=https://host.acedylan.us:3001
 
-# 2. 共享密钥：HaloWebUI 的管理员打开 /hub 时免输管理密码，直接就是这里的管理员会话。
-#    现场生成，HaloWebUI 那边的同名环境变量填同一个值：
+# 2. 免登录（可选）：本站管理员已解锁 = HaloWebUI 已登录。现场生成一个随机密钥，
+#    HaloWebUI 那边的同名环境变量填同一个值：
 #        python3 -c "import secrets; print(secrets.token_hex(32))"
 HUB_TRUSTED_EMBED_ADMIN_SECRET=<现场生成的随机值>
 ```
 
-改完 `docker compose up -d` 重建容器生效。验证：
+HaloWebUI 那边要做的：`HUB_URL` 写本站的地址（它据此在自己的响应头里放行本站嵌入，并只认本站签的票据），
+`HUB_TRUSTED_EMBED_ADMIN_SECRET` 填同一个值。改完两边各自 `docker compose up -d` 重建容器生效。验证：
 
 ```bash
-# 白名单已生效：frame-ancestors 里有 HaloWebUI 的源，且不再有 X-Frame-Options
+# frame-src 里有 HaloWebUI 的源；本站自己仍然谁都不能嵌（frame-ancestors 'none' + DENY）
 curl -sI https://<本站地址>/ | grep -i -E 'content-security-policy|x-frame-options'
-# 免密入口已开启：没带票据回 303（落到未解锁的首页）；没配密钥则是 404
-curl -s -o /dev/null -w '%{http_code}\n' 'https://<本站地址>/embed/enter'
+# 未解锁：收藏、看板、AI 聊天一概不给（空壳），签票接口 403
+curl -s https://<本站地址>/api/configs | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['locked'], d['bookmarks'], d['chat'])"
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<本站地址>/api/chat/ticket
+# HaloWebUI 那边：允许本站嵌入
+curl -sI https://<HaloWebUI 地址>/ | grep -i content-security-policy
 ```
 
-工作方式：HaloWebUI 后端确认当前用户是它的管理员后签一张两分钟内有效、只能用一次的票据，iframe 指向
-`/embed/enter?ticket=…`，本站验票通过后下发和密码解锁同一种会话 Cookie。被嵌入时所有外链一律开新标签页。
-票据格式、密钥保管、防重放与防爆破的细节见 [SECURITY.md](SECURITY.md) 的「被自己的 HaloWebUI 嵌入」一节。
+工作方式：已解锁的管理员打开标签页时，页面向 `POST /api/chat/ticket` 要一张 60 秒内有效、只能用一次的票据，
+iframe 指向 `<HUB_CHAT_URL>/auth#hub_ticket=…`（放在 `#` 后面：不进任何服务器日志，也不进 Referer）。
+HaloWebUI 验签通过后签发它自己的（较短的）会话。签不了票时（没配密钥、管理密码不合格……）标签页照样打开，
+只是要在框里自己登录，页面顶部会说明原因。票据格式、密钥保管与「哪些情况绝不签票」见 [SECURITY.md](SECURITY.md)。
 
-Service Worker 的缓存版本随这次改动 +1：旧缓存里的外壳带着旧的「禁止嵌入」响应头，新版本激活时会整体清掉。
+收藏库现在**默认登录后才出现**（设了管理密码即私密模式；确实要把首页当公开导航页给路人看的，显式设 `HUB_PUBLIC_LIBRARY=1`）。
+Service Worker 的缓存版本随这次改动 +1（v17）。
 升级后第一次在 HaloWebUI 里打开若仍被浏览器拒绝，单独打开本站刷新一次即可。
 
 ---

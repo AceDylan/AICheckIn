@@ -10,6 +10,11 @@ import tempfile
 
 os.environ["GYQD_SCHEDULER"] = "0"                      # 不启动后台定时线程
 os.environ["GYQD_ADMIN_PASSWORD"] = ""                  # 宿主机若设了密码，测试一律按未设处理
+os.environ["HUB_PUBLIC_LIBRARY"] = "1"                  # 老用例写于「收藏库默认公开」的年代；私密默认由 tests/test_chat_embed.py 单独覆盖
+os.environ.pop("GYQD_PRIVATE", None)
+os.environ.pop("HUB_CHAT_URL", None)                    # 宿主机的 .env 不该影响用例：没有 AI 聊天 / 密钥是每个用例的起点
+os.environ.pop("HUB_TRUSTED_EMBED_ADMIN_SECRET", None)
+os.environ.pop("HUB_PUBLIC_ORIGIN", None)
 os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
 
 import app as _app_module  # noqa: E402  必须排在上面几行环境变量之后

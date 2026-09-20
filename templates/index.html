@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark"{% if embedded %} data-embedded="1"{% endif %}>
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -16,13 +16,6 @@
       document.documentElement.setAttribute('data-theme', t);
       // 导航形态同理（默认图标栏）：全站生效，先定下来，免得侧栏先画成 252px 再缩回去。
       if (!/(?:^|; )bh_home_nav=full(?:;|$)/.test(document.cookie)) document.documentElement.classList.add('nav-rail');
-      // 被嵌在 iframe 里（例如 HaloWebUI 的 /hub）：后端看到 Sec-Fetch-Dest: iframe 时已经在 <html> 上标了
-      // data-embedded。这里按实际情况再校正一次——Service Worker 缓存的外壳不分「顶层 / 被嵌入」，
-      // 老浏览器也不发 Sec-Fetch-*，两头都可能标错；读不到 top（跨源限制）本身就说明在别人的框里。
-      var framed;
-      try { framed = window.self !== window.top; } catch (_) { framed = true; }
-      if (framed) document.documentElement.setAttribute('data-embedded', '1');
-      else document.documentElement.removeAttribute('data-embedded');
     })();
     // 页面数据提前出发：主脚本在这份 HTML 的最后面，等它下载、解析完再发请求，白白晚了一个来回。
     // 这里先把 /api/configs 发出去，主脚本的第一次 loadConfigs() 直接接手结果；失败就交回 null，由它按老路重发。
@@ -65,6 +58,11 @@
           <span class="tab-text">收藏库</span><span class="nav-count" id="bmNavCount">0</span>
         </button>
         <div class="subnav" id="libSubnav" aria-label="收藏库页面"></div>
+        <!-- AI 聊天：框里是自己的 HaloWebUI。解锁后、且部署配置了 HUB_CHAT_URL 才出现（见 syncAdminViews）。 -->
+        <button class="tab" data-view="chat" title="AI 聊天" aria-label="AI 聊天" hidden>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.2a7.6 7.6 0 0 1-11.2 6.7L4 20.4l1.5-4.6A7.6 7.6 0 1 1 20 12.2z"/><path d="M9 10.8h6M9 13.9h3.6"/></svg>
+          <span class="tab-text">AI 聊天</span>
+        </button>
         <button class="tab" data-view="checkin" title="签到中心" aria-label="签到中心">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg>
           <span class="tab-text">签到中心</span>
@@ -300,6 +298,27 @@
         </section>
 
         <!-- ===== 签到中心：概览、服务配置和运行记录共用一个工作区 ===== -->
+        <!-- ===== AI 聊天：HaloWebUI 嵌在这里 ===== -->
+        <section class="view" id="view-chat" aria-label="AI 聊天">
+          <div class="chat-bar">
+            <div class="chat-bar-title">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.2a7.6 7.6 0 0 1-11.2 6.7L4 20.4l1.5-4.6A7.6 7.6 0 1 1 20 12.2z"/><path d="M9 10.8h6M9 13.9h3.6"/></svg>
+              <span>AI 聊天</span><span class="chat-host" id="chatHost"></span>
+            </div>
+            <div class="chat-bar-actions">
+              <button class="btn sm ghost" id="chatReload" type="button" title="重新载入这一页；免登录可用时会顺带重新登录">重新载入</button>
+              <a class="btn sm ghost" id="chatPopout" target="_blank" rel="noopener noreferrer" title="在新标签页里打开 HaloWebUI">新标签页打开</a>
+            </div>
+          </div>
+          <div class="chat-note" id="chatNote" role="status" hidden>
+            <span id="chatNoteText"></span>
+            <button class="icon-btn chat-note-close" id="chatNoteClose" type="button" title="知道了，不再提示" aria-label="关闭提示"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+          <div class="chat-stage" id="chatStage">
+            <div class="chat-loading" id="chatLoading">正在打开 HaloWebUI…</div>
+          </div>
+        </section>
+
         <section class="view" id="view-checkin">
           <div class="view-header checkin-header">
             <div><div class="eyebrow">日常维护</div><h1>签到中心</h1><p>管理签到账户，查看执行结果，让日常维护更轻松。</p></div>
@@ -911,10 +930,7 @@
     }
     function writePref(name, value) { document.cookie = `${name}=${value}; max-age=31536000; path=/; SameSite=Lax`; }
     const OPEN_MODES = ['new', 'same'];
-    // 被嵌在别的页面里（<html data-embedded>，见页头脚本）时只能开新标签页：在框里「当前页打开」会把
-    // 整个框导航到外站，多半还被对方的 X-Frame-Options 拒掉，剩一块白屏。偏好本身不改，回到独立窗口照旧。
-    const EMBEDDED = document.documentElement.getAttribute('data-embedded') === '1';
-    function openMode() { return EMBEDDED ? 'new' : readPref('bh_open', OPEN_MODES, 'new'); }
+    function openMode() { return readPref('bh_open', OPEN_MODES, 'new'); }
     // 收藏链接统一走这里取 target / rel：当作起始页用时，很多人更习惯在当前页直接打开。
     function linkTargetAttrs() { return openMode() === 'same' ? 'rel="noopener noreferrer"' : 'target="_blank" rel="noopener noreferrer"'; }
     function openUrl(url) {
@@ -923,17 +939,6 @@
       if (openMode() === 'same') location.href = safe; else window.open(safe, '_blank', 'noopener');
       return true;
     }
-    // 兜底：被嵌入时，任何指向外站却没带 target 的链接（以后新加的也算）在点下去的那一刻补成新标签页。
-    if (EMBEDDED) document.addEventListener('click', (e) => {
-      const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-      if (!a || a.target === '_blank') return;
-      let dest;
-      try { dest = new URL(a.getAttribute('href'), location.href); } catch (_) { return; }
-      if (!/^https?:$/.test(dest.protocol) || dest.origin === location.origin) return;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-    }, true);
-
     // ===== 外观：壁纸 / 遮罩 / 导航形态（全部页面生效）=====
     // 这一段必须放在路由初始化之前：switchView 在脚本顶部就会被调用，它要用到这里的常量。
     // Cookie 名 bh_home_nav 是历史遗留（最早只管收藏首页），改名会丢掉用户已存的选择，所以沿用。
@@ -1136,7 +1141,7 @@
     const LIB = { page: '@home' };  // @ 不允许出现在分组 id 中，避免与用户分组重名。
     const CHECKIN = { page: 'overview' };
     const CHECKIN_PAGES = ['overview', 'configs', 'history'];
-    const MAIN_VIEWS = ['bookmarks', 'checkin', 'settings'];
+    const MAIN_VIEWS = ['bookmarks', 'chat', 'checkin', 'settings'];
     function libHash() { return LIB.page === '@home' ? '#bookmarks' : '#links/' + LIB.page; }
     function switchView(name, updateHash = true) {
       // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
@@ -1147,7 +1152,10 @@
       if (section && !CHECKIN_PAGES.includes(section)) return;
       const mainName = section ? 'checkin' : name;
       if (!MAIN_VIEWS.includes(mainName)) return;
+      // 私密模式未解锁：收藏、聊天、签到的入口都收起来了，地址栏里手敲 #bookmarks 也一样只到解锁面板。
+      if (STATE_LOADED && libraryLocked() && mainName !== 'settings') { switchView('settings', updateHash); return; }
       if (mainName === 'checkin' && STATE_LOADED && !canEdit()) { switchView('bookmarks'); return; }
+      if (mainName === 'chat' && STATE_LOADED && !chatAvailable()) { switchView('bookmarks'); return; }
       const tab = document.querySelector(`.tab[data-view="${mainName}"]`);
       const view = $('view-' + mainName);
       if (!tab || !view) return;
@@ -1157,6 +1165,8 @@
         t.setAttribute('aria-current', active ? 'page' : 'false');
       });
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
+      // 聊天页要整块铺满（去掉内容区的留白与最大宽度），由 <html> 上的类统一切换。
+      document.documentElement.classList.toggle('chat-on', mainName === 'chat');
       $('libSubnav').hidden = mainName !== 'bookmarks';
       if (section) {
         CHECKIN.page = section;
@@ -1191,6 +1201,7 @@
       syncAdminPwd();   // 离开系统设置就把密码框摘掉，进入且未解锁才挂上
       if (name === 'history') loadHistory();
       else if (name === 'settings') loadDiagnostics();
+      else if (name === 'chat') openChat();
     }
     function currentViewName() {
       const view = document.querySelector('.view.active');
@@ -1486,15 +1497,88 @@
     // 留在导航里只会让人白点一遍再看见「请先解锁」。直接收起来，
     // 未解锁的首页就是一个干净的收藏库。
     const ADMIN_VIEWS = ['checkin', 'configs', 'history'];
+    // 收藏库只在登录后出现：私密模式（设了管理密码就是默认）下未解锁，后端一条收藏都不给，
+    // 页面也不留任何入口——侧栏只剩「系统设置」里的解锁面板。
+    function libraryLocked() { return !!(STATE.private && STATE.locked); }
+    const LIBRARY_ENTRIES = ['omniOpen', 'keysOpen', 'libSubnav'];
     function syncAdminViews() {
       const show = canEdit();
       ADMIN_VIEWS.forEach(name => {
         const tab = document.querySelector(`.tab[data-view="${name}"]`);
         if (tab) tab.hidden = !show;
       });
-      // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库。
-      if (!show && ADMIN_VIEWS.includes(currentViewName())) switchView('bookmarks');
+      const locked = libraryLocked();
+      const libTab = document.querySelector('.tab[data-view="bookmarks"]');
+      if (libTab) libTab.hidden = locked;
+      LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && currentViewName() !== 'bookmarks'); });
+      const chatTab = document.querySelector('.tab[data-view="chat"]');
+      if (chatTab) chatTab.hidden = !chatAvailable();
+      if (!chatAvailable()) closeChat();   // 锁定 / 会话过期：框里的页面一并卸掉
+      // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库；连收藏库也收起来了就去解锁面板。
+      const here = currentViewName();
+      if (locked && here !== 'settings') switchView('settings');
+      else if (!show && ADMIN_VIEWS.includes(here)) switchView('bookmarks');
+      else if (here === 'chat' && !chatAvailable()) switchView('bookmarks');
     }
+
+    // ===== AI 聊天 =====
+    // 框里是自己的 HaloWebUI（地址来自部署的 HUB_CHAT_URL，随 /api/configs 只发给已解锁的人）。
+    // 第一次点开才加载，之后切到别的标签页也不卸载——聊到一半去翻个收藏再回来，对话还在。
+    const CHAT = { src: '', busy: false };
+    const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
+    function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
+    function chatFrame() { return $('chatStage') ? $('chatStage').querySelector('iframe') : null; }
+    function showChatNote(key, text) {
+      const dismissed = readPref('bh_chat_note', CHAT_NOTE_SEEN, 'none') === key;
+      $('chatNote').hidden = !text || dismissed;
+      $('chatNote').dataset.key = key;
+      $('chatNoteText').textContent = text || '';
+    }
+    function closeChat() {
+      const frame = chatFrame();
+      if (frame) frame.remove();
+      CHAT.src = '';
+    }
+    async function openChat(force) {
+      if (!chatAvailable() || CHAT.busy || (CHAT.src && !force)) return;
+      const base = STATE.chat.url;
+      CHAT.busy = true;
+      try {
+        $('chatHost').textContent = base.replace(/^https?:\/\//, '');
+        $('chatPopout').href = base + '/';
+        $('chatLoading').hidden = false;
+        let target = base + '/', note = ['', ''];
+        try {
+          // 每次都是一张新的一次性票据；签不了票（没配密钥、管理密码不合格……）时后端照样回普通地址和原因。
+          const resp = await fetch('/api/chat/ticket', { method: 'POST', headers: adminHeaders() });
+          const data = await resp.json();
+          // 只认指向配置的那个源的地址，别的一概不往框里放。
+          if (data.ok && typeof data.url === 'string' && data.url.startsWith(base + '/')) target = data.url;
+          if (data.ok && data.framed_ok === false) note = ['framed', 'HaloWebUI 还没有允许本站嵌入它（它的 HUB_URL 要写成本站的地址）。下面若是空白，请先用「新标签页打开」。'];
+          else if (data.ok && !data.sso && data.hint) note = [data.reason, data.hint];
+        } catch (_) { /* 拿不到票据不耽误打开：框里自己登录就是了 */ }
+        if (!chatAvailable()) return;   // 等票据的工夫被锁定了
+        showChatNote(note[0], note[1]);
+        closeChat();   // 换一个新的框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
+        const frame = document.createElement('iframe');
+        frame.className = 'chat-frame';
+        frame.title = 'HaloWebUI';
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        // 自己的站，但仍不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
+        frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
+        frame.setAttribute('allow', 'clipboard-read; clipboard-write; microphone; camera; display-capture; fullscreen; autoplay');
+        frame.addEventListener('load', () => { $('chatLoading').hidden = true; });
+        frame.src = target;
+        $('chatStage').appendChild(frame);
+        CHAT.src = base;
+      } finally { CHAT.busy = false; }
+    }
+    $('chatReload').addEventListener('click', () => openChat(true));
+    $('chatNoteClose').addEventListener('click', () => {
+      const key = $('chatNote').dataset.key;
+      if (CHAT_NOTE_SEEN.includes(key)) writePref('bh_chat_note', key);
+      $('chatNote').hidden = true;
+    });
 
     function renderConfigs() {
       const list = $('cfgList'), empty = $('cfgEmpty');
@@ -5744,7 +5828,6 @@
         const on = b.dataset.openMode === mode;
         b.classList.toggle('active', on);
         b.setAttribute('aria-checked', String(on));
-        if (EMBEDDED && b.dataset.openMode === 'same') { b.disabled = true; b.title = '嵌入在其它页面中时，收藏一律在新标签页打开'; }
       });
       $('startUrl').textContent = location.origin + '/';
       renderEngine();
@@ -6017,19 +6100,7 @@
       if (!name && text && text !== fromText) name = text.split(/\r?\n/)[0].trim().slice(0, 60);
       return { url, name };
     }
-    // 经 /embed/enter 换票失败时，后端把原因挂在 ?sso= 上带回来：说一句为什么没自动解锁，框里仍可手动输密码。
-    const SSO_NOTICES = {
-      expired: '自动登录票据已过期（两台服务器的时钟可能没对上），可刷新重试或手动解锁',
-      replayed: '自动登录票据已被用过，刷新页面会重新换一张',
-      signature: '自动登录票据验签失败：两端的 HUB_TRUSTED_EMBED_ADMIN_SECRET 不一致',
-      throttled: '尝试过于频繁，请稍后再试',
-    };
-    function consumeSsoNotice() {
-      const reason = new URLSearchParams(location.search).get('sso');
-      if (reason) toast(SSO_NOTICES[reason] || '自动登录没有成功，可手动解锁', 'err');
-    }
     function consumeShareParams() {
-      consumeSsoNotice();
       const share = pendingShare();
       // 无论有没有命中，都把查询串清掉：刷新页面不该重复弹窗，地址栏也别一直挂着。
       if (location.search) history.replaceState(null, '', location.pathname + location.hash);

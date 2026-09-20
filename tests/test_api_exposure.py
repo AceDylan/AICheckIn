@@ -269,12 +269,12 @@ class SecurityHeadersTest(ExposureTestBase):
     def test_page_carries_hardening_headers(self):
         resp = self.client.get("/")
         self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
-        # 没配嵌入白名单：只许同源嵌入，外站一律嵌不进来（白名单行为见 tests/test_embed.py）。
-        self.assertEqual(resp.headers["X-Frame-Options"], "SAMEORIGIN")
+        # 本站是外层页面（「AI 聊天」标签页嵌 HaloWebUI），自己不被任何人嵌：frame-src 的口子见 tests/test_chat_embed.py。
+        self.assertEqual(resp.headers["X-Frame-Options"], "DENY")
         self.assertEqual(resp.headers["Referrer-Policy"], "no-referrer")
         csp = resp.headers["Content-Security-Policy"]
         self.assertIn("default-src 'self'", csp)
-        self.assertTrue(csp.endswith("frame-ancestors 'self'"), csp)
+        self.assertTrue(csp.endswith("frame-ancestors 'none'"), csp)
 
     def test_api_responses_are_not_cached(self):
         self.assertEqual(self.client.get("/api/configs").headers["Cache-Control"], "no-store")
@@ -323,7 +323,7 @@ class FrontendWiringTest(ExposureTestBase):
     def test_leaving_a_hidden_tab_falls_back_to_the_library(self):
         # 会话过期时用户可能正停在被收起的页面上。
         start = self.html.index("function syncAdminViews")
-        self.assertIn("switchView('bookmarks')", self.html[start:start + 700])
+        self.assertIn("switchView('bookmarks')", self.html[start:start + 1400])
 
 
 if __name__ == "__main__":

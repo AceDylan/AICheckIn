@@ -21,15 +21,17 @@ services:
       GYQD_ADMIN_PASSWORD: "${GYQD_ADMIN_PASSWORD:?请先在 .env 中设置 GYQD_ADMIN_PASSWORD（见 SECURITY.md）}"
       # 反代已是 https 时可设为 1 下发 HSTS（会把整个域名锁到 https，含其它端口的服务）。
       GYQD_HSTS: "${GYQD_HSTS:-0}"
-      # 私密模式：设 1 后未解锁连收藏清单也看不到（默认 0 = 首页可公开浏览）。
+      # 收藏库默认登录后才出现（设了管理密码即私密模式）；确实要公开首页给路人看的设 1。
+      HUB_PUBLIC_LIBRARY: "${HUB_PUBLIC_LIBRARY:-0}"
+      # 旧开关：1 仍强制私密，0 已无作用。留着只为老 .env 不报错。
       GYQD_PRIVATE: "${GYQD_PRIVATE:-0}"
       # 后台定时调度开关，1 启用 0 关闭。
       GYQD_SCHEDULER: "1"
-      # 被自己的 HaloWebUI 嵌入（可选）：iframe 白名单 + 受信任嵌入方的共享密钥，值都放 .env。
-      # 密钥由管理员部署时现场生成，绝不要写进本文件；两项留空 = 不允许外站嵌入、免密入口关闭。
-      HUB_FRAME_ANCESTORS: "${HUB_FRAME_ANCESTORS:-}"
+      # 「AI 聊天」标签页（可选）：嵌进来的 HaloWebUI 地址 + 与它共享的免登录密钥，值都放 .env。
+      # 密钥由管理员部署时现场生成，绝不要写进本文件；HUB_CHAT_URL 留空 = 没有这个标签页。
+      HUB_CHAT_URL: "${HUB_CHAT_URL:-}"
       HUB_TRUSTED_EMBED_ADMIN_SECRET: "${HUB_TRUSTED_EMBED_ADMIN_SECRET:-}"
-      HUB_TRUSTED_EMBED_SESSION_TTL: "${HUB_TRUSTED_EMBED_SESSION_TTL:-43200}"
+      HUB_PUBLIC_ORIGIN: "${HUB_PUBLIC_ORIGIN:-}"
     volumes:
       # 挂载可写数据目录：存放 config.json 与 history.json，支持页面在线增删改。
       # 首次使用：mkdir -p data && cp config.example.json data/config.json

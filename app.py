@@ -64,9 +64,17 @@ ADMIN_PASSWORD = os.environ.get("GYQD_ADMIN_PASSWORD", "").strip()
 # 是否启用后台定时调度线程。
 SCHEDULER_ENABLED = os.environ.get("GYQD_SCHEDULER", "1") == "1"
 
-# 私密模式：连「只读浏览」也要先解锁。默认关闭——首页本来就是设计给人直接打开的
-# 收藏导航页。公网部署若不想让路人看到自建服务的地址与站点清单，设 GYQD_PRIVATE=1。
-PRIVATE_MODE = os.environ.get("GYQD_PRIVATE", "0") == "1"
+# 私密模式：连「只读浏览」也要先解锁——收藏、看板、AI 聊天入口统统登录后才出现，接口同样不给数据。
+# 设了管理密码就默认如此。确实想把首页当公开导航页给路人看的，显式设 HUB_PUBLIC_LIBRARY=1。
+#
+# 旧开关 GYQD_PRIVATE 已停用：它的默认值是 0，而部署里的 .env 多半原样留着这一行，
+# 继续认它就等于「默认公开」。现在 GYQD_PRIVATE=0 不再有任何作用；=1 仍然强制私密（压过 HUB_PUBLIC_LIBRARY）。
+def _private_mode_from_env(private_flag, public_flag):
+    """GYQD_PRIVATE / HUB_PUBLIC_LIBRARY 两个开关 → 是否私密。GYQD_PRIVATE=1 一票否决，其余看 HUB_PUBLIC_LIBRARY。"""
+    return str(private_flag or "").strip() == "1" or str(public_flag or "").strip() != "1"
+
+
+PRIVATE_MODE = _private_mode_from_env(os.environ.get("GYQD_PRIVATE", "0"), os.environ.get("HUB_PUBLIC_LIBRARY", "0"))
 
 # 定时签到的当日补签：失败的账号隔一段时间再试几次。设 0 关闭。
 SCHEDULE_RETRY_LIMIT = max(0, int(os.environ.get("GYQD_RETRY_LIMIT", "3")))
@@ -86,9 +94,7 @@ if not ADMIN_PASSWORD:
         "任何访问者都能编辑配置、查看真实 token、执行签到并读取运行历史。"
         "公网部署请立即设置（见 SECURITY.md）\n"
     )
-    if PRIVATE_MODE:
-        # 私密模式靠管理密码兜底，没有密码就无从校验，只能当作未开启。
-        sys.stderr.write("[gyqd-web] 警告：GYQD_PRIVATE=1 但未设置管理密码，私密模式不生效\n")
+    # 私密模式靠管理密码兜底，没有密码就无从校验，只能当作未开启（上面那条警告已经说了「全开放」）。
 elif len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
     sys.stderr.write(
         "[gyqd-web] 警告：GYQD_ADMIN_PASSWORD 短于 {0} 位，公网上容易被爆破。"
@@ -1522,111 +1528,213 @@ def admin_ok():
 
 
 # =========================
-# 受信任的嵌入方：共享管理员会话
+# AI 聊天：把自己的 HaloWebUI 嵌进「AI 聊天」标签页
 # =========================
 #
-# 场景：自己的 HaloWebUI 把本站嵌在 /hub 页面的 iframe 里，希望「HaloWebUI 的管理员已登录 =
-# 这里已解锁」，不用在框里再输一遍管理密码。两个站不同主机，Cookie 互相读不到，所以靠一张
-# 签名票据过桥：
+# 方向：本站是外层页面，HaloWebUI 在 iframe 里（上一版反过来——HaloWebUI 嵌本站——已整体撤掉，
+# 连同 /embed/enter 与 /api/embed/handshake）。
 #
-#   1. 部署时由管理员现场生成一个随机密钥，分别放进两边的环境变量
-#      HUB_TRUSTED_EMBED_ADMIN_SECRET（本站与 HaloWebUI 同名）。它绝不入库、不进前端、不出现在任何 URL 里。
-#   2. HaloWebUI 的后端确认当前用户是它的管理员后，用这个密钥签一张票据：
-#          v1.<用途>.<过期时间戳>.<随机 nonce>.<HMAC-SHA256 十六进制>
-#      用途 enter = 换取会话；probe = 只验证两边密钥一致（启动握手用，换不到任何东西）。
-#   3. 浏览器把 iframe 指向 /embed/enter?ticket=…；本站验签、验有效期、验「没用过」，
-#      通过后下发的就是 /api/auth 那枚 HMAC 会话 Cookie（同一套签发与校验，没有第二套令牌），
-#      再 303 跳到不带票据的地址。
+#   1. HUB_CHAT_URL = HaloWebUI 的完整源（协议 + 主机 + 端口）。页面 CSP 的 frame-src 只为它放开；
+#      对面要在自己的 frame-ancestors 里写上本站的源（HaloWebUI 的 HUB_URL），否则浏览器拒绝渲染。
+#      留空 = 没有这个标签页。入口和地址都只给已解锁的人（私密模式下未解锁什么都拿不到）。
 #
-# 票据出现在 URL 里，所以必须短命且一次性：有效期由签发方定，但本站只认 EMBED_TICKET_MAX_TTL
-# 以内的；nonce 记在进程内存里直到票据过期（Dockerfile 里 gunicorn 是单 worker；改成多 worker 要换成共享存储）。
-# 没配密钥（或密钥太短）时整个功能不存在：两个端点都回 404。
-EMBED_ADMIN_SECRET = os.environ.get("HUB_TRUSTED_EMBED_ADMIN_SECRET", "").strip()
-EMBED_SECRET_MIN_LEN = 32          # 少于 32 个字符一律视为没配：宁可功能不生效，也不接受一个能被猜出来的密钥
-EMBED_TICKET_MAX_TTL = 300         # 票据最长只认 5 分钟（HaloWebUI 实际签 2 分钟）
-EMBED_TICKET_VERSION = "v1"
-EMBED_PURPOSE_ENTER = "enter"
-EMBED_PURPOSE_PROBE = "probe"
-_EMBED_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
-_EMBED_MAX_NONCES = 4096
+#   2. 免登录（可选）：本站管理员已解锁 = HaloWebUI 已登录。两个站不同主机，Cookie 互相读不到，
+#      靠一张签名票据过桥。部署时现场生成一个随机密钥，分别放进两边的环境变量
+#      HUB_TRUSTED_EMBED_ADMIN_SECRET（同名）；它绝不入库、不进前端、不出现在任何 URL 里。
+#      已解锁的管理员打开标签页时，POST /api/chat/ticket 签一张：
+#
+#          v2.<用途>.<过期时间戳>.<nonce>.<签发方源>.<接收方源>.<HMAC-SHA256 十六进制>
+#
+#      两个源是 base64url；用途 chat = 换取会话，probe = 只验证两边密钥一致（握手用，换不到任何东西）。
+#      iframe 指向 <HUB_CHAT_URL>/auth#hub_ticket=<票据>——放在 # 后面，不进任何服务器日志，也不进 Referer。
+#      HaloWebUI 验签、验用途、验有效期、验签发方 = 它配置的 Hub、验接收方 = 浏览器填的 Origin、
+#      验 nonce 没用过，全部通过才签发它自己的（短期）会话。票据 60 秒、一次性。
+#
+# 这条通道把「本站的管理密码」变成了「HaloWebUI 管理员」的钥匙，所以比解锁本身多三道闸：
+#   - 没设管理密码（= 人人都是管理员）时绝不签票；
+#   - 管理密码短于 MIN_ADMIN_PASSWORD_LEN 时不签；
+#   - 管理密码曾以明文出现在本仓库的公开历史里时不签——那个密码等于人尽皆知，换掉之前
+#     它只配打开本站，不配替 HaloWebUI 开门。标签页照常可用，只是要在框里自己登录 HaloWebUI。
+CHAT_SECRET = os.environ.get("HUB_TRUSTED_EMBED_ADMIN_SECRET", "").strip()
+CHAT_SECRET_MIN_LEN = 32           # 少于 32 个字符一律视为没配：宁可功能不生效，也不接受一个能被猜出来的密钥
+CHAT_TICKET_TTL = 60               # 秒。HaloWebUI 最长只认 120 秒
+CHAT_TICKET_VERSION = "v2"
+CHAT_PURPOSE_ENTER = "chat"
+CHAT_PURPOSE_PROBE = "probe"
+CHAT_HANDSHAKE_TIMEOUT = 5
+CHAT_HANDSHAKE_RETRY = 60          # 没成功的握手，管理员打开标签页时重试，最多这么频繁（秒）
+CHAT_HANDSHAKE_REFRESH = 600       # 成功的握手隔这么久在后台重做一次，对面改了白名单不用重启这边
+
+# 曾以明文出现在本仓库公开历史里的管理密码（SHA-256）。明文早就在历史里，这里不增加任何信息。
+_PUBLICLY_KNOWN_PASSWORD_SHA256 = frozenset({
+    "e3999bc2c4bdbbf9a306d7292e1540fa6c5a1bc38197617c936eb987d794ab52",
+})
+
+# 完整的源：https 任意主机，http 只放行回环地址（本机调试）。不接受通配符、路径、裸域名、账号密码。
+_ORIGIN_RE = re.compile(
+    r"^(?:https://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+    r"|http://(?:localhost|127\.0\.0\.1))(?::[0-9]{1,5})?$"
+)
 
 
-def _embed_session_ttl():
-    """经票据换来的会话默认 12 小时：HaloWebUI 每次打开 /hub 都会重新换票，不需要 30 天那么长。"""
-    try:
-        ttl = int(os.environ.get("HUB_TRUSTED_EMBED_SESSION_TTL", str(12 * 3600)))
-    except ValueError:
-        ttl = 12 * 3600
-    return max(300, min(ttl, SESSION_MAX_AGE))
+def _clean_origin(value):
+    """「协议://主机[:端口]」的小写形式；不是这个形状就回空串。"""
+    origin = str(value or "").strip().rstrip("/").lower()
+    if not origin or len(origin) > 300 or not _ORIGIN_RE.match(origin):
+        return ""
+    return origin
 
 
-EMBED_SESSION_TTL = _embed_session_ttl()
+def _parse_chat_url(raw):
+    if not str(raw or "").strip():
+        return ""
+    origin = _clean_origin(raw)
+    if not origin:
+        sys.stderr.write("[gyqd-web] 警告：HUB_CHAT_URL 不是完整的源（形如 https://host:port，"
+                         "不带路径、不支持通配符），已忽略，「AI 聊天」标签页不会出现\n")
+    return origin
 
-if EMBED_ADMIN_SECRET and len(EMBED_ADMIN_SECRET) < EMBED_SECRET_MIN_LEN:
+
+CHAT_URL = _parse_chat_url(os.environ.get("HUB_CHAT_URL", ""))
+# 本站对外的源，写进票据的「签发方」。通常不用配：直接取浏览器请求里的 Origin。
+# 反代改写了 Host / 协议、取出来不对时才需要显式写。
+PUBLIC_ORIGIN = _clean_origin(os.environ.get("HUB_PUBLIC_ORIGIN", ""))
+
+if CHAT_SECRET and len(CHAT_SECRET) < CHAT_SECRET_MIN_LEN:
     sys.stderr.write("[gyqd-web] 警告：HUB_TRUSTED_EMBED_ADMIN_SECRET 少于 {0} 个字符，已忽略；"
                      "请用 python3 -c \"import secrets; print(secrets.token_hex(32))\" 重新生成\n"
-                     .format(EMBED_SECRET_MIN_LEN))
+                     .format(CHAT_SECRET_MIN_LEN))
 
-_embed_lock = threading.Lock()
-_embed_nonces = {}  # nonce -> 过期时间戳；只有验签通过的票据才会进来
-
-
-def trusted_embed_active():
-    return len(EMBED_ADMIN_SECRET) >= EMBED_SECRET_MIN_LEN
+_chat_lock = threading.Lock()
+# 最近一次握手的结论；不含任何密钥材料。ok：True 对面认我们的票 / False 明确不认 / None 不知道（多半是从这台机器连不上）。
+_chat_handshake = {"ok": None, "reason": "not_run", "checked_at": None, "frame_ancestors": None, "running": False}
 
 
-def _embed_key():
-    # 加前缀派生：同一个密钥即便被别处拿去做 HMAC，也签不出这里认的票据。
-    return hashlib.sha256(("hub-embed-admin|" + EMBED_ADMIN_SECRET).encode("utf-8")).digest()
+def chat_enabled():
+    return bool(CHAT_URL)
 
 
-def _embed_ticket_signature(purpose, exp, nonce):
-    message = ".".join((EMBED_TICKET_VERSION, purpose, exp, nonce))
-    return hmac.new(_embed_key(), message.encode("utf-8"), hashlib.sha256).hexdigest()
+def chat_sso_blocker():
+    """现在能不能替管理员签 HaloWebUI 的票。能 → 空串；不能 → 一个词的原因（页面据此给出提示）。"""
+    if not chat_enabled():
+        return "chat_off"
+    if len(CHAT_SECRET) < CHAT_SECRET_MIN_LEN:
+        return "secret_unset"
+    if not ADMIN_PASSWORD:
+        return "no_password"          # 没有管理密码 = 任何访客都算「管理员」，绝不能替他们开 HaloWebUI 的门
+    if hashlib.sha256(ADMIN_PASSWORD.encode("utf-8")).hexdigest() in _PUBLICLY_KNOWN_PASSWORD_SHA256:
+        return "password_public"
+    if len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
+        return "password_short"
+    return ""
 
 
-def issue_embed_ticket(purpose, ttl=120, now=None):
-    """签一张票据。线上由 HaloWebUI 的后端来签；这里留一份同样的实现给测试和本机联调用。"""
+def _chat_key():
+    # 加前缀派生：同一个密钥即便被别处拿去做 HMAC，也签不出对面认的票据。
+    # 前缀与已撤掉的反方向（hub-embed-admin|）不同，那个方向的旧票据在这里一文不值。
+    return hashlib.sha256(("hub-chat-admin|" + CHAT_SECRET).encode("utf-8")).digest()
+
+
+def _b64_origin(origin):
+    return base64.urlsafe_b64encode(origin.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def issue_chat_ticket(purpose, issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
+    """签一张票据。调用方负责确认「现在可以签」（chat_sso_blocker）。"""
     exp = str(int(now if now is not None else time.time()) + int(ttl))
-    nonce = secrets.token_urlsafe(18)
-    return ".".join((EMBED_TICKET_VERSION, purpose, exp, nonce, _embed_ticket_signature(purpose, exp, nonce)))
+    message = ".".join((CHAT_TICKET_VERSION, purpose, exp, secrets.token_urlsafe(18),
+                        _b64_origin(issuer), _b64_origin(audience)))
+    return message + "." + hmac.new(_chat_key(), message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def consume_embed_ticket(ticket, purpose):
-    """验票并作废。返回 (是否通过, 原因)；原因只用于日志与页面提示，不含任何敏感信息。"""
-    if not trusted_embed_active():
-        return False, "disabled"
-    if not ticket:
-        return False, "missing"
-    parts = str(ticket).split(".")
-    if len(parts) != 5 or len(str(ticket)) > 512:
-        return False, "malformed"
-    version, got_purpose, exp, nonce, sig = parts
-    if (version != EMBED_TICKET_VERSION or not re.match(r"^[a-z]{1,16}$", got_purpose)
-            or not exp.isdigit() or len(exp) > 12 or not _EMBED_NONCE_RE.match(nonce)):
-        return False, "malformed"
-    # 先验签，再看别的：没有密钥的人无论怎么试，得到的都是同一个答案。用途在签名里，probe 票换不了会话。
-    expected = _embed_ticket_signature(got_purpose, exp, nonce)
-    if not hmac.compare_digest(sig.encode("utf-8"), expected.encode("utf-8")):
-        return False, "signature"
-    if got_purpose != purpose:
-        return False, "purpose"
+def request_public_origin():
+    """本站在浏览器眼里的源。优先显式配置，其次浏览器自己填的 Origin（页面脚本改不了），最后按反代头拼。"""
+    if PUBLIC_ORIGIN:
+        return PUBLIC_ORIGIN
+    origin = _clean_origin(request.headers.get("Origin", ""))
+    if origin:
+        return origin
+    scheme = "https" if _request_is_https() else "http"
+    return _clean_origin(scheme + "://" + request.host)
+
+
+def chat_handshake_state():
+    with _chat_lock:
+        return {k: _chat_handshake[k] for k in ("ok", "reason", "checked_at", "frame_ancestors")}
+
+
+def _record_chat_handshake(ok, reason, frame_ancestors=None):
+    with _chat_lock:
+        _chat_handshake.update(ok=ok, reason=reason, checked_at=int(time.time()),
+                               frame_ancestors=frame_ancestors, running=False)
+
+
+def run_chat_handshake(issuer):
+    """问一声 HaloWebUI：我们签的票你认不认。只做诊断，从不抛异常，也换不到任何东西。"""
+    try:
+        body = json.dumps({"ticket": issue_chat_ticket(CHAT_PURPOSE_PROBE, issuer, CHAT_URL)}).encode("utf-8")
+        req = urllib.request.Request(CHAT_URL + "/api/v1/hub/handshake", data=body, method="POST",
+                                     headers={"Content-Type": "application/json", "Accept": "application/json"})
+        status, payload = 0, {}
+        try:
+            with urllib.request.build_opener().open(req, timeout=CHAT_HANDSHAKE_TIMEOUT) as resp:
+                status, raw = resp.status, resp.read(65536)
+        except urllib.error.HTTPError as exc:
+            status, raw = exc.code, exc.read(65536)
+        try:
+            payload = json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        if status == 200 and payload.get("ok") is True:
+            ancestors = payload.get("frame_ancestors")
+            ancestors = [str(a)[:300] for a in ancestors[:16]] if isinstance(ancestors, list) else None
+            if payload.get("session_user_ready") is False:
+                _record_chat_handshake(False, "no_session_user", ancestors)
+            else:
+                _record_chat_handshake(True, "ok", ancestors)
+        elif status == 404:
+            _record_chat_handshake(False, "peer_not_configured")   # 对面没配密钥，或还是旧版本
+        elif status == 401:
+            detail = payload.get("detail") if isinstance(payload.get("detail"), dict) else {}
+            # 对面回的原因会进日志和页面：只留小写字母和下划线。
+            reason = re.sub(r"[^a-z_]", "", str(detail.get("reason") or "").lower())[:32] or "rejected"
+            _record_chat_handshake(False, "secret_mismatch" if reason == "signature" else reason)
+        elif status == 429:
+            _record_chat_handshake(None, "throttled")
+        else:
+            _record_chat_handshake(None, "http_{0}".format(status))
+    except Exception as exc:  # noqa: BLE001 - 连不上不算错：管理员的浏览器是自己直连 HaloWebUI 的。
+        _record_chat_handshake(None, "unreachable")
+        sys.stderr.write("[gyqd-web] AI 聊天握手：连不上 {0}（{1}）\n".format(CHAT_URL, type(exc).__name__))
+        return
+    state = chat_handshake_state()
+    if state["ok"] is not True:
+        sys.stderr.write("[gyqd-web] AI 聊天握手未通过：{0}\n".format(state["reason"]))
+
+
+def ensure_chat_handshake(issuer):
+    """需要时在后台（重新）握一次手，立刻返回当前结论——签票从不等它。"""
+    if chat_sso_blocker() or not issuer:
+        return chat_handshake_state()
     now = time.time()
-    expires = int(exp)
-    if expires <= now:
-        return False, "expired"
-    if expires > now + EMBED_TICKET_MAX_TTL:
-        return False, "ttl"
-    with _embed_lock:
-        for seen in [n for n, t in _embed_nonces.items() if t <= now]:
-            del _embed_nonces[seen]
-        if nonce in _embed_nonces:
-            return False, "replayed"
-        if len(_embed_nonces) >= _EMBED_MAX_NONCES:
-            # 只有持密钥的一方才填得满这张表；满了就拒收，绝不能清表——清表等于放行重放。
-            return False, "busy"
-        _embed_nonces[nonce] = expires
-    return True, "ok"
+    with _chat_lock:
+        checked = _chat_handshake["checked_at"]
+        age = None if checked is None else now - checked
+        due = age is None or age >= (CHAT_HANDSHAKE_REFRESH if _chat_handshake["ok"] is True else CHAT_HANDSHAKE_RETRY)
+        start = due and not _chat_handshake["running"]
+        if start:
+            _chat_handshake["running"] = True
+    if start:
+        threading.Thread(target=run_chat_handshake, args=(issuer,), name="gyqd-chat-handshake", daemon=True).start()
+    return chat_handshake_state()
+
+
+def start_chat_handshake():
+    """启动握手：配了 HUB_PUBLIC_ORIGIN 才知道自己对外叫什么，才能在没有请求的时候就握手；
+    没配就等第一个管理员打开标签页时再握（那时从请求里取）。"""
+    if PUBLIC_ORIGIN:
+        ensure_chat_handshake(PUBLIC_ORIGIN)
 
 
 # =========================
@@ -1731,7 +1839,7 @@ def _guard_admin():
 # =========================
 #
 # 页面内联了全部脚本与样式（单文件模板），因此 script-src / style-src 必须放行
-# 'unsafe-inline'；其余方向一律收紧到同源。frame-ancestors 单独拼（见下）。
+# 'unsafe-inline'；其余方向一律收紧到同源。frame-src / frame-ancestors 由 content_security_policy() 按配置拼。
 CONTENT_SECURITY_POLICY_BASE = (
     "default-src 'self'; "
     "img-src 'self' data:; "
@@ -1743,42 +1851,15 @@ CONTENT_SECURITY_POLICY_BASE = (
     "base-uri 'none'; "
 )
 
-# 谁可以把本站嵌进 iframe：默认只有同源（'self'）。要让另一个站点（例如自己的 HaloWebUI）嵌入，
-# 在 HUB_FRAME_ANCESTORS 里逐个写出它的完整源（协议 + 主机 + 端口），空格或逗号分隔。
-# 只接受精确的源：通配符、路径、裸域名一律丢弃——白名单写错的后果应该是「嵌不进来」，
-# 而不是「谁都能嵌」（点击劫持）。http 只放行回环地址，给本机调试用。
-_FRAME_ANCESTOR_RE = re.compile(
-    r"^(?:https://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
-    r"|http://(?:localhost|127\.0\.0\.1))(?::[0-9]{1,5})?$"
-)
-
-
-def _parse_frame_ancestors(raw):
-    """HUB_FRAME_ANCESTORS → 去重后的源列表；不合规的条目丢弃并在日志里点名。"""
-    origins = []
-    for item in re.split(r"[\s,]+", str(raw or "").strip()):
-        if not item:
-            continue
-        origin = item.rstrip("/").lower()
-        if len(origin) > 300 or not _FRAME_ANCESTOR_RE.match(origin):
-            sys.stderr.write("[gyqd-web] 警告：HUB_FRAME_ANCESTORS 里的「{0}」不是完整的源"
-                             "（形如 https://host:port，不支持通配符），已忽略\n".format(item[:120]))
-            continue
-        if origin not in origins:
-            origins.append(origin)
-    return origins
-
-
-FRAME_ANCESTORS = _parse_frame_ancestors(os.environ.get("HUB_FRAME_ANCESTORS", ""))
-
 
 def content_security_policy():
-    return CONTENT_SECURITY_POLICY_BASE + "frame-ancestors " + " ".join(["'self'"] + FRAME_ANCESTORS)
+    """本站是外层页面：
+    - frame-src：default-src 'self' 下外站一律嵌不进来，只为「AI 聊天」配置的那一个源（HUB_CHAT_URL）开口；
+    - frame-ancestors 'none'：本站自己不被任何人嵌（外壳、解锁面板、票据签发都不该出现在别人的框里）。"""
+    frame_src = "frame-src 'self'{0}; ".format(" " + CHAT_URL if CHAT_URL else "")
+    return CONTENT_SECURITY_POLICY_BASE + frame_src + "frame-ancestors 'none'"
 
 
-def request_is_embedded():
-    """这次页面请求是不是浏览器为一个 iframe 发的。Sec-Fetch-* 由浏览器填写，页面脚本改不了。"""
-    return request.headers.get("Sec-Fetch-Dest", "").strip().lower() == "iframe"
 # HSTS 会把整个域名（含其它端口的服务）锁到 https，默认不开，由部署方按需打开。
 HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 
@@ -1787,11 +1868,9 @@ HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 #  - index / static / service_worker：应用外壳本身，不含任何数据，解锁界面要靠它渲染；
 #  - health：容器 HEALTHCHECK 在调，堵掉会让容器被判定为不健康；
 #  - api_auth / api_logout：解锁与锁定的入口，堵掉就没法解锁了；
-#  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截；
-#  - embed_enter / api_embed_handshake：和 api_auth 一样是解锁入口，自己校验签名票据。
+#  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截。
 _PRIVATE_OPEN_ENDPOINTS = frozenset({
     "index", "static", "service_worker", "health", "api_auth", "api_logout", "api_configs",
-    "embed_enter", "api_embed_handshake",
 })
 
 
@@ -1851,10 +1930,8 @@ def _handle_server_error(exc):
 @app.after_request
 def apply_security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    # X-Frame-Options 表达不了「同源 + 某个指定站点」（ALLOW-FROM 早已废弃）：配了白名单就不发它，
-    # 交给 CSP 的 frame-ancestors 说了算；没配白名单时两者一致，都是只许同源。
-    if not FRAME_ANCESTORS:
-        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    # 与 CSP 的 frame-ancestors 'none' 一致：本站不被任何页面嵌入（老浏览器看这个头）。
+    resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     resp.headers.setdefault("Content-Security-Policy", content_security_policy())
@@ -1890,7 +1967,7 @@ _GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "a
 _GZIP_CACHE_MAX = 32
 _gzip_cache = {}
 _gzip_cache_lock = threading.Lock()
-_shell_etag_memo = {}   # 外壳变体（"" 顶层 / "embedded" 被嵌入）→ (上一次渲染出的外壳, 它的 ETag)；整个元组一次换掉，读的人不会看到半新半旧
+_shell_etag_memo = {}   # (上一次渲染出的外壳, 它的 ETag)，只有一个键 ""；整个元组一次换掉，读的人不会看到半新半旧
 
 
 def _accepts_gzip():
@@ -1975,29 +2052,21 @@ def cache_builtin_wallpapers(resp):
 # 路由：页面
 # =========================
 
-def _shell_etag(body, variant=""):
-    """外壳的 ETag = 渲染结果的内容哈希；模板没变就不重算（整段字节比较远比哈希便宜）。
-    顶层页面和被嵌入的页面各记各的，交替请求时不会互相把对方挤掉。"""
-    memo = _shell_etag_memo.get(variant)
+def _shell_etag(body):
+    """外壳的 ETag = 渲染结果的内容哈希；模板没变就不重算（整段字节比较远比哈希便宜）。"""
+    memo = _shell_etag_memo.get("")
     if memo is None or memo[0] != body:
-        memo = _shell_etag_memo[variant] = (body, hashlib.sha256(body).hexdigest()[:32])
+        memo = _shell_etag_memo[""] = (body, hashlib.sha256(body).hexdigest()[:32])
     return memo[1]
 
 
 @app.get("/")
 def index():
-    """应用外壳：不含任何数据，可以放心让浏览器留着——但每次都要回来问一句有没有新版本。
-
-    被嵌进 iframe 时（浏览器自己在 Sec-Fetch-Dest 里说的）外壳多带一个 data-embedded 标记：
-    页面据此把所有外链强制开到新标签页——在框里「当前页打开」会把整个框导航到别人的站，
-    多半还会被对方的 X-Frame-Options 拒掉，只剩一块白屏。"""
-    embedded = request_is_embedded()
-    body = render_template("index.html", embedded=embedded).encode("utf-8")
+    """应用外壳：不含任何数据，可以放心让浏览器留着——但每次都要回来问一句有没有新版本。"""
+    body = render_template("index.html").encode("utf-8")
     resp = app.response_class(body, mimetype="text/html")
-    resp.set_etag(_shell_etag(body, "embedded" if embedded else ""))
+    resp.set_etag(_shell_etag(body))
     resp.headers["Cache-Control"] = "no-cache"
-    # 同一个地址按请求头给出两种外壳，缓存必须分开存。
-    resp.vary.add("Sec-Fetch-Dest")
     return resp.make_conditional(request)
 
 
@@ -2058,11 +2127,11 @@ def collect_diagnostics(request_is_https=None):
 
     # 2. 私密模式
     if PRIVATE_MODE and not ADMIN_PASSWORD:
-        checks.append(_check("error", "私密模式", "GYQD_PRIVATE=1 但没有管理密码，未生效"))
+        checks.append(_check("error", "私密模式", "没有管理密码，无从校验：收藏库对所有人可见"))
     elif private_mode_active():
-        checks.append(_check("ok", "私密模式", "已开启：未解锁时整站不可浏览"))
+        checks.append(_check("ok", "私密模式", "已开启：收藏库、看板与 AI 聊天入口都在登录后才出现"))
     else:
-        checks.append(_check("ok", "私密模式", "未开启：收藏库可被公开浏览（凭据始终不下发）"))
+        checks.append(_check("warn", "私密模式", "HUB_PUBLIC_LIBRARY=1：收藏库可被公开浏览（凭据始终不下发）"))
 
     # 3. 传输安全
     if request_is_https is True:
@@ -2318,6 +2387,8 @@ def api_configs():
             "wallpaper": {"custom": False, "v": "", "lum": None},
             "todos": [], "todos_locked": True,
             "deck": _coerce_deck({}), "deck_locked": True, "deck_error": "",
+            # 未解锁：连「有没有 AI 聊天、它在哪」都不说。
+            "chat": None,
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -2383,6 +2454,9 @@ def api_configs():
         "wallpaper": public_wallpaper(),
         "todos": todos, "todos_locked": not unlocked, "todos_error": todos_error,
         "deck": deck, "deck_locked": not unlocked, "deck_error": deck_error,
+        # 「AI 聊天」标签页：HaloWebUI 的地址只给已解锁的人（没设管理密码时人人都算已解锁）。
+        # 免登录票据另走 POST /api/chat/ticket，这里只有地址。
+        "chat": {"url": CHAT_URL} if chat_enabled() and unlocked else None,
     })
 
 
@@ -4756,71 +4830,50 @@ def api_logout():
     return _clear_session_cookie(jsonify({"ok": True}))
 
 
-# ---- 受信任的嵌入方（HaloWebUI）：票据换会话 ----
+# ---- AI 聊天：给 HaloWebUI 的 iframe 签一张一次性票据 ----
 
-# 验票失败里只有这两种像是在猜：计入防爆破。签名是对的、只是过期 / 用过 / 用途不符，说明对方确实持有密钥
-# （多半是两台机器时钟没对上），再计数只会把管理员自己锁在门外。
-_EMBED_GUESSING_REASONS = frozenset({"malformed", "signature"})
+# 明确知道对面不认我们的票（密钥不一致、对面没配）时就不签了：签了也是白送对面一次「验签失败」的计数。
+# 「不知道」（多半是这台机器连不上对面）照签——管理员的浏览器是自己直连 HaloWebUI 的。
+_CHAT_SSO_HINTS = {
+    "secret_unset": "没有配置 HUB_TRUSTED_EMBED_ADMIN_SECRET，需要在下面的页面里自己登录 HaloWebUI。",
+    "no_password": "本站没有设管理密码，不会替任何人登录 HaloWebUI。",
+    "password_public": "本站的管理密码曾以明文出现在公开的代码仓库历史里，换掉之前不会用它替你登录 HaloWebUI。"
+                       "请在下面的页面里自己登录；更换 GYQD_ADMIN_PASSWORD 后自动恢复免登录。",
+    "password_short": "本站的管理密码少于 {0} 位，不会用它替你登录 HaloWebUI。".format(MIN_ADMIN_PASSWORD_LEN),
+    "secret_mismatch": "两边的 HUB_TRUSTED_EMBED_ADMIN_SECRET 不一致，HaloWebUI 不认本站签的票据。",
+    "peer_not_configured": "HaloWebUI 那边还没有配置 HUB_TRUSTED_EMBED_ADMIN_SECRET（或还没更新到支持的版本）。",
+    "issuer": "HaloWebUI 的 HUB_URL 写的不是本站的地址，它不认本站签的票据。",
+    "no_session_user": "HaloWebUI 找不到可以登录的账号（HUB_EMBED_USER_EMAIL 写错了，或主管理员不存在）。",
+}
 
 
-def _embed_landing(reason=""):
-    """换票之后落到哪：框里是带 ?embed=1 的首页——带查询串的导航 Service Worker 走网络优先，
-    不会拿缓存里那份「顶层页面」的外壳（以及它的旧响应头）来糊弄 iframe；新标签页里直接打开就回干净的首页。"""
-    query = (["embed=1"] if request_is_embedded() else []) + (["sso=" + reason] if reason else [])
-    target = "/" + ("?" + "&".join(query) if query else "")
-    resp = app.response_class("", status=303)
-    resp.headers["Location"] = target
+@app.post("/api/chat/ticket")
+def api_chat_ticket():
+    """「AI 聊天」标签页的 iframe 地址。只给已解锁的管理员；每次调用都是一张新的一次性凭据，
+    所以是 POST、不可缓存。签不了票时照样回 HaloWebUI 的普通地址和原因——标签页不能因此打不开。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    if not chat_enabled():
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    issuer = request_public_origin()
+    blocker = chat_sso_blocker() or ("" if issuer else "issuer_unknown")
+    handshake = ensure_chat_handshake(issuer)
+    if not blocker and handshake["ok"] is False:
+        blocker = handshake["reason"]
+    framed_ok = None   # 对面的 frame-ancestors 里有没有本站；不知道就是 None
+    if isinstance(handshake["frame_ancestors"], list) and issuer:
+        framed_ok = issuer in handshake["frame_ancestors"]
+    url = CHAT_URL + "/"
+    if not blocker:
+        url = CHAT_URL + "/auth#hub_ticket=" + issue_chat_ticket(CHAT_PURPOSE_ENTER, issuer, CHAT_URL)
+    resp = jsonify({
+        "ok": True, "url": url, "sso": not blocker,
+        "reason": blocker, "hint": _CHAT_SSO_HINTS.get(blocker, ""),
+        "framed_ok": framed_ok,
+    })
     resp.headers["Cache-Control"] = "no-store"
     return resp
-
-
-@app.get("/embed/enter")
-def embed_enter():
-    """iframe（或「在新标签页打开」）的入口：验一张 enter 票据，通过就下发和 /api/auth 完全一样的会话 Cookie。
-
-    失败不回错误页——照样进首页，只是没解锁（页面会提示一句，框里仍可手动输密码）。
-    验票失败计入防爆破：HMAC 猜不出来，但没理由给人无限次试的机会。"""
-    if not trusted_embed_active():
-        return jsonify({"ok": False, "error": "接口不存在"}), 404
-    if not ADMIN_PASSWORD:
-        return _embed_landing()  # 没设管理密码 = 本来就全开放，没有什么可解锁的
-    if login_retry_after():
-        return _embed_landing("throttled")
-    ok, reason = consume_embed_ticket(request.args.get("ticket", ""), EMBED_PURPOSE_ENTER)
-    if not ok:
-        if reason in _EMBED_GUESSING_REASONS:
-            record_login_failure()
-        sys.stderr.write("[gyqd-web] 嵌入票据被拒（{0}），来源 {1}\n".format(reason, client_ip()))
-        return _embed_landing(reason)
-    resp = _embed_landing()
-    # 已经持有有效会话（比如之前用密码解锁的 30 天会话）就不动它：别拿一个更短的把它顶掉。
-    if not _session_token_ok(request.cookies.get(SESSION_COOKIE, "")):
-        _set_session_cookie(resp, EMBED_SESSION_TTL)
-    return resp
-
-
-@app.post("/api/embed/handshake")
-def api_embed_handshake():
-    """HaloWebUI 启动时的握手：带一张 probe 票据来，确认两边密钥一致、时钟没偏太多。
-    不下发任何凭据；顺带回报嵌入白名单，让对方能提示「你的地址不在 HUB_FRAME_ANCESTORS 里」
-    （白名单本来就写在每个响应的 CSP 头里，不是秘密）。"""
-    if not trusted_embed_active():
-        return jsonify({"ok": False, "error": "接口不存在"}), 404
-    wait = login_retry_after()
-    if wait:
-        return _locked_response(wait)
-    data = request.get_json(silent=True)
-    ticket = data.get("ticket", "") if isinstance(data, dict) else ""
-    ok, reason = consume_embed_ticket(ticket, EMBED_PURPOSE_PROBE)
-    if not ok:
-        if reason in _EMBED_GUESSING_REASONS:
-            record_login_failure()
-        return jsonify({"ok": False, "error": "握手票据无效", "reason": reason}), 401
-    return jsonify({
-        "ok": True,
-        "frame_ancestors": list(FRAME_ANCESTORS),
-        "session_ttl": EMBED_SESSION_TTL,
-    })
 
 
 # =========================
@@ -5007,6 +5060,8 @@ def start_scheduler():
 
 # 模块导入即启动调度（gunicorn 单 worker 下仅启动一次）。
 start_scheduler()
+# 「AI 聊天」的启动握手：后台线程，不阻塞启动，失败也只是记一笔。
+start_chat_handshake()
 
 
 if __name__ == "__main__":

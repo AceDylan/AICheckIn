@@ -1869,6 +1869,38 @@ html.wall-on .home-todo { --todo-drag-bg: #232c3f; }
   .home-body.has-deck .todo-list { max-height: min(36vh, 420px); }
   .home-body.has-deck .todo-done .todo-list { max-height: min(22vh, 220px); }
 }
+/* ===== AI 聊天：HaloWebUI 嵌在「AI 聊天」标签页的 iframe 里 =====
+   整块铺满内容区：<html class="chat-on"> 由 switchView 切换，去掉内容区的留白与最大宽度，
+   工具条 + 提示条 + 框三段纵向排开，框吃掉剩下的全部高度。 */
+html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
+#view-chat.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
+.chat-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.chat-bar-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
+.chat-bar-title svg.ic { color: var(--accent); }
+.chat-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.chat-bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.chat-note {
+  display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-2); font-size: 12.5px; line-height: 1.55;
+}
+.chat-note > span { flex: 1; min-width: 0; padding-top: 3px; }
+.chat-note-close { flex-shrink: 0; }
+.chat-stage { position: relative; flex: 1; min-height: 0; background: var(--bg); }
+.chat-frame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: transparent; }
+.chat-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); font-size: 13px; pointer-events: none; }
+.chat-loading[hidden] { display: none; }
+@media (max-width: 760px) {
+  /* 底部固定标签栏约 66px + 安全区：框到它上沿为止，别让最后一行输入框藏在标签栏后面。 */
+  html.chat-on .content { padding: 0; }
+  #view-chat.active { height: calc(100vh - 66px - env(safe-area-inset-bottom)); }
+  .chat-bar { padding: 8px 12px; }
+  .chat-host { display: none; }
+}
+
 @media (max-width: 760px) {
   .todo-input, .todo-edit { min-height: 42px; font-size: 16px; }   /* 16px：iOS 聚焦输入框时不自动放大页面 */
   .todo-add { flex-basis: 42px; width: 42px; height: 42px; }
