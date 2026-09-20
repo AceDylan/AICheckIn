@@ -116,6 +116,13 @@
   长度 ≤ 200 字、最多 200 条，渲染时一律转义。显示偏好沿用 Cookie `bh_home_todo`（值域白名单 `open` / `closed` / `off`）。
   排序接口 `POST /api/todos/<id>/move` 同样要管理权限：只接受 `before` / `after` 二选一、值必须是另一条现存待办的 id，
   校验不过（缺参、两个都给、以自己为参照、参照物不存在）一律不落盘；它只改顺序，不接收也不回显任何新内容。
+- 待办里的网址可点，但只认 `http://` / `https://`（`javascript:`、`data:` 等不会被识别成链接，`safeUrl` 再兜一层），
+  链接一律 `target="_blank" rel="noopener noreferrer nofollow"`：对方拿不到 `window.opener`，Referer 里也不会出现起始页地址。
+  显示文字取自 `new URL()` 解析后的主机名 + 路径而不是原文，`https://银行@evil.example` 这类障眼法会如实显示成 `evil.example`；
+  网址只取 ASCII 合法字符，非 ASCII 的同形异义域名不会被当成链接。拼进 HTML 的每一段（前后文、`href`、`title`、显示文字）都转义。
+- 「常用一行」与「分组折叠」是纯本机功能，没有新增接口、不向服务端上报点击。项目约定不使用 Web Storage，记录放在 Cookie 里：
+  `bh_home_hits`（`天数.哈希-次数…`，只含网址的 32 位哈希，不含网址）与 `bh_home_fold`（分组 id 列表）；两者读取时都按严格的
+  字符集 / 格式白名单整体校验，被改成别的内容就整个作废，不会被拼进页面。「外观」里关闭「常用一行」会同时清掉已有记录。
 - 「编辑首页」（拖动图标排序 / 移除）没有新增接口：排序复用 `POST /api/link_groups/<gid>/links/reorder` 与
   `POST /api/bookmarks/reorder`（都要管理权限、都要求是现有条目的一个全排列），移除复用既有的 `show_on_home` 开关；
   未解锁的访客看不到「添加 / 编辑」入口，直接调接口也会被 403 挡下。编辑状态下图标的名称进 `aria-label` 前同样转义，

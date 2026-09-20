@@ -437,6 +437,10 @@
       <div class="field"><label id="homeTodoLabel">首页待办</label>
         <div class="segmented" id="homeTodoSeg" role="radiogroup" aria-labelledby="homeTodoLabel"><button type="button" data-home-todo="on">显示</button><button type="button" data-home-todo="off">隐藏</button></div>
       </div>
+      <div class="field"><label id="homeFreqLabel">常用一行</label>
+        <div class="freq-row"><div class="segmented" id="homeFreqSeg" role="radiogroup" aria-labelledby="homeFreqLabel"><button type="button" data-home-freq="on">显示</button><button type="button" data-home-freq="off">关闭</button></div><button type="button" class="btn ghost sm" id="homeFreqClear">清空记录</button></div>
+        <div class="hint">把这台设备上点得最多的网址在首页最前面排一行（至少 3 个网址各点过 2 次才出现）。只记在本机 Cookie 里：网址的短哈希 + 次数，不含网址本身；14 天不点热度减半。关闭后不再记录。</div>
+      </div>
       <div class="modal-actions"><span style="flex:1"></span><button class="btn sm" id="homeLookClose">完成</button></div>
     </div>
   </div>
@@ -524,6 +528,38 @@
       if (!safe) return `<span class="url-link" style="color:var(--text-3)">${escapeHtml(u)}</span>`;
       const e = escapeHtml(safe);
       return `<a class="url-link" href="${e}" target="_blank" rel="noopener noreferrer" title="${e}">${e}<span class="arrow">↗</span></a>`;
+    }
+    // 把一段纯文本里的 http(s) 网址变成可点的链接，其余部分照常转义（用在待办上）。
+    // - 只认 http / https：javascript:、data: 之类根本不会被识别成链接，safeUrl 再兜一层；
+    // - 显示的是解析之后的「主机名 + 路径」，不是原文：https://银行.com@evil.example 会老老实实显示成 evil.example，
+    //   同形异义的域名显示为 xn-- 形式，骗不了人；完整地址放在 title 里；
+    // - 一律新标签页打开，noopener + noreferrer：起始页的地址不会出现在对方的 Referer 里，对方也拿不到 window.opener。
+    // 网址只取 ASCII 的合法字符：中文里网址后面常常不空格直接跟标点或正文（「见 https://a.example/x。然后…」），
+    // 遇到全角标点、汉字就该停下，不能一口气吞到下一个空格。
+    const LINKIFY_RE = /https?:\/\/[A-Za-z0-9\-._~:\/?#\[\]@!$&()*+,;=%]+/gi;
+    function trimUrlTail(raw) {
+      let url = raw.replace(/[.,;:!?]+$/, '');
+      // 句末的右括号多半属于句子而不是网址——除非网址里本来就有配对的左括号（维基百科那类）。
+      while (/[)\]]$/.test(url) && (url.match(/[)\]]/g) || []).length > (url.match(/[(\[]/g) || []).length) url = url.slice(0, -1).replace(/[.,;:!?]+$/, '');
+      return url;
+    }
+    function linkLabel(parsed) {
+      const text = parsed.hostname.replace(/^www\./, '') + (parsed.port ? ':' + parsed.port : '') + parsed.pathname.replace(/\/$/, '') + (parsed.search ? '?…' : '');
+      return text.length > 42 ? text.slice(0, 41) + '…' : text;
+    }
+    function linkifyHtml(text) {
+      const src = String(text == null ? '' : text);
+      let out = '', last = 0;
+      for (const m of src.matchAll(LINKIFY_RE)) {
+        const url = safeUrl(trimUrlTail(m[0]));
+        let parsed = null;
+        try { parsed = url ? new URL(url) : null; } catch (_) { parsed = null; }
+        if (!parsed || !parsed.hostname) continue;
+        out += escapeHtml(src.slice(last, m.index));
+        out += `<a class="todo-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer nofollow" draggable="false" title="${escapeHtml(url)}">${escapeHtml(linkLabel(parsed))}</a>`;
+        last = m.index + url.length;
+      }
+      return out + escapeHtml(src.slice(last));
     }
     function siteHost(u) {
       try { return new URL(safeUrl(u)).hostname.replace(/^www\./, ''); }
@@ -1715,7 +1751,7 @@
     // 图标：不带卡片底板，只有大图标和名字；域名放进 title，不占版面。
     function homeTileHtml(o) {
       const host = siteHost(o.url) || '未设置域名';
-      return `<div class="home-tile tone-${escapeHtml(o.tone)}" style="--hue:${hueOf(host)}"${tileArrangeAttrs(o)}>
+      return `<div class="home-tile tone-${escapeHtml(o.tone)}" style="--hue:${hueOf(host)}"${tileArrangeAttrs(o)}${o.attrs || ''}>
         <a class="tile-link" ${tileHrefAttrs(o)}>
           ${siteAvatarHtml(o.name, o.url, 'tile-avatar', o.emoji, o.customIcon)}
           <span class="tile-title">${escapeHtml(o.name)}</span>
@@ -1832,16 +1868,126 @@
       $('homeList').querySelectorAll('.home-section').forEach(sec => {
         setCssVar(sec, '--span', String(Math.min(Number(sec.dataset.units) || 1, HOME_GRID.cols)));
       });
+      $('homeList').querySelectorAll('[data-freq-i]').forEach(tile => { tile.hidden = Number(tile.dataset.freqI) >= HOME_GRID.cols; });
     }
     if (typeof ResizeObserver === 'function') new ResizeObserver(relayoutHomeGrid).observe($('homeBody'));
     else window.addEventListener('resize', relayoutHomeGrid);
 
+    // ----- 分组折叠 -----
+    // 不常用的分组可以留在首页但收成一行标题。记在本机 Cookie bh_home_fold 里（分组 id 用 . 连接，站点看板记作 monitor），
+    // 各设备各折各的；读的时候按字符集白名单过滤，写的时候顺手清掉已经不存在的分组。极简密度没有分组标题，折叠不生效。
+    const HOME_FOLD_MAX = 40;
+    function homeFolds() {
+      const m = document.cookie.match(/(?:^|; )bh_home_fold=([A-Za-z0-9_.-]{1,1400})(?:;|$)/);
+      return m ? m[1].split('.').filter(Boolean) : [];
+    }
+    function toggleHomeFold(page) {
+      const known = new Set(['monitor'].concat(libGroups().map(g => g.id)));
+      if (!known.has(page)) return;
+      const kept = homeFolds().filter(id => known.has(id));
+      const next = kept.includes(page) ? kept.filter(id => id !== page) : kept.concat(page);
+      writePref('bh_home_fold', next.slice(-HOME_FOLD_MAX).join('.'));
+      renderHome();
+      const btn = $('homeList').querySelector(`[data-home-fold="${CSS.escape(page)}"]`);
+      if (btn) btn.focus();
+    }
+    $('homeList').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-home-fold]');
+      if (btn) toggleHomeFold(btn.dataset.homeFold);
+    });
+
+    // ----- 常用一行 -----
+    // 这台设备上点得最多的网址，在首页最前面排一行（正好一行：放得下几个显示几个）。
+    // 项目约定不往浏览器的 Web Storage 里放任何东西（有测试守着），所以和其它本机偏好一样记在 Cookie bh_home_hits 里：`天数.键-次数.键-次数…`，
+    // 键是网址的 32 位哈希（base36），Cookie 里不出现网址本身；最多 24 条，每 14 天没更新就整体减半，旧习惯会自己淡出。
+    // 至少 3 个网址各被点过 2 次才出现这一行；「外观」里可以关掉（bh_home_freq=off，同时停止记录）或清空记录。
+    const HITS = { max: 24, halfLifeDays: 14, minCount: 2, minTiles: 3 };
+    const HOME_FREQ_PREFS = ['on', 'off'];
+    function homeFreqOn() { return readPref('bh_home_freq', HOME_FREQ_PREFS, 'on') === 'on'; }
+    function urlKey(u) {
+      let h = 0x811c9dc5;
+      for (const ch of safeUrl(u)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+      return h.toString(36);
+    }
+    function readHits() {
+      const today = Math.floor(Date.now() / 86400000), counts = new Map();
+      const m = document.cookie.match(/(?:^|; )bh_home_hits=([0-9]{1,6}(?:\.[a-z0-9]{1,8}-[0-9]{1,4}){0,24})(?:;|$)/);
+      if (!m) return { day: today, counts };
+      const parts = m[1].split('.');
+      let day = Math.min(Number(parts[0]), today);
+      const halvings = Math.floor((today - day) / HITS.halfLifeDays);
+      for (const part of parts.slice(1)) {
+        const [key, n] = part.split('-');
+        const left = Math.floor(Number(n) / Math.pow(2, Math.min(halvings, 12)));
+        if (left > 0) counts.set(key, left);
+      }
+      return { day: day + halvings * HITS.halfLifeDays, counts };
+    }
+    function writeHits(day, counts) {
+      const top = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, HITS.max);
+      writePref('bh_home_hits', [String(day)].concat(top.map(([key, n]) => `${key}-${Math.min(n, 9999)}`)).join('.'));
+    }
+    function recordHit(url) {
+      if (!homeFreqOn() || !safeUrl(url)) return;
+      const { day, counts } = readHits(), key = urlKey(url);
+      // 满了就让次数最少的那条让位——新来的这条不算在内，否则新网址永远挤不进来。
+      if (!counts.has(key) && counts.size >= HITS.max) counts.delete(Array.from(counts.entries()).sort((a, b) => a[1] - b[1])[0][0]);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      writeHits(day, counts);
+    }
+    function dropHomeHit(key) {
+      const { day, counts } = readHits();
+      counts.delete(String(key));
+      writeHits(day, counts);
+      renderHome();
+    }
+    function clearHomeHits() { document.cookie = 'bh_home_hits=; max-age=0; path=/; SameSite=Lax'; }
+    // 点开网址的几条路：首页图标 / 小组件 / 分组卡片（含中键新标签页打开），以及搜索结果（见 omniOpen）。
+    // 只记数、不重画：这一行在下次打开首页时才更新，免得图标在手底下换位置。
+    function onHitClick(e) {
+      if (e.type === 'auxclick' && e.button !== 1) return;
+      const a = e.target.closest ? e.target.closest('a.tile-link[href], a.widget-link[href], a.link-main[href]') : null;
+      if (a) recordHit(a.getAttribute('href'));
+    }
+    document.addEventListener('click', onHitClick, true);
+    document.addEventListener('auxclick', onHitClick, true);
+    function homeFrequent() {
+      if (!homeFreqOn()) return [];
+      const { counts } = readHits(), seen = new Set(), out = [];
+      if (counts.size < HITS.minTiles) return [];
+      const consider = (o) => {
+        const key = urlKey(o.url), n = counts.get(key) || 0;
+        if (n < HITS.minCount || seen.has(key)) return;
+        seen.add(key);
+        out.push(Object.assign(o, { key, n, at: out.length }));
+      };
+      (STATE.bookmarks || []).forEach(b => { if (b) consider({ name: b.name, url: b.url, tone: 'mint', page: 'monitor', where: '站点看板' }); });
+      libGroups().forEach(g => (g.links || []).forEach(l => consider({ name: l.name, url: l.url, emoji: l.icon, customIcon: l.custom_icon, tone: g.color, page: g.id, where: g.name })));
+      out.sort((a, b) => b.n - a.n || a.at - b.at);
+      return out.length >= HITS.minTiles ? out.slice(0, HOME_GRID.max) : [];
+    }
+    // 多备几个（最多 10 个），超出当前列数的先藏起来：窗口变宽时 relayoutHomeGrid 直接放出来，始终正好一行。
+    function homeFrequentHtml(items) {
+      const tiles = items.map((o, k) => homeTileHtml(Object.assign(o, {
+        attrs: ` data-freq-i="${k}"${k >= HOME_GRID.cols ? ' hidden' : ''}`,
+        menu: `<button onclick="openLibPage('${escapeHtml(o.page)}')">前往「${escapeHtml(o.where)}」</button>
+         <div class="sep"></div>
+         <button onclick="dropHomeHit('${escapeHtml(o.key)}')">不在「常用」里显示</button>`,
+      }))).join('');
+      return homeSectionHtml('', '常用', 'clock', 'mint', items.length, `<div class="tile-grid">${tiles}</div>`, items.length, { plain: true, cls: 'is-frequent', hint: '这台设备上点得最多的网址；可在「外观」里关闭或清空' });
+    }
+
     // --n：这个分组占几格（小组件算 2 格）；--span：它在列网格里跨几列 = min(格数, 当前列数)。
-    function homeSectionHtml(page, title, iconName, tone, count, body, units) {
-      const n = Math.max(1, units || count);
-      return `<section class="home-section tone-${escapeHtml(tone)}" aria-label="${escapeHtml(title)}" data-units="${n}" style="--n:${Math.min(n, 12)};--span:${Math.min(n, HOME_GRID.cols)}">
-        <div class="section-label"><button type="button" class="btn ghost sm" onclick="openLibPage('${escapeHtml(page)}')" title="打开「${escapeHtml(title)}」">${icon(iconName)} ${escapeHtml(title)}</button><span class="count">${count}</span></div>
-        ${body}
+    // opts.folded：折叠（只剩标题行，内容不渲染）；opts.plain：标题不是入口（「常用」没有对应的页面），也不能折叠。
+    function homeSectionHtml(page, title, iconName, tone, count, body, units, opts) {
+      const o = opts || {}, n = Math.max(1, units || count), name = escapeHtml(title), pid = escapeHtml(page);
+      const head = o.plain
+        ? `<span class="section-name"${o.hint ? ` title="${escapeHtml(o.hint)}"` : ''}>${icon(iconName)} ${name}</span>`
+        : `<button type="button" class="btn ghost sm" onclick="openLibPage('${pid}')" title="打开「${name}」">${icon(iconName)} ${name}</button><span class="count">${count}</span>`;
+      const fold = o.plain ? '' : `<button type="button" class="section-fold" data-home-fold="${pid}" aria-expanded="${!o.folded}" aria-controls="homeSec-${pid}" title="${o.folded ? '展开' : '折叠'}" aria-label="${o.folded ? '展开' : '折叠'}「${name}」"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`;
+      return `<section class="home-section tone-${escapeHtml(tone)}${o.folded ? ' is-folded' : ''}${o.cls ? ' ' + o.cls : ''}" aria-label="${name}" data-units="${n}" style="--n:${Math.min(n, 12)};--span:${Math.min(n, HOME_GRID.cols)}">
+        <div class="section-label">${head}${fold}</div>
+        <div class="section-body"${o.plain ? '' : ` id="homeSec-${pid}"`}${o.folded ? ' hidden' : ''}>${o.folded ? '' : body}</div>
       </section>`;
     }
     // 首页上的预警只是个入口：看板里有站点取数失败 / 到期，就在这里提一句，点了去看板处理。
@@ -1889,15 +2035,18 @@
       $('homeBody').classList.toggle('is-tiles', tiles);
       if (!TODO.editing) renderTodos();
       measureHomeGrid();
-      // 与侧栏顺序一致：站点看板在前，其后按分组顺序。
+      // 与侧栏顺序一致：站点看板在前，其后按分组顺序。最前面是「常用」一行（图标视图、没在编辑、没在筛选时）。
+      const folds = minimal ? [] : homeFolds();
       const sections = [];
+      const frequent = tiles && !ARRANGE.on && !q ? homeFrequent() : [];
+      if (frequent.length) sections.push(homeFrequentHtml(frequent));
       if (sites.length) sections.push(homeSectionHtml('monitor', '站点看板', 'pulse', 'mint', sites.length, tiles
         ? `<div class="tile-grid" data-arrange-group="@sites">${sites.map(({ b, i }) => homeSiteHtml(b, i, minimal)).join('')}</div>`
         : `<div class="bookmark-grid">${sites.map(({ b, i }) => bookmarkCardHtml(b, i, { home: true })).join('')}</div>`,
-        sites.reduce((n, { b }) => n + homeSiteUnits(b, minimal), 0)));
+        sites.reduce((n, { b }) => n + homeSiteUnits(b, minimal), 0), { folded: folds.includes('monitor') }));
       for (const g of groups) sections.push(homeSectionHtml(g.id, g.name, g.icon, g.color, g.links.length, tiles
         ? `<div class="tile-grid" data-arrange-group="${escapeHtml(g.id)}">${g.links.map(l => homeLinkTileHtml(l, g)).join('')}</div>`
-        : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`));
+        : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`, 0, { folded: folds.includes(g.id) }));
       $('homeList').innerHTML = sections.join('');
       if (count) hideEmpty($('homeEmpty'));
       else showEmpty($('homeEmpty'), total
@@ -1938,7 +2087,7 @@
       const grip = sortable ? `<button type="button" class="todo-grip" data-todo-grip aria-label="排序：${text}" aria-describedby="todoSortHint" aria-haspopup="menu" aria-expanded="false" title="按住拖动排序；点一下出排序菜单">${icon('grip')}</button>` : '';
       return `<li class="todo-item${t.done ? ' is-done' : ''}${sortable ? ' is-sortable' : ''}" data-todo="${id}">
         ${grip}<input type="checkbox" class="todo-check" id="todo-${id}" data-todo-check${t.done ? ' checked' : ''} aria-label="${t.done ? '已完成' : '标记为完成'}：${text}" title="Alt + ↑/↓ 调整顺序">
-        <label class="todo-text" for="todo-${id}"${stamp ? ` title="${escapeHtml(stamp)}"` : ''}>${text}</label>
+        <label class="todo-text" for="todo-${id}"${stamp ? ` title="${escapeHtml(stamp)}"` : ''}>${linkifyHtml(t.text)}</label>
         <span class="todo-actions">
           <button type="button" class="todo-icon-btn" data-todo-act="edit" title="修改" aria-label="修改：${text}">${icon('edit')}</button>
           <button type="button" class="todo-icon-btn is-danger" data-todo-act="delete" title="删除" aria-label="删除：${text}">${icon('trash')}</button>
@@ -2227,7 +2376,7 @@
       const row = e.target.closest('.todo-item.is-sortable');
       if (!row) return;
       const onGrip = !!e.target.closest('[data-todo-grip]');
-      if (!onGrip && (e.pointerType !== 'mouse' || e.target.closest('.todo-actions'))) return;
+      if (!onGrip && (e.pointerType !== 'mouse' || e.target.closest('.todo-actions, a'))) return;   // 链接上按下是要点它，不是要拖这一行
       Object.assign(TODO_SORT, { row, list: e.currentTarget, pointerId: e.pointerId, x: e.clientX, y: e.clientY, lastY: e.clientY, active: false });
       window.addEventListener('pointermove', onTodoSortMove, { passive: false });
       window.addEventListener('pointerup', onTodoSortUp);
@@ -4191,6 +4340,7 @@
       if (item.kind === 'config') { closeOmni(); switchView('configs'); return; }
       if (!safeUrl(item.url)) { toast('这条没有可打开的网址', 'err'); return; }
       closeOmni();
+      recordHit(item.url);
       openUrl(item.url);
     }
 
@@ -4495,6 +4645,7 @@
       setSegmented('#wallDimSeg [data-wall-dim]', 'wallDim', wallDimPref(), !current);
       setSegmented('#homeNavSeg [data-home-nav]', 'homeNav', homeNavPref(), false);
       setSegmented('#homeTodoSeg [data-home-todo]', 'homeTodo', todoPref() === 'off' ? 'off' : 'on', false);
+      setSegmented('#homeFreqSeg [data-home-freq]', 'homeFreq', homeFreqOn() ? 'on' : 'off', false);
       const forced = current && wallMinDim(current.lum) > WALL_DIMS[wallDimPref()];
       $('wallDimHint').textContent = !current ? '启用壁纸后可调。'
         : forced ? `这张图偏亮，遮罩已自动加深到 ${Math.round(wallDimFor(current) * 100)}%，保证白字看得清。`
@@ -4532,6 +4683,15 @@
       renderHomeLook();
       renderTodos();
     });
+    $('homeFreqSeg').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-home-freq]');
+      if (!btn || !HOME_FREQ_PREFS.includes(btn.dataset.homeFreq)) return;
+      writePref('bh_home_freq', btn.dataset.homeFreq);
+      if (btn.dataset.homeFreq === 'off') clearHomeHits();   // 关掉就是不想被记：连已有的记录一起清掉
+      renderHomeLook();
+      renderHome();
+    });
+    $('homeFreqClear').addEventListener('click', () => { clearHomeHits(); renderHome(); toast('常用记录已清空', 'ok'); });
     $('homeNavSeg').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-home-nav]');
       if (!btn) return;
