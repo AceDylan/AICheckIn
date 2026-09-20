@@ -66,18 +66,18 @@ class HomeLayoutGuardsTest(unittest.TestCase):
         # 旧的「每个分组按自己的宽度各自居中」不能回来。
         self.assertNotIn("flex: 0 1 calc(max(var(--n", self.css)
 
-    def test_icons_and_todo_are_centred_as_one_block(self):
-        todo = self.css[self.css.index("首页待办"):]
-        rail = todo[todo.index("@media (min-width: 1100px)"):todo.index("@media (min-width: 1280px)")]
-        full = todo[todo.index("@media (min-width: 1280px)"):todo.index("@media (min-width: 1440px)")]
+    def test_icons_and_deck_are_centred_as_one_block(self):
+        deck = self.css[self.css.index("首页组件（"):]
+        rail = deck[deck.index("@media (min-width: 1100px)"):deck.index("@media (min-width: 1280px)")]
+        full = deck[deck.index("@media (min-width: 1280px)"):deck.index("@media (min-width: 1440px)")]
         for block, prefix in ((rail, "html.nav-rail "), (full, "")):
-            self.assertIn(prefix + ".home-body.has-todo.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--todo-col, 300px); justify-content: center; }", block)
+            self.assertIn(prefix + ".home-body.has-deck.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--deck-col); justify-content: center; }", block)
 
     def test_column_count_is_measured_not_guessed(self):
         self.assertIn("const HOME_GRID = { cols: 4, max: 10 };", self.script)
         self.assertIn("new ResizeObserver(relayoutHomeGrid).observe($('homeBody'))", self.script)
         self.assertIn("else window.addEventListener('resize', relayoutHomeGrid);", self.script)
-        # 待办那一列出现 / 消失，主区宽度跟着变，要重新量。
+        # 右侧组件那一列出现 / 消失，主区宽度跟着变，要重新量。
         self.assertIn("if (box.hidden !== wasHidden) relayoutHomeGrid();", self.script)
 
     # ---- 侧栏 ----
@@ -195,16 +195,19 @@ class HomeLayoutScriptTest(unittest.TestCase):
             assert.equal($('homeBody').style['--cols'], '8');
         """)
 
-    def test_measure_leaves_room_for_the_todo_column(self):
+    def test_measure_leaves_room_for_the_deck_column(self):
         self.run_js("""
             const vars = { '--tile-w': '96px', '--tile-gap': '10px' };
             let side = true;
             globalThis.getComputedStyle = (el) => ({ getPropertyValue: k => vars[k] || '', display: el === $('homeBody') && side ? 'grid' : 'flex', columnGap: '32px' });
-            $('homeBody').clientWidth = 1278; $('homeTodo').offsetWidth = 320; $('homeTodo').hidden = false;
+            $('homeBody').clientWidth = 1278; $('homeDeck').offsetWidth = 320; $('homeDeck').hidden = false;
             measureHomeGrid();
             assert.equal(HOME_GRID.cols, 8);                                 // (1278 − 320 − 32 + 10) / 106 = 8.8
             assert.equal($('homeBody').style['--grid-w'], '838px');
-            side = false; measureHomeGrid();                                   // 待办叠在上方：整行都给图标，但不超过 10 列
+            vars['--deck-col'] = '300px'; measureHomeGrid();                   // 有样式变量时以它为准（那一列的 offsetWidth 含借来的外边距）
+            assert.equal(HOME_GRID.cols, 9);                                 // (1278 − 300 − 32 + 10) / 106 = 9.02
+            delete vars['--deck-col'];
+            side = false; measureHomeGrid();                                   // 组件叠在上方：整行都给图标，但不超过 10 列
             assert.equal(HOME_GRID.cols, 10);
             assert.equal($('homeBody').style['--grid-w'], '1050px');
             $('homeBody').clientWidth = 200; measureHomeGrid();

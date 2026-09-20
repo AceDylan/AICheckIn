@@ -111,6 +111,7 @@
                   <button type="button" data-home-view="cards" title="卡片：显示描述、标签与全部监控字段" aria-label="卡片"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/></svg><span>卡片</span></button>
                 </div>
                 <button type="button" class="btn ghost sm home-look-btn" id="homeLookBtn" title="壁纸、遮罩与导航（全部页面生效）" aria-label="外观"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.8-4.6 3.4 3.2 2.6-2.4 4.2 3.8"/></svg><span>外观</span></button>
+                <button type="button" class="btn ghost sm" id="homeDeckBtn" title="首页组件：日历、待办、倒数日、便签……选择显示哪些、排什么顺序" aria-label="组件"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="9" rx="2"/><rect x="13" y="4" width="7" height="5" rx="2"/><rect x="13" y="11" width="7" height="9" rx="2"/><rect x="4" y="15" width="7" height="5" rx="2"/></svg><span>组件</span></button>
                 <button type="button" class="btn ghost sm" id="homeAddLink" title="添加网址并展示到首页">＋ 添加</button>
                 <button type="button" class="btn ghost sm" id="homeEditBtn" title="整理首页：拖动图标调整顺序、移除图标、选择要展示的网址" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="m14.5 7.5 3 3"/></svg><span>编辑</span></button>
               </div>
@@ -144,32 +145,128 @@
             </div>
             <div class="sr-only" id="homeArrangeLive" aria-live="polite"></div>
             <div class="home-body" id="homeBody">
-              <!-- 待办是静态节点、自成一个表单：renderHome() 只重绘 #homeList，输入到一半的字和焦点不会被搜索 / 刷新冲掉；
-                   输入框带着与搜索框相同的密码管理器忽略标记，理由见上方搜索框的注释。 -->
-              <section class="home-todo" id="homeTodo" aria-labelledby="todoTitle" hidden>
-                <div class="todo-head">
-                  <h2 class="todo-title" id="todoTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/></svg>待办</h2>
-                  <span class="todo-count" id="todoCount" aria-live="polite"></span>
-                  <button type="button" class="todo-icon-btn" id="todoCollapse" aria-expanded="true" aria-controls="todoBody" title="收起待办"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+              <!-- 首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）。哪些上首页、排什么顺序记在本机 Cookie 里，
+                   由 renderDeck() 决定各卡片的 hidden 与先后（挪动节点，不重写 HTML）。卡片全是静态节点：
+                   renderHome() 只重绘 #homeList，输入到一半的字和焦点不会被搜索 / 刷新冲掉。
+                   宽屏是图标右侧的一列；窄屏和手机收成一行标签条，点哪个展开哪个，不把图标挤出首屏。
+                   各输入框自成表单并带着与搜索框相同的密码管理器忽略标记，理由见上方搜索框的注释。 -->
+              <div class="home-deck" id="homeDeck" hidden>
+                <div class="deck-tabs" id="deckTabs" role="group" aria-label="首页组件"></div>
+                <div class="deck-cards" id="deckCards">
+                  <section class="deck-card deck-calendar" id="deckCalendar" data-deck="calendar" aria-labelledby="deckCalendarTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckCalendarTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/></svg>日历</h2>
+                      <span class="deck-meta" id="deckCalendarMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="calendar" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="日历：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="calendar" aria-expanded="true" aria-controls="deckCalendarBody" title="收起日历"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckCalendarBody">
+                      <div class="cal-next" id="calNext"></div>
+                      <div class="cal-bar">
+                        <div class="cal-month" id="calMonth" aria-live="polite"></div>
+                        <button type="button" class="cal-today" id="calToday" hidden>回到今天</button>
+                        <button type="button" class="deck-icon-btn" id="calPrev" title="上个月" aria-label="上个月"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 6-6 6 6 6"/></svg></button>
+                        <button type="button" class="deck-icon-btn" id="calNextMonth" title="下个月" aria-label="下个月"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 6 6 6-6 6"/></svg></button>
+                      </div>
+                      <!-- 整张月历只占一个 Tab 停靠点（点选的那一天），格子之间用方向键走。 -->
+                      <div class="cal-grid" id="calGrid" role="group" aria-labelledby="calMonth"></div>
+                      <div class="cal-detail" id="calDetail" aria-live="polite"></div>
+                    </div>
+                  </section>
+                  <section class="deck-card home-todo" id="homeTodo" data-deck="todo" aria-labelledby="todoTitle" hidden>
+                    <div class="deck-head todo-head">
+                      <h2 class="deck-title todo-title" id="todoTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/></svg>待办</h2>
+                      <span class="deck-meta todo-count" id="todoCount" aria-live="polite"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="todo" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="待办：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold todo-icon-btn" id="todoCollapse" data-deck-fold="todo" aria-expanded="true" aria-controls="todoBody" title="收起待办"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body todo-body" id="todoBody">
+                      <form class="todo-form" id="todoForm" action="#" autocomplete="off" novalidate>
+                        <label class="sr-only" for="todoInput">新增待办</label>
+                        <input class="todo-input" id="todoInput" name="todo" type="text" maxlength="200" autocomplete="off" enterkeyhint="done"
+                               data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="记一件接下来要做的事，回车添加">
+                        <button type="submit" class="todo-add" id="todoAdd" title="添加待办" aria-label="添加待办"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                      </form>
+                      <div class="todo-state" id="todoState" hidden></div>
+                      <!-- 排序结果念给读屏听；用法说明挂在每个把手的 aria-describedby 上，只写一份。 -->
+                      <div class="sr-only" id="todoLive" aria-live="polite"></div>
+                      <p class="sr-only" id="todoSortHint">按上下方向键调整顺序，Home / End 移到最前 / 最后；回车打开排序菜单。</p>
+                      <ul class="todo-list" id="todoList" aria-label="未完成的待办"></ul>
+                      <details class="todo-done" id="todoDone" hidden>
+                        <summary><span id="todoDoneLabel">已完成</span><button type="button" class="todo-clear" id="todoClear" title="删除全部已完成的待办">清除已完成</button></summary>
+                        <ul class="todo-list is-done" id="todoDoneList" aria-label="已完成的待办"></ul>
+                      </details>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-days" id="deckDays" data-deck="days" aria-labelledby="deckDaysTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckDaysTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10M7 21h10M8 3v4.2a4 4 0 0 0 1.4 3L12 12l2.6-1.8a4 4 0 0 0 1.4-3V3M8 21v-4.2a4 4 0 0 1 1.4-3L12 12l2.6 1.8a4 4 0 0 1 1.4 3V21"/></svg>倒数日</h2>
+                      <span class="deck-meta" id="deckDaysMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="days" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="倒数日：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="days" aria-expanded="true" aria-controls="deckDaysBody" title="收起倒数日"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckDaysBody">
+                      <div class="deck-state" id="daysState" hidden></div>
+                      <ul class="days-list" id="daysList" aria-label="倒数日"></ul>
+                      <form class="days-form" id="daysForm" action="#" autocomplete="off" novalidate hidden>
+                        <label class="sr-only" for="daysName">名称</label>
+                        <input class="todo-input" id="daysName" name="day-name" type="text" maxlength="40" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="名称，例如：妈妈生日">
+                        <div class="days-form-row">
+                          <label class="sr-only" for="daysDate">日期</label>
+                          <input class="todo-input" id="daysDate" name="day-date" type="date" min="1900-01-01" max="2200-12-31" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
+                          <label class="sr-only" for="daysRepeat">重复</label>
+                          <select class="todo-input" id="daysRepeat" name="day-repeat">
+                            <option value="none">不重复</option>
+                            <option value="year">每年（公历）</option>
+                            <option value="lunar">每年（农历）</option>
+                          </select>
+                        </div>
+                        <div class="days-form-actions"><span class="days-form-hint" id="daysFormHint" aria-live="polite"></span><button type="button" class="btn ghost sm" id="daysCancel">取消</button><button type="submit" class="btn sm" id="daysSave">保存</button></div>
+                      </form>
+                      <button type="button" class="deck-add" id="daysAdd"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>添加倒数日</button>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-memo" id="deckMemo" data-deck="memo" aria-labelledby="deckMemoTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckMemoTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 20v-5a1 1 0 0 1 1-1h5M8 9h8M8 13h4"/></svg>便签</h2>
+                      <span class="deck-meta" id="deckMemoMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="memo" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="便签：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="memo" aria-expanded="true" aria-controls="deckMemoBody" title="收起便签"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckMemoBody">
+                      <div class="deck-state" id="memoState" hidden></div>
+                      <form class="memo-form" id="memoForm" action="#" autocomplete="off" novalidate>
+                        <label class="sr-only" for="memoText">便签内容</label>
+                        <textarea class="memo-text" id="memoText" name="memo" maxlength="2000" rows="6" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="随手记点什么。停笔后自动保存，换设备也在。"></textarea>
+                      </form>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-expiry" id="deckExpiry" data-deck="expiry" aria-labelledby="deckExpiryTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckExpiryTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a6 6 0 0 0-6 6v3.5L4.5 16v1h15v-1L18 13.5V10a6 6 0 0 0-6-6zM10 20a2 2 0 0 0 4 0"/></svg>到期提醒</h2>
+                      <span class="deck-meta" id="deckExpiryMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="expiry" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="到期提醒：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="expiry" aria-expanded="true" aria-controls="deckExpiryBody" title="收起到期提醒"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckExpiryBody">
+                      <div class="deck-state" id="expiryState" hidden></div>
+                      <ul class="expiry-list" id="expiryList" aria-label="按到期时间排序的看板站点"></ul>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-checkin" id="deckCheckin" data-deck="checkin" aria-labelledby="deckCheckinTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckCheckinTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg>签到状态</h2>
+                      <span class="deck-meta" id="deckCheckinMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="checkin" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="签到状态：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="checkin" aria-expanded="true" aria-controls="deckCheckinBody" title="收起签到状态"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckCheckinBody">
+                      <div class="deck-state" id="checkinDeckState" hidden></div>
+                      <div class="checkin-deck" id="checkinDeck"></div>
+                    </div>
+                  </section>
                 </div>
-                <div class="todo-body" id="todoBody">
-                  <form class="todo-form" id="todoForm" action="#" autocomplete="off" novalidate>
-                    <label class="sr-only" for="todoInput">新增待办</label>
-                    <input class="todo-input" id="todoInput" name="todo" type="text" maxlength="200" autocomplete="off" enterkeyhint="done"
-                           data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="记一件接下来要做的事，回车添加">
-                    <button type="submit" class="todo-add" id="todoAdd" title="添加待办" aria-label="添加待办"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-                  </form>
-                  <div class="todo-state" id="todoState" hidden></div>
-                  <!-- 排序结果念给读屏听；用法说明挂在每个把手的 aria-describedby 上，只写一份。 -->
-                  <div class="sr-only" id="todoLive" aria-live="polite"></div>
-                  <p class="sr-only" id="todoSortHint">按上下方向键调整顺序，Home / End 移到最前 / 最后；回车打开排序菜单。</p>
-                  <ul class="todo-list" id="todoList" aria-label="未完成的待办"></ul>
-                  <details class="todo-done" id="todoDone" hidden>
-                    <summary><span id="todoDoneLabel">已完成</span><button type="button" class="todo-clear" id="todoClear" title="删除全部已完成的待办">清除已完成</button></summary>
-                    <ul class="todo-list is-done" id="todoDoneList" aria-label="已完成的待办"></ul>
-                  </details>
-                </div>
-              </section>
+              </div>
               <div class="home-main">
                 <div id="homeList"></div>
                 <div id="homeEmpty" class="empty-state" style="display:none"></div>
@@ -435,14 +532,34 @@
         <div class="segmented" id="homeNavSeg" role="radiogroup" aria-labelledby="homeNavLabel"><button type="button" data-home-nav="rail">图标栏</button><button type="button" data-home-nav="full">完整侧栏</button></div>
         <div class="hint">图标栏把侧栏收成一条 72px 的细栏，所有页面一致，鼠标停在图标上能看到名称；侧栏底部的按钮也能随时收起 / 展开。手机始终是底部标签栏。</div>
       </div>
-      <div class="field"><label id="homeTodoLabel">首页待办</label>
-        <div class="segmented" id="homeTodoSeg" role="radiogroup" aria-labelledby="homeTodoLabel"><button type="button" data-home-todo="on">显示</button><button type="button" data-home-todo="off">隐藏</button></div>
+      <div class="field"><label id="homeDeckLabel">首页组件</label>
+        <div class="freq-row"><span class="note" id="homeDeckSummary" style="margin:0"></span><button type="button" class="btn ghost sm" id="openDeckModal">选择与排序…</button></div>
+        <div class="hint">日历（下一个节日）、待办、倒数日、便签、到期提醒、签到状态。宽屏排在图标右侧一列，手机上收成一行标签、点哪个展开哪个。</div>
       </div>
       <div class="field"><label id="homeFreqLabel">常用一行</label>
         <div class="freq-row"><div class="segmented" id="homeFreqSeg" role="radiogroup" aria-labelledby="homeFreqLabel"><button type="button" data-home-freq="on">显示</button><button type="button" data-home-freq="off">关闭</button></div><button type="button" class="btn ghost sm" id="homeFreqClear">清空记录</button></div>
         <div class="hint">把这台设备上点得最多的网址在首页最前面排一行（至少 3 个网址各点过 2 次才出现）。只记在本机 Cookie 里：网址的短哈希 + 次数，不含网址本身；14 天不点热度减半。关闭后不再记录。</div>
       </div>
       <div class="modal-actions"><span style="flex:1"></span><button class="btn sm" id="homeLookClose">完成</button></div>
+    </div>
+  </div>
+
+  <!-- 组件菜单：卡片标题行的「···」弹出。和待办排序菜单一样挂在 <body> 下，不会被右侧那一列的滚动区裁掉。 -->
+  <div class="todo-sort-menu deck-menu" id="deckMenu" role="menu" aria-label="组件操作" hidden>
+    <button type="button" role="menuitem" data-deck-act="up"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6m0 0-5 5m5-5 5 5"/></svg>上移</button>
+    <button type="button" role="menuitem" data-deck-act="down"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13m0 0-5-5m5 5 5-5"/></svg>下移</button>
+    <button type="button" role="menuitem" data-deck-act="remove"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>从首页移除</button>
+    <button type="button" role="menuitem" data-deck-act="manage"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="9" rx="2"/><rect x="13" y="4" width="7" height="5" rx="2"/><rect x="13" y="11" width="7" height="9" rx="2"/><rect x="4" y="15" width="7" height="5" rx="2"/></svg>全部组件…</button>
+  </div>
+
+  <!-- 首页组件：选哪些、排什么顺序。改动立刻生效（记在本机 Cookie 里），没有「保存」这一步。 -->
+  <div class="modal-mask" id="deckModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="deckModalTitle">
+      <div class="modal-head"><div><h3 id="deckModalTitle">首页组件</h3><div class="modal-sub">打开开关把组件放上首页，拖动把手或用箭头调整先后。选择记在本浏览器里，手机和电脑可以各摆各的；组件里的内容（待办、倒数日、便签）存在服务器上，换设备也在。</div></div></div>
+      <div class="sr-only" id="deckLive" aria-live="polite"></div>
+      <p class="sr-only" id="deckSortHint">按上下方向键调整顺序。</p>
+      <ul class="deck-picker" id="deckPicker" aria-label="全部组件"></ul>
+      <div class="modal-actions"><button type="button" class="btn ghost sm" id="deckReset" title="回到「日历 + 待办」">恢复默认</button><span style="flex:1"></span><button type="button" class="btn sm" id="deckModalClose">完成</button></div>
     </div>
   </div>
 
@@ -745,6 +862,11 @@
       eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
       edit: '<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="m14.5 7.5 3 3"/>',
       trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+      todo: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/>',
+      hourglass: '<path d="M7 3h10M7 21h10M8 3v4.2a4 4 0 0 0 1.4 3L12 12l2.6-1.8a4 4 0 0 0 1.4-3V3M8 21v-4.2a4 4 0 0 1 1.4-3L12 12l2.6 1.8a4 4 0 0 1 1.4 3V21"/>',
+      note: '<path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 20v-5a1 1 0 0 1 1-1h5M8 9h8M8 13h4"/>',
+      bell: '<path d="M12 4a6 6 0 0 0-6 6v3.5L4.5 16v1h15v-1L18 13.5V10a6 6 0 0 0-6-6zM10 20a2 2 0 0 0 4 0"/>',
+      widgets: '<rect x="4" y="4" width="7" height="9" rx="2"/><rect x="13" y="4" width="7" height="5" rx="2"/><rect x="13" y="11" width="7" height="9" rx="2"/><rect x="4" y="15" width="7" height="5" rx="2"/>',
     };
     const GROUP_ICONS = ['folder', 'server', 'globe', 'sparkles', 'code', 'book', 'play', 'chat', 'wrench', 'star', 'cloud', 'shield'];
     const GROUP_COLORS = ['mint', 'sky', 'violet', 'amber', 'rose', 'slate'];
@@ -889,6 +1011,7 @@
     $('navToggle').addEventListener('click', () => {
       writePref('bh_home_nav', homeNavPref() === 'rail' ? 'full' : 'rail');
       applyLook();
+      if (STATE_LOADED) renderDeck();   // 首页组件排不排在右侧一列，门槛跟着导航形态走
     });
 
     // 图标栏里文字全收起来了，分组一多只能靠原生 title 认，而它要悬停一秒多才出来。这里给侧栏一个即时提示：
@@ -1908,7 +2031,7 @@
     // ----- 首页列网格 -----
     // 图标视图是一张统一的列网格：每个分组占 min(自己的格数, 总列数) 列，所有分组落在同一组列线上——
     // 左边线对齐、分组标题和它的第一个图标对齐，两三个网址的小分组照旧并排。列数要看主区实际放得下几格
-    // （侧栏形态、待办是否占右侧一列都会变），CSS 自己算不出「min(格数, 列数)」的跨度，所以由这里量一次、
+    // （侧栏形态、组件是否占右侧一列都会变），CSS 自己算不出「min(格数, 列数)」的跨度，所以由这里量一次、
     // 把结果写成样式变量：--cols / --grid-w 在 #homeBody 上，--span 在各分组上。手机固定 4 列，格子宽度随屏。
     const HOME_GRID = { cols: 4, max: 10 };
     const HOME_PHONE_QUERY = '(max-width: 760px)';
@@ -1921,10 +2044,12 @@
       }
       const css = getComputedStyle(list);
       const tile = parseFloat(css.getPropertyValue('--tile-w')) || 96, gap = parseFloat(css.getPropertyValue('--tile-gap')) || 10;
-      // 待办占右侧一列时（#homeBody 此时是两列网格），主区 = 总宽 − 待办列 − 列距。
-      const bodyCss = getComputedStyle(body), todo = $('homeTodo');
-      const side = bodyCss.display === 'grid' && !todo.hidden;
-      const room = body.clientWidth - (side ? todo.offsetWidth + (parseFloat(bodyCss.columnGap) || 0) : 0);
+      // 组件占右侧一列时（#homeBody 此时是两列网格），主区 = 总宽 − 组件列 − 列距。
+      const bodyCss = getComputedStyle(body), deck = $('homeDeck');
+      const side = bodyCss.display === 'grid' && !deck.hidden;
+      // 组件列的宽度取样式变量 --deck-col（那一列为了不裁掉卡片阴影，左右各往外借了几像素，offsetWidth 比网格轨道宽）。
+      const col = parseFloat(bodyCss.getPropertyValue('--deck-col')) || deck.offsetWidth;
+      const room = body.clientWidth - (side ? col + (parseFloat(bodyCss.columnGap) || 0) : 0);
       const cols = Math.max(3, Math.min(HOME_GRID.max, Math.floor((room + gap) / (tile + gap))));
       setCssVar(body, '--grid-w', (cols * (tile + gap) - gap) + 'px');
       return setHomeCols(cols);
@@ -2102,11 +2227,10 @@
       renderHomeNotice();
       // 没有编辑权限的访客用不上「添加 / 编辑」：收起来，工具条只剩密度和外观。
       $('homeAddLink').hidden = $('homeEditBtn').hidden = !canEdit();
-      // 先定版面再出图标：待办在不在、是哪种密度，都会改变主区放得下几列。
-      // 正在改某一条待办时不重绘它：搜索框每敲一个字都会走到这里，不能把编辑到一半的输入框冲掉。
+      // 先定版面再出图标：右侧有没有组件那一列、是哪种密度，都会改变主区放得下几列。
       $('homeList').className = 'home-list is-' + (tiles ? 'tiles' : 'cards') + (minimal ? ' is-minimal' : '');
       $('homeBody').classList.toggle('is-tiles', tiles);
-      if (!TODO.editing) renderTodos();
+      renderDeck();
       measureHomeGrid();
       // 与侧栏顺序一致：站点看板在前，其后按分组顺序。最前面是「常用」一行（图标视图、没在编辑、没在筛选时）。
       const folds = minimal ? [] : homeFolds();
@@ -2136,22 +2260,894 @@
         : { label: '＋ 新建第一个分组', onclick: 'openGroupModal(null)' };
       return { icon: 'star', title: '从第一个网址开始', text: '网址按分组收纳，勾选「展示到首页」的会出现在这里。已有 JSON 导出或备份的话，也可以一次导入。', actions: [first, { label: '导入 JSON / 备份', ghost: true, onclick: "$('importCfg').click()" }] };
     }
+    // ===== 首页组件 =====
+    // 日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态。哪些上首页、排什么顺序、谁收着，都是「这台设备怎么用」的事
+    // （手机和电脑可以各摆各的），和其它本机偏好一样记在 Cookie 里，读的时候按组件 id 白名单过滤：
+    //  bh_home_deck       已添加的组件，按顺序用 . 连接；一个都不要记作 none
+    //  bh_home_deck_fold  右侧一列（宽屏）里被收起的组件
+    //  bh_home_deck_open  标签条（窄屏 / 手机）里当前展开的那一个；none = 全收着
+    // 组件里的内容在服务端：待办 → todos.json，倒数日 / 便签 → deck.json（都要管理权限）；日历、到期提醒、签到状态拿现成数据现算。
+    // 旧版首页只有待办一张卡片，偏好在 bh_home_todo（open / closed / off）里：新 Cookie 还没写过时按它推默认值，
+    // 老用户升级后待办原来是藏着 / 收着的，现在还是。
+    const DECK_KINDS = [
+      { id: 'calendar', el: 'deckCalendar', name: '日历', icon: 'calendar', desc: '月历、农历和下一个节日，标出放假与调休上班' },
+      { id: 'todo', el: 'homeTodo', name: '待办', icon: 'todo', desc: '接下来要做的事，可勾选、拖动排序' },
+      { id: 'days', el: 'deckDays', name: '倒数日', icon: 'hourglass', desc: '生日、纪念日、截止日还有几天，可按公历 / 农历每年重复' },
+      { id: 'memo', el: 'deckMemo', name: '便签', icon: 'note', desc: '随手记点什么，停笔自动保存' },
+      { id: 'expiry', el: 'deckExpiry', name: '到期提醒', icon: 'bell', desc: '看板里带到期时间的站点，按先后排' },
+      { id: 'checkin', el: 'deckCheckin', name: '签到状态', icon: 'check', desc: '今天签到了几个，定时签到开没开' },
+    ];
+    const DECK_IDS = DECK_KINDS.map(k => k.id);
+    const DECK_DEFAULT = ['calendar', 'todo'];
+    const DECK = { today: 0, tabsHtml: '', menuFor: '', menuTop: 0 };
+    function deckKind(id) { return DECK_KINDS.find(k => k.id === id); }
+    // 读不到（没写过 / 被改成了别的格式）回 null，调用方据此回落到默认值；写过 none 则是一个空列表。
+    function readDeckList(name) {
+      const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([a-z.]{1,80})(?:;|$)'));
+      if (!m) return null;
+      const seen = new Set();
+      return m[1].split('.').filter(id => DECK_IDS.includes(id) && !seen.has(id) && seen.add(id));
+    }
+    function writeDeckList(name, ids) { writePref(name, ids.length ? ids.join('.') : 'none'); }
+    function legacyTodoPref() { return readPref('bh_home_todo', ['open', 'closed', 'off'], ''); }
+    function deckOrder() { return readDeckList('bh_home_deck') || DECK_DEFAULT.filter(id => id !== 'todo' || legacyTodoPref() !== 'off'); }
+    function deckFolds() { return readDeckList('bh_home_deck_fold') || (legacyTodoPref() === 'closed' ? ['todo'] : []); }
+    function deckOpenId() {
+      const id = readPref('bh_home_deck_open', DECK_IDS.concat('none'), 'none');
+      return deckOrder().includes(id) ? id : '';
+    }
+    // 组件是不是排在图标右侧一列。门槛与样式表里那两段媒体查询一致：图标栏 1100px，完整侧栏 1280px。
+    // 版面本身由样式表决定；这里只用来判断「收起」按钮该做什么、aria-expanded 该报什么。
+    const DECK_SIDE_QUERIES = { rail: '(min-width: 1100px)', full: '(min-width: 1280px)' };
+    function deckSide() { return !!(window.matchMedia && window.matchMedia(DECK_SIDE_QUERIES[homeNavPref()]).matches); }
+    function deckLocked() { return STATE.deck_locked !== false; }   // 没明说「已解锁」一律按锁着处理
+    function deckLockedHtml(name) { return `<span>${name}只对管理员可见。</span><button type="button" class="btn ghost sm" data-deck-unlock>去解锁</button>`; }
+
+    function renderDeck() {
+      const box = $('homeDeck'), cards = $('deckCards');
+      // 私密模式未解锁时整页都是空壳，组件也不出现；数据还没到之前同样先不画，免得先空后满地闪一下。
+      const order = !STATE_LOADED || (STATE.private && STATE.locked) ? [] : deckOrder();
+      const wasHidden = box.hidden;
+      box.hidden = !order.length;
+      $('homeBody').classList.toggle('has-deck', !box.hidden);
+      if (box.hidden !== wasHidden) relayoutHomeGrid();   // 右侧那一列出现 / 消失，主区放得下的列数跟着变
+      DECK.today = todayNum();
+      const side = deckSide(), folds = deckFolds(), open = deckOpenId();
+      for (const kind of DECK_KINDS) {
+        const el = $(kind.el), on = order.includes(kind.id);
+        el.hidden = !on;
+        if (!on) continue;
+        const folded = folds.includes(kind.id), expanded = side ? !folded : open === kind.id;
+        el.classList.toggle('is-folded', folded);
+        el.classList.toggle('is-open', open === kind.id);
+        const btn = el.querySelector('[data-deck-fold]');
+        if (btn) {
+          btn.setAttribute('aria-expanded', String(expanded));
+          btn.title = (expanded ? '收起' : '展开') + kind.name;
+        }
+      }
+      // 调整先后：挪节点而不是重写 HTML，输入到一半的字还在。顺序没变就不碰——挪动会让里面的输入框丢焦点。
+      const now = Array.from(cards.children || []).filter(el => !el.hidden).map(el => el.dataset.deck);
+      if (now.join('.') !== order.join('.')) order.forEach(id => cards.appendChild($(deckKind(id).el)));
+      if (!order.length) { closeDeckMenu(); return; }
+      // 正在改某一条待办时不重绘它：搜索框每敲一个字都会走到这里，不能把编辑到一半的输入框冲掉。
+      if (order.includes('todo')) { if (!TODO.editing) renderTodos(); }
+      if (order.includes('calendar')) renderCalendar();
+      if (order.includes('days')) renderDays();
+      if (order.includes('memo')) renderMemo();
+      if (order.includes('expiry')) renderExpiry();
+      if (order.includes('checkin')) renderCheckinDeck();
+      renderDeckTabs(order, open);
+    }
+    // 标签条（窄屏 / 手机）：每个组件一枚标签，带一句要紧的话（下个节日还有几天、几项待办……），不展开也看得到。
+    // 内容没变就不重写：重写会把刚点过的那枚标签上的焦点丢掉。
+    function deckSummary(id) {
+      if (id === 'calendar') {
+        const next = upcomingFestivals(DECK.today, 1)[0];
+        return !next ? '' : next.in ? `${next.name} ${next.in} 天` : `今天 ${next.name}`;
+      }
+      if (id === 'todo') {
+        const n = STATE.todos_locked ? 0 : todoItems().filter(t => !t.done).length;
+        return n ? `${n} 项` : '';
+      }
+      if (id === 'days') {
+        const next = deckLocked() ? null : dayRows(DECK.today).find(r => r.diff >= 0);
+        return !next ? '' : `${Array.from(next.item.name).slice(0, 8).join('')} ${next.diff ? next.diff + ' 天' : '今天'}`;
+      }
+      if (id === 'expiry') {
+        const hot = expiryRows().filter(r => r.kind).length;
+        return hot ? `${hot} 个临期` : '';
+      }
+      if (id === 'checkin') {
+        const s = checkinStats();
+        return s.total ? `${s.done}/${s.total}` : '';
+      }
+      return '';
+    }
+    function renderDeckTabs(order, open) {
+      const html = order.map(id => {
+        const kind = deckKind(id), meta = deckSummary(id), on = open === id;
+        return `<button type="button" class="deck-tab${on ? ' active' : ''}" data-deck-tab="${id}" aria-expanded="${on}" aria-controls="${kind.el}">${icon(kind.icon)}<span class="deck-tab-name">${kind.name}</span>${meta ? `<span class="deck-tab-meta">${escapeHtml(meta)}</span>` : ''}</button>`;
+      }).join('') + `<button type="button" class="deck-tab is-manage" data-deck-manage title="选择与排序首页组件" aria-label="选择与排序首页组件">${icon('widgets')}</button>`;
+      if (html === DECK.tabsHtml) return;
+      DECK.tabsHtml = html;
+      $('deckTabs').innerHTML = html;
+    }
+    function focusDeckTab(id) {
+      const tab = $('deckTabs').querySelector(`[data-deck-tab="${CSS.escape(id)}"]`);
+      if (tab) tab.focus();
+    }
+    function toggleDeckOpen(id) {
+      writePref('bh_home_deck_open', deckOpenId() === id ? 'none' : id);
+      renderDeck();
+      focusDeckTab(id);
+    }
+    // 卡片标题行的收起按钮：右侧一列里各收各的；标签条布局下同一时间只展开一张，这个按钮就是「收起来」。
+    function toggleDeckFold(id) {
+      if (!deckSide()) { writePref('bh_home_deck_open', 'none'); renderDeck(); focusDeckTab(id); return; }
+      const folds = deckFolds();
+      writeDeckList('bh_home_deck_fold', folds.includes(id) ? folds.filter(x => x !== id) : folds.concat(id));
+      renderDeck();
+    }
+    function moveDeck(id, dir) {
+      const order = deckOrder(), at = order.indexOf(id), to = at + dir;
+      if (at < 0 || to < 0 || to >= order.length) return false;
+      order.splice(to, 0, order.splice(at, 1)[0]);
+      writeDeckList('bh_home_deck', order);
+      renderDeck();
+      $('deckLive').textContent = `「${deckKind(id).name}」移到第 ${to + 1} 位，共 ${order.length} 个`;
+      return true;
+    }
+    // 新加的排在最后；标签条布局下顺手展开给人看，移除的那张如果正展开着，deckOpenId() 自己会作废。
+    function setDeckOn(id, on) {
+      if (!DECK_IDS.includes(id)) return;
+      const order = deckOrder().filter(x => x !== id);
+      if (on) order.push(id);
+      writeDeckList('bh_home_deck', order);
+      if (on && !deckSide()) writePref('bh_home_deck_open', id);
+      renderDeck();
+    }
+
+    // ----- 卡片上的「···」菜单：前移 / 后移 / 移除 / 全部组件 -----
+    function closeDeckMenu(refocus) {
+      const menu = $('deckMenu');
+      if (menu.hidden) return;
+      menu.hidden = true;
+      const btn = DECK.menuFor && $(deckKind(DECK.menuFor).el).querySelector('[data-deck-menu]');
+      DECK.menuFor = '';
+      if (btn) { btn.setAttribute('aria-expanded', 'false'); if (refocus) btn.focus(); }
+    }
+    function openDeckMenu(btn) {
+      const id = btn.dataset.deckMenu, order = deckOrder(), at = order.indexOf(id), menu = $('deckMenu');
+      if (at < 0) return;
+      DECK.menuFor = id;
+      btn.setAttribute('aria-expanded', 'true');
+      menu.querySelectorAll('[data-deck-act]').forEach(b => {
+        b.disabled = b.dataset.deckAct === 'up' ? at === 0 : b.dataset.deckAct === 'down' ? at === order.length - 1 : false;
+      });
+      menu.hidden = false;
+      // 贴着按钮下沿、右边线对齐；下面放不下（手机底栏、窗口底边）就翻到上面。
+      const r = btn.getBoundingClientRect(), gap = 6;
+      const nav = document.querySelector('.sidebar');
+      const floor = nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
+      const below = r.bottom + gap + menu.offsetHeight <= floor - 8;
+      menu.style.top = Math.max(8, below ? r.bottom + gap : r.top - gap - menu.offsetHeight) + 'px';
+      menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+      DECK.menuTop = r.top;
+      const first = menu.querySelector('[data-deck-act]:not(:disabled)');
+      if (first) first.focus();
+    }
+    $('deckMenu').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-deck-act]');
+      if (!btn || btn.disabled) return;
+      const id = DECK.menuFor, act = btn.dataset.deckAct, kind = deckKind(id);
+      closeDeckMenu();
+      if (!kind) return;
+      if (act === 'manage') { openDeckModal(); return; }
+      if (act === 'remove') {
+        setDeckOn(id, false);
+        toast(`已从首页移除「${kind.name}」，随时可以在「组件」里加回来`, 'ok');
+        $('homeDeckBtn').focus();
+        return;
+      }
+      moveDeck(id, act === 'up' ? -1 : 1);
+      const again = $(kind.el).querySelector('[data-deck-menu]');
+      if (again) again.focus();
+    });
+    $('deckMenu').addEventListener('keydown', (e) => {
+      const items = Array.from($('deckMenu').querySelectorAll('[data-deck-act]:not(:disabled)'));
+      const at = items.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDeckMenu(true); }
+      else if (e.key === 'Tab') closeDeckMenu(true);
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); items[e.key === 'Home' ? 0 : items.length - 1].focus(); }
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('deckMenu').hidden && !e.target.closest('#deckMenu, [data-deck-menu]')) closeDeckMenu();
+    }, true);
+    // 菜单是按按钮当时的位置摆的：按钮真的挪了位置（页面或右侧那一列滚动了）才收，理由同待办排序菜单。
+    window.addEventListener('scroll', () => {
+      if ($('deckMenu').hidden) return;
+      const btn = DECK.menuFor && $(deckKind(DECK.menuFor).el).querySelector('[data-deck-menu]');
+      if (!btn || Math.abs(btn.getBoundingClientRect().top - DECK.menuTop) > 4) closeDeckMenu();
+    }, true);
+    window.addEventListener('resize', () => closeDeckMenu());
+    $('homeDeck').addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-deck-tab]');
+      if (tab) { toggleDeckOpen(tab.dataset.deckTab); return; }
+      if (e.target.closest('[data-deck-manage]')) { openDeckModal(); return; }
+      const fold = e.target.closest('[data-deck-fold]');
+      if (fold) { toggleDeckFold(fold.dataset.deckFold); return; }
+      const more = e.target.closest('[data-deck-menu]');
+      if (more) {
+        const mine = DECK.menuFor === more.dataset.deckMenu;
+        closeDeckMenu();
+        if (!mine) openDeckMenu(more);
+        return;
+      }
+      if (e.target.closest('[data-deck-unlock]')) switchView('settings');
+    });
+    // 版面在「右侧一列」和「标签条」之间切换时（窗口变宽变窄、侧栏收起 / 展开），展开状态换了一套说法，重新报一遍。
+    if (window.matchMedia) {
+      for (const query of Object.values(DECK_SIDE_QUERIES)) {
+        const mq = window.matchMedia(query);
+        if (mq.addEventListener) mq.addEventListener('change', () => { if (STATE_LOADED) renderDeck(); });
+      }
+    }
+
+    // ----- 「首页组件」弹窗：开关 = 添加 / 移除；把手拖动、方向键或两个箭头 = 调整先后。改了立刻生效，没有「保存」。-----
+    const DECK_SORT = { row: null, pointerId: null, y: 0, active: false };
+    function renderDeckPicker() {
+      const order = deckOrder();
+      const rows = order.map(deckKind).concat(DECK_KINDS.filter(k => !order.includes(k.id)));
+      $('deckPicker').innerHTML = rows.map(k => {
+        const at = order.indexOf(k.id), on = at >= 0;
+        const sort = on && order.length > 1;
+        return `<li class="deck-pick${on ? ' is-on' : ''}" data-deck-pick="${k.id}">
+          ${sort ? `<button type="button" class="todo-grip deck-pick-grip" data-deck-grip aria-label="排序：${k.name}" aria-describedby="deckSortHint" title="按住拖动排序；也可以按上下方向键">${icon('grip')}</button>` : '<span class="deck-pick-grip" aria-hidden="true"></span>'}
+          <span class="deck-pick-icon" aria-hidden="true">${icon(k.icon)}</span>
+          <span class="deck-pick-text"><b>${k.name}</b><small>${k.desc}</small></span>
+          ${sort ? `<span class="deck-pick-move"><button type="button" class="deck-icon-btn" data-deck-move="-1" title="前移" aria-label="${k.name}：前移"${at === 0 ? ' disabled' : ''}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6m0 0-5 5m5-5 5 5"/></svg></button><button type="button" class="deck-icon-btn" data-deck-move="1" title="后移" aria-label="${k.name}：后移"${at === order.length - 1 ? ' disabled' : ''}><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13m0 0-5-5m5 5 5-5"/></svg></button></span>` : ''}
+          <label class="switch" title="${on ? '从首页移除' : '放上首页'}"><input type="checkbox" data-deck-toggle${on ? ' checked' : ''} aria-label="在首页显示${k.name}"><span class="slider"></span></label>
+        </li>`;
+      }).join('');
+    }
+    function focusDeckPick(id, selector) {
+      const row = $('deckPicker').querySelector(`[data-deck-pick="${CSS.escape(id)}"]`);
+      const target = row && (row.querySelector(selector) || row.querySelector('[data-deck-toggle]'));
+      if (target) target.focus();
+    }
+    function openDeckModal() {
+      closeDeckMenu();
+      $('deckLive').textContent = '';
+      renderDeckPicker();
+      $('deckModal').classList.add('show');
+      $('deckModalClose').focus();
+    }
+    function deckSummaryText() {
+      const order = deckOrder();
+      return order.length ? order.map(id => deckKind(id).name).join('、') : '一个都没放';
+    }
+    $('homeDeckBtn').addEventListener('click', openDeckModal);
+    $('openDeckModal').addEventListener('click', () => { $('homeLookModal').classList.remove('show'); openDeckModal(); });
+    $('deckModalClose').addEventListener('click', () => { $('deckModal').classList.remove('show'); $('homeDeckBtn').focus(); });
+    $('deckReset').addEventListener('click', () => {
+      writeDeckList('bh_home_deck', DECK_DEFAULT);
+      writeDeckList('bh_home_deck_fold', []);
+      writePref('bh_home_deck_open', 'none');
+      renderDeck();
+      renderDeckPicker();
+      $('deckLive').textContent = '已恢复默认：' + deckSummaryText();
+    });
+    $('deckPicker').addEventListener('change', (e) => {
+      const box = e.target.closest('[data-deck-toggle]'), row = box && box.closest('[data-deck-pick]');
+      if (!row) return;
+      const id = row.dataset.deckPick;
+      setDeckOn(id, box.checked);
+      renderDeckPicker();
+      focusDeckPick(id, '[data-deck-toggle]');
+      $('deckLive').textContent = `${box.checked ? '已添加' : '已移除'}「${deckKind(id).name}」。首页现在有：${deckSummaryText()}`;
+    });
+    $('deckPicker').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-deck-move]'), row = btn && btn.closest('[data-deck-pick]');
+      if (!row || btn.disabled) return;
+      const id = row.dataset.deckPick, dir = Number(btn.dataset.deckMove);
+      if (!moveDeck(id, dir)) return;
+      renderDeckPicker();
+      // 挪到头了这个方向的箭头会禁用：焦点换到另一个箭头上，别掉回 <body>。
+      const row2 = $('deckPicker').querySelector(`[data-deck-pick="${CSS.escape(id)}"]`);
+      const same = row2 && row2.querySelector(`[data-deck-move="${dir}"]`);
+      focusDeckPick(id, same && !same.disabled ? `[data-deck-move="${dir}"]` : `[data-deck-move="${-dir}"]`);
+    });
+    $('deckPicker').addEventListener('keydown', (e) => {
+      const grip = e.target.closest('[data-deck-grip]'), row = grip && grip.closest('[data-deck-pick]');
+      if (!row || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      e.preventDefault();
+      if (moveDeck(row.dataset.deckPick, e.key === 'ArrowUp' ? -1 : 1)) { renderDeckPicker(); focusDeckPick(row.dataset.deckPick, '[data-deck-grip]'); }
+    });
+    // 拖动：只在「已添加」那一段里挪；被拖的那一行不跟手飘，指针越过邻居的中线就和它换位——弹窗里只有几行，这样最稳。
+    function onDeckSortMove(e) {
+      if (e.pointerId !== DECK_SORT.pointerId) return;
+      const row = DECK_SORT.row, list = $('deckPicker');
+      if (!DECK_SORT.active) {
+        if (Math.abs(e.clientY - DECK_SORT.y) < 5) return;
+        DECK_SORT.active = true;
+        row.classList.add('is-dragging');
+        list.classList.add('is-sorting');
+      }
+      e.preventDefault();
+      const rows = Array.from(list.querySelectorAll('.deck-pick.is-on'));
+      const before = rows.find(r => r !== row && e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2) || list.querySelector('.deck-pick:not(.is-on)');
+      if (before !== row.nextElementSibling) list.insertBefore(row, before || null);
+    }
+    function endDeckSort(commit) {
+      const { row, active } = DECK_SORT;
+      window.removeEventListener('pointermove', onDeckSortMove);
+      window.removeEventListener('pointerup', onDeckSortUp);
+      window.removeEventListener('pointercancel', onDeckSortCancel);
+      Object.assign(DECK_SORT, { row: null, pointerId: null, active: false });
+      if (!row || !active) return;
+      const id = row.dataset.deckPick;
+      const ids = Array.from($('deckPicker').querySelectorAll('.deck-pick.is-on')).map(r => r.dataset.deckPick);
+      const known = deckOrder();
+      if (commit && ids.length === known.length && ids.every(x => known.includes(x)) && ids.join('.') !== known.join('.')) {
+        writeDeckList('bh_home_deck', ids);
+        renderDeck();
+        $('deckLive').textContent = `「${deckKind(id).name}」移到第 ${ids.indexOf(id) + 1} 位，共 ${ids.length} 个`;
+      }
+      $('deckPicker').classList.remove('is-sorting');
+      renderDeckPicker();
+      focusDeckPick(id, '[data-deck-grip]');
+    }
+    function onDeckSortUp(e) { if (e.pointerId === DECK_SORT.pointerId) endDeckSort(true); }
+    function onDeckSortCancel(e) { if (e.pointerId === DECK_SORT.pointerId) endDeckSort(false); }
+    $('deckPicker').addEventListener('pointerdown', (e) => {
+      const grip = e.target.closest('[data-deck-grip]'), row = grip && grip.closest('[data-deck-pick]');
+      if (!row || e.button !== 0 || DECK_SORT.row) return;
+      Object.assign(DECK_SORT, { row, pointerId: e.pointerId, y: e.clientY, active: false });
+      window.addEventListener('pointermove', onDeckSortMove, { passive: false });
+      window.addEventListener('pointerup', onDeckSortUp);
+      window.addEventListener('pointercancel', onDeckSortCancel);
+    });
+
+    // ===== 首页组件：日历 =====
+    // 全部在浏览器里现算，不请求任何外部服务：
+    //  - 公历固定节日、母亲节 / 父亲节（第几个周日）、清明（节气公式）直接算；
+    //  - 农历（春节 / 元宵 / 端午 / 七夕 / 中秋 / 重阳 / 腊八 / 除夕）查 LUNAR_INFO 这张 1900–2100 年的月历表，范围之外不显示农历。
+    //    不用浏览器自带的 Intl 农历（chinese calendar）：它是按天文算法现算的，朔（初一）贴近午夜的月份会差一天——
+    //    比如把 2027 年春节算成 2 月 7 日（实际是 2 月 6 日），各家浏览器的版本还不一样；
+    //  - 「哪几天放假、哪几个周末调休上班」是国务院办公厅每年 11 月前后公布的，算不出来，只能照抄进 HOLIDAY_PLANS。
+    //    表里没有的年份节日照常显示，只是格子上不标「休 / 班」；新一年的通知出来后在表里加一项即可（日期写全，元旦假期可能跨年）。
+    const HOLIDAY_PLANS = {
+      // 国办发明电〔2025〕7 号：国务院办公厅关于 2026 年部分节假日安排的通知
+      2026: {
+        off: [['元旦', '2026-01-01', '2026-01-03'], ['春节', '2026-02-15', '2026-02-23'], ['清明节', '2026-04-04', '2026-04-06'],
+          ['劳动节', '2026-05-01', '2026-05-05'], ['端午节', '2026-06-19', '2026-06-21'], ['中秋节', '2026-09-25', '2026-09-27'],
+          ['国庆节', '2026-10-01', '2026-10-07']],
+        work: ['2026-01-04', '2026-02-14', '2026-02-28', '2026-05-09', '2026-09-20', '2026-10-10'],
+      },
+    };
+    const STATUTORY_FESTIVALS = ['元旦', '春节', '清明节', '劳动节', '端午节', '中秋节', '国庆节'];
+    const SOLAR_FESTIVALS = { '1-1': '元旦', '2-14': '情人节', '3-8': '妇女节', '5-1': '劳动节', '6-1': '儿童节', '9-10': '教师节', '10-1': '国庆节', '12-25': '圣诞节' };
+    const LUNAR_FESTIVALS = { '1-1': '春节', '1-15': '元宵节', '5-5': '端午节', '7-7': '七夕', '8-15': '中秋节', '9-9': '重阳节', '12-8': '腊八节' };
+    const LUNAR_MONTHS = ['正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '冬月', '腊月'];
+    const LUNAR_DAYS = ['初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十', '十一', '十二', '十三', '十四', '十五',
+      '十六', '十七', '十八', '十九', '二十', '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
+    const CAL_WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const CAL_HEAD = ['一', '二', '三', '四', '五', '六', '日'];   // 周一起头
+    // now 可以在测试里换掉；view 是正在看的月份，picked 是点选的那一天（0 = 跟着今天走）。
+    const CAL = { now: () => new Date(), y: 0, m: 0, picked: 0, sig: '', plan: null };
+    const LUNAR = { starts: null, cache: new Map() };
+
+    // 日期一律换成「自 1970-01-01 起的第几天」来算：加减天数、比较先后都是整数运算，不受时区和夏令时影响。
+    const pad2 = (n) => String(n).padStart(2, '0');
+    function dayNum(y, m, d) { return Math.round(Date.UTC(y, m - 1, d) / 86400000); }
+    function dayOf(n) {
+      const t = new Date(n * 86400000);
+      return { n, y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), w: t.getUTCDay() };
+    }
+    function dayKey(n) { const t = dayOf(n); return `${t.y}-${pad2(t.m)}-${pad2(t.d)}`; }
+    function parseDayKey(s) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
+      return m ? { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) } : null;
+    }
+    function todayNum() { const t = CAL.now(); return dayNum(t.getFullYear(), t.getMonth() + 1, t.getDate()); }
+    function monthLength(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+
+    // 每年一个数：低 4 位 = 闰几月（0 不闰）；第 16 位 = 闰月大小（1 = 30 天）；中间 12 位从高到低 = 正月到腊月的大小（1 = 30 天）。
+    // 起点是 1900-01-31（庚子年正月初一）。数据与香港天文台的公历农历对照一致（逐日核对过 1900–2100 共 73384 天）。
+    const LUNAR_INFO = [
+      0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2,   // 1900
+      0x04ae0, 0x0a5b6, 0x0a4d0, 0x0d250, 0x1d255, 0x0b540, 0x0d6a0, 0x0ada2, 0x095b0, 0x14977,   // 1910
+      0x04970, 0x0a4b0, 0x0b4b5, 0x06a50, 0x06d40, 0x1ab54, 0x02b60, 0x09570, 0x052f2, 0x04970,   // 1920
+      0x06566, 0x0d4a0, 0x0ea50, 0x16a95, 0x05ad0, 0x02b60, 0x186e3, 0x092e0, 0x1c8d7, 0x0c950,   // 1930
+      0x0d4a0, 0x1d8a6, 0x0b550, 0x056a0, 0x1a5b4, 0x025d0, 0x092d0, 0x0d2b2, 0x0a950, 0x0b557,   // 1940
+      0x06ca0, 0x0b550, 0x15355, 0x04da0, 0x0a5b0, 0x14573, 0x052b0, 0x0a9a8, 0x0e950, 0x06aa0,   // 1950
+      0x0aea6, 0x0ab50, 0x04b60, 0x0aae4, 0x0a570, 0x05260, 0x0f263, 0x0d950, 0x05b57, 0x056a0,   // 1960
+      0x096d0, 0x04dd5, 0x04ad0, 0x0a4d0, 0x0d4d4, 0x0d250, 0x0d558, 0x0b540, 0x0b6a0, 0x195a6,   // 1970
+      0x095b0, 0x049b0, 0x0a974, 0x0a4b0, 0x0b27a, 0x06a50, 0x06d40, 0x0af46, 0x0ab60, 0x09570,   // 1980
+      0x04af5, 0x04970, 0x064b0, 0x074a3, 0x0ea50, 0x06b58, 0x05ac0, 0x0ab60, 0x096d5, 0x092e0,   // 1990
+      0x0c960, 0x0d954, 0x0d4a0, 0x0da50, 0x07552, 0x056a0, 0x0abb7, 0x025d0, 0x092d0, 0x0cab5,   // 2000
+      0x0a950, 0x0b4a0, 0x0baa4, 0x0ad50, 0x055d9, 0x04ba0, 0x0a5b0, 0x15176, 0x052b0, 0x0a930,   // 2010
+      0x07954, 0x06aa0, 0x0ad50, 0x05b52, 0x04b60, 0x0a6e6, 0x0a4e0, 0x0d260, 0x0ea65, 0x0d530,   // 2020
+      0x05aa0, 0x076a3, 0x096d0, 0x04afb, 0x04ad0, 0x0a4d0, 0x1d0b6, 0x0d250, 0x0d520, 0x0dd45,   // 2030
+      0x0b5a0, 0x056d0, 0x055b2, 0x049b0, 0x0a577, 0x0a4b0, 0x0aa50, 0x1b255, 0x06d20, 0x0ada0,   // 2040
+      0x14b63, 0x09370, 0x049f8, 0x04970, 0x064b0, 0x168a6, 0x0ea50, 0x06aa0, 0x1a6c4, 0x0aae0,   // 2050
+      0x092e0, 0x0d2e3, 0x0c960, 0x0d557, 0x0d4a0, 0x0da50, 0x05d55, 0x056a0, 0x0a6d0, 0x055d4,   // 2060
+      0x052d0, 0x0a9b8, 0x0a950, 0x0b4a0, 0x0b6a6, 0x0ad50, 0x055a0, 0x0aba4, 0x0a5b0, 0x052b0,   // 2070
+      0x0b273, 0x06930, 0x07337, 0x06aa0, 0x0ad50, 0x14b55, 0x04b60, 0x0a570, 0x054e4, 0x0d160,   // 2080
+      0x0e968, 0x0d520, 0x0daa0, 0x16aa6, 0x056d0, 0x04ae0, 0x0a9d4, 0x0a2d0, 0x0d150, 0x0f252,   // 2090
+      0x0d520,                                                                                     // 2100
+    ];
+    function lunarLeapMonth(y) { return LUNAR_INFO[y - 1900] & 0xf; }
+    function lunarLeapDays(y) { return lunarLeapMonth(y) ? ((LUNAR_INFO[y - 1900] & 0x10000) ? 30 : 29) : 0; }
+    function lunarMonthDays(y, m) { return (LUNAR_INFO[y - 1900] & (0x10000 >> m)) ? 30 : 29; }
+    // 各农历年正月初一是第几天（dayNum），多出的最后一项是表的终点；第一次用到时才算。
+    function lunarYearStarts() {
+      if (LUNAR.starts) return LUNAR.starts;
+      const starts = [dayNum(1900, 1, 31)];
+      for (let y = 1900; y <= 2100; y++) {
+        let len = lunarLeapDays(y);
+        for (let m = 1; m <= 12; m++) len += lunarMonthDays(y, m);
+        starts.push(starts[starts.length - 1] + len);
+      }
+      return (LUNAR.starts = starts);
+    }
+    // { y: 农历年, m: 1–12, d: 1–30, leap: 是否闰月 }；表的范围之外回 null。
+    function lunarOf(n) {
+      const starts = lunarYearStarts();
+      if (!(n >= starts[0] && n < starts[starts.length - 1])) return null;
+      if (LUNAR.cache.has(n)) return LUNAR.cache.get(n);
+      let at = Math.min(200, Math.max(0, dayOf(n).y - 1900));        // 农历年要么是公历年，要么是前一年
+      if (n < starts[at]) at--;
+      const y = 1900 + at, leap = lunarLeapMonth(y);
+      let left = n - starts[at], out = null;
+      for (let m = 1; m <= 12 && !out; m++) {
+        let len = lunarMonthDays(y, m);
+        if (left < len) { out = { y, m, d: left + 1, leap: false }; break; }
+        left -= len;
+        if (m !== leap) continue;
+        len = lunarLeapDays(y);
+        if (left < len) out = { y, m, d: left + 1, leap: true };
+        else left -= len;
+      }
+      if (LUNAR.cache.size > 4000) LUNAR.cache.clear();
+      LUNAR.cache.set(n, out);
+      return out;
+    }
+    function lunarText(lu) { return (lu.leap ? '闰' : '') + LUNAR_MONTHS[lu.m - 1] + LUNAR_DAYS[lu.d - 1]; }
+    // 清明是节气不是固定日子：[Y×0.2422 + C] − [Y/4]，Y 取年份后两位，C 在 21 世纪是 4.81（20 世纪 5.59）。
+    function qingmingDay(y) { const yy = y % 100; return Math.floor(yy * 0.2422 + (y >= 2000 ? 4.81 : 5.59)) - Math.floor(yy / 4); }
+    // 这一天过什么节；放假的排前面（格子里只放得下一个名字）。
+    function festivalsOf(n) {
+      const t = dayOf(n), out = [];
+      const solar = SOLAR_FESTIVALS[`${t.m}-${t.d}`];
+      if (solar) out.push(solar);
+      if (t.m === 4 && t.d === qingmingDay(t.y)) out.push('清明节');
+      if (t.m === 5 && t.w === 0 && t.d >= 8 && t.d <= 14) out.push('母亲节');
+      if (t.m === 6 && t.w === 0 && t.d >= 15 && t.d <= 21) out.push('父亲节');
+      const lu = lunarOf(n);
+      if (lu && !lu.leap) {
+        const name = LUNAR_FESTIVALS[`${lu.m}-${lu.d}`];
+        if (name) out.push(name);
+        // 除夕 = 正月初一的前一天（腊月可能只有 29 天）
+        const next = lu.m === 12 && lu.d >= 29 ? lunarOf(n + 1) : null;
+        if (next && next.m === 1 && next.d === 1) out.push('除夕');
+      }
+      return out.sort((a, b) => STATUTORY_FESTIVALS.includes(b) - STATUTORY_FESTIVALS.includes(a));
+    }
+    function holidayPlan() {
+      if (CAL.plan) return CAL.plan;
+      const plan = CAL.plan = { off: new Map(), work: new Set(), spans: [] };
+      const num = (s) => { const t = parseDayKey(s); return dayNum(t.y, t.m, t.d); };
+      for (const year of Object.keys(HOLIDAY_PLANS)) {
+        for (const [name, from, to] of HOLIDAY_PLANS[year].off) {
+          const span = { name, from: num(from), to: num(to) };
+          plan.spans.push(span);
+          for (let n = span.from; n <= span.to; n++) plan.off.set(n, span);
+        }
+        for (const day of HOLIDAY_PLANS[year].work) plan.work.add(num(day));
+      }
+      return plan;
+    }
+    function shortDay(n) { const t = dayOf(n); return `${t.m}/${t.d}`; }
+    // 从 from 起往后数出 limit 个节日（含当天）；一年多一点的范围里一定找得到。
+    function upcomingFestivals(from, limit) {
+      const out = [];
+      for (let n = from; n < from + 400 && out.length < limit; n++) {
+        for (const name of festivalsOf(n)) out.push({ name, n, in: n - from, off: STATUTORY_FESTIVALS.includes(name) });
+      }
+      return out.slice(0, limit);
+    }
+    // 这个节日对应的放假区间（今年的安排还没公布就没有）。除夕跟着春节假期走。
+    function festivalSpan(f) {
+      const span = holidayPlan().off.get(f.n);
+      return span && (span.name === f.name || (f.name === '除夕' && span.name === '春节')) ? span : null;
+    }
+    function calDayText(n, today) {
+      const t = dayOf(n), lu = lunarOf(n), plan = holidayPlan(), parts = [`${t.m}月${t.d}日 ${CAL_WEEKDAYS[t.w]}`];
+      if (lu) parts.push('农历' + lunarText(lu));
+      const fests = festivalsOf(n);
+      if (fests.length) parts.push(fests.join(' / '));
+      if (plan.off.has(n)) parts.push(`${plan.off.get(n).name}假期`);
+      else if (plan.work.has(n)) parts.push('调休上班');
+      parts.push(n === today ? '今天' : n > today ? `${n - today} 天后` : `${today - n} 天前`);
+      return parts.join(' · ');
+    }
+    // 卡片顶上那一块：今天过节 > 正在放假 > 下一个节日；下面再带两三个后面的节日，其中至少有一个是放假的。
+    function calNextHtml(today) {
+      const all = upcomingFestivals(today, 14), plan = holidayPlan();
+      if (!all.length) return '';
+      const head = all[0], inSpan = plan.off.get(today);
+      const dateText = (f) => { const t = dayOf(f.n); return `${t.m}月${t.d}日 ${CAL_WEEKDAYS[t.w]}`; };
+      const spanText = (s) => `放假 ${shortDay(s.from)}–${shortDay(s.to)} 共 ${s.to - s.from + 1} 天`;
+      let label, name, sub, count, unit, target;
+      if (head.in === 0) {
+        const span = festivalSpan(head);
+        [label, name, target] = ['今天', head.name, head.n];
+        sub = span ? `${spanText(span)} · 第 ${today - span.from + 1} 天` : dateText(head);
+        [count, unit] = ['', ''];
+      } else if (inSpan) {
+        [label, name, target] = ['放假中', `${inSpan.name}假期`, today];
+        sub = `${shortDay(inSpan.from)}–${shortDay(inSpan.to)} · 第 ${today - inSpan.from + 1} 天，共 ${inSpan.to - inSpan.from + 1} 天`;
+        [count, unit] = [String(inSpan.to - today), inSpan.to === today ? '最后一天' : '天后收假'];
+        if (inSpan.to === today) count = '';
+      } else {
+        const span = festivalSpan(head);
+        [label, name, target] = ['下一个节日', head.name, head.n];
+        sub = dateText(head) + (span ? ` · ${spanText(span)}` : '');
+        [count, unit] = [String(head.in), '天后'];
+      }
+      const rest = all.filter(f => f.in > 0 && (label === '放假中' || f !== head));
+      const more = rest.slice(0, 3);
+      const shownOff = (label === '下一个节日' && head.off) || more.some(f => f.off);
+      const nextOff = rest.find(f => f.off);
+      if (!shownOff && nextOff) more.splice(-1, 1, nextOff);
+      return `<button type="button" class="cal-next-main" data-cal-goto="${target}" title="在月历里看这一天">
+          <span class="cal-next-text"><span class="cal-next-label">${label}</span><strong class="cal-next-name">${escapeHtml(name)}</strong><span class="cal-next-sub">${escapeHtml(sub)}</span></span>
+          ${count || unit ? `<span class="cal-next-count">${count ? `<b>${count}</b>` : ''}<span>${unit}</span></span>` : ''}
+        </button>
+        ${more.length ? `<div class="cal-next-more">${more.map(f => `<button type="button" class="cal-chip${f.off ? ' is-off' : ''}" data-cal-goto="${f.n}" title="${escapeHtml(dateText(f))}${f.off ? ' · 法定节假日' : ''}">${escapeHtml(f.name)}<b>${f.in} 天</b></button>`).join('')}</div>` : ''}`;
+    }
+    function renderCalendar() {
+      const today = todayNum(), t = dayOf(today);
+      if (!CAL.y) { CAL.y = t.y; CAL.m = t.m; }
+      const picked = CAL.picked || today;
+      const sig = [today, CAL.y, CAL.m, picked].join('|');
+      if (sig === CAL.sig) return;   // 搜索框每敲一个字都会走到这里：没变就不重写，键盘焦点也就不会丢
+      CAL.sig = sig;
+      const plan = holidayPlan();
+      $('deckCalendarMeta').textContent = `${t.m}月${t.d}日 ${CAL_WEEKDAYS[t.w]}` + (plan.work.has(today) ? ' · 调休上班' : plan.off.has(today) ? ' · 放假' : '');
+      $('calNext').innerHTML = calNextHtml(today);
+      $('calMonth').textContent = `${CAL.y}年${CAL.m}月`;
+      $('calToday').hidden = CAL.y === t.y && CAL.m === t.m && picked === today;
+      // 周一起头：补上月尾、下月头，凑成整周。
+      const first = dayNum(CAL.y, CAL.m, 1), lead = (dayOf(first).w + 6) % 7;
+      const cells = Math.ceil((lead + monthLength(CAL.y, CAL.m)) / 7) * 7;
+      let html = CAL_HEAD.map((w, k) => `<span class="cal-head${k > 4 ? ' is-weekend' : ''}" aria-hidden="true">${w}</span>`).join('');
+      for (let k = 0; k < cells; k++) {
+        const n = first - lead + k, c = dayOf(n), lu = lunarOf(n), fests = festivalsOf(n);
+        const state = plan.off.has(n) ? 'off' : plan.work.has(n) ? 'work' : '';
+        const sub = fests[0] || (lu ? (lu.d === 1 ? (lu.leap ? '闰' : '') + LUNAR_MONTHS[lu.m - 1] : LUNAR_DAYS[lu.d - 1]) : '');
+        const cls = ['cal-day', c.m !== CAL.m ? 'is-other' : '', n === today ? 'is-today' : '', n === picked ? 'is-picked' : '',
+          fests.length ? 'is-fest' : '', state ? 'is-' + state : '', (c.w === 0 || c.w === 6) && state !== 'work' ? 'is-weekend' : ''].filter(Boolean).join(' ');
+        html += `<button type="button" class="${cls}" data-cal-day="${n}" tabindex="${n === picked ? 0 : -1}" aria-pressed="${n === picked}" aria-label="${escapeHtml(calDayText(n, today))}">
+          <span class="cal-num">${c.d}</span><span class="cal-sub">${escapeHtml(sub)}</span>${state ? `<i class="cal-badge" aria-hidden="true">${state === 'off' ? '休' : '班'}</i>` : ''}</button>`;
+      }
+      $('calGrid').innerHTML = html;
+      $('calDetail').textContent = calDayText(picked, today);
+    }
+    // 点选某一天：月历翻到它所在的月份；focus = 键盘操作，画完把焦点放回那一格。
+    function pickCalDay(n, focus) {
+      const t = dayOf(n);
+      if (t.y < 1901 || t.y > 2100) return;
+      CAL.picked = n === todayNum() ? 0 : n;
+      CAL.y = t.y; CAL.m = t.m;
+      renderCalendar();
+      const cell = focus && $('calGrid').querySelector(`[data-cal-day="${n}"]`);
+      if (cell) cell.focus();
+    }
+    function shiftCalMonth(dir) {
+      const m = CAL.m + dir;
+      const y = CAL.y + (m < 1 ? -1 : m > 12 ? 1 : 0);
+      if (y < 1901 || y > 2100) return;
+      CAL.y = y; CAL.m = (m + 11) % 12 + 1;
+      renderCalendar();
+    }
+    $('calPrev').addEventListener('click', () => shiftCalMonth(-1));
+    $('calNextMonth').addEventListener('click', () => shiftCalMonth(1));
+    $('calToday').addEventListener('click', () => pickCalDay(todayNum(), true));
+    $('calNext').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-cal-goto]');
+      if (btn) pickCalDay(Number(btn.dataset.calGoto));
+    });
+    $('calGrid').addEventListener('click', (e) => {
+      const cell = e.target.closest('[data-cal-day]');
+      if (cell) pickCalDay(Number(cell.dataset.calDay), true);
+    });
+    // 月历里的键盘：方向键按天 / 按周走，Home / End 到周一 / 周日，PageUp / PageDown 翻月。整张月历只占一个 Tab 停靠点。
+    $('calGrid').addEventListener('keydown', (e) => {
+      const cell = e.target.closest('[data-cal-day]');
+      if (!cell || e.ctrlKey || e.metaKey || e.altKey) return;
+      const n = Number(cell.dataset.calDay), t = dayOf(n), mon = (t.w + 6) % 7;
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7, Home: -mon, End: 6 - mon }[e.key];
+      let to = step === undefined ? null : n + step;
+      if (e.key === 'PageUp' || e.key === 'PageDown') {
+        const dir = e.key === 'PageUp' ? -1 : 1, m = t.m + dir, y = t.y + (m < 1 ? -1 : m > 12 ? 1 : 0), mm = (m + 11) % 12 + 1;
+        to = dayNum(y, mm, Math.min(t.d, monthLength(y, mm)));
+      }
+      if (to === null) return;
+      e.preventDefault();
+      pickCalDay(to, true);
+    });
+    // 过了零点：今天换了一格，「还有几天」全都少一天。时钟每分钟醒一次，顺路看一眼，不另设定时器。
+    function deckTick() {
+      if (!DECK.today || todayNum() === DECK.today) return;
+      if (STATE_LOADED) renderDeck();
+    }
+
+    // ===== 首页组件：倒数日 =====
+    // 数据在服务端的 data/deck.json（和待办一样要管理权限）。每年重复的两种：公历按月日；农历按农历月日
+    // （2 月 29 日、农历三十这种不是年年都有的日子，当年没有就落在月末那一天）。
+    const DAYS = { editing: '', formOpen: false, busy: false, sig: '' };
+    function deckData() {
+      const d = STATE.deck || {};
+      return { days: Array.isArray(d.days) ? d.days : [], memo: d.memo && typeof d.memo.text === 'string' ? d.memo : { text: '', updated_at: '' } };
+    }
+    async function deckApi(url, method, body, keepalive) {
+      const resp = await fetch(url, { method, headers: adminHeaders(), body: body === undefined ? undefined : JSON.stringify(body), keepalive: !!keepalive });
+      let data;
+      try { data = await resp.json(); } catch (_) { data = { ok: false, error: 'HTTP ' + resp.status }; }
+      return data;
+    }
+    // 这个倒数日「算的是哪一天」：不重复的就是它自己（可能已经过去）；每年重复的取今天起的下一次。
+    // years = 到那一次是第几个周年（首次发生之前为 0）。
+    function dayOccurrence(item, today) {
+      const base = parseDayKey(item.date);
+      if (!base) return null;
+      const baseN = dayNum(base.y, base.m, base.d), lu = item.repeat === 'lunar' ? lunarOf(baseN) : null;
+      const repeat = item.repeat === 'lunar' && !lu ? 'year' : item.repeat;   // 基准日不在农历表的范围里：退回按公历重复
+      if (repeat !== 'year' && repeat !== 'lunar') return { n: baseN, years: 0, lunar: null };
+      if (baseN >= today) return { n: baseN, years: 0, lunar: lu };
+      if (repeat === 'year') {
+        const t = dayOf(today);
+        for (const y of [t.y, t.y + 1]) {
+          const n = dayNum(y, base.m, Math.min(base.d, monthLength(y, base.m)));
+          if (n >= today) return { n, years: y - base.y, lunar: null };
+        }
+      }
+      for (let n = today; n < today + 400; n++) {
+        const x = lunarOf(n);
+        if (!x || x.leap || x.m !== lu.m) continue;
+        const monthEnd = lu.d === 30 && x.d === 29 && (lunarOf(n + 1) || {}).d === 1;   // 这个月只有 29 天
+        if (x.d === lu.d || monthEnd) return { n, years: Math.max(0, x.y - lu.y), lunar: lu };
+      }
+      return { n: baseN, years: 0, lunar: lu };
+    }
+    // 还没到的在前（越近越靠前），已经过去的在后（刚过去的靠前）。
+    function dayRows(today) {
+      const rows = deckData().days.map(item => {
+        const occ = dayOccurrence(item, today);
+        return occ ? { item, occ, diff: occ.n - today } : null;
+      }).filter(Boolean);
+      return rows.sort((a, b) => (a.diff < 0) - (b.diff < 0) || (a.diff < 0 ? b.diff - a.diff : a.diff - b.diff));
+    }
+    function dayRowHtml(r) {
+      const { item, occ, diff } = r, id = escapeHtml(item.id), name = escapeHtml(item.name), t = dayOf(occ.n);
+      const dateText = `${t.y}-${pad2(t.m)}-${pad2(t.d)} ${CAL_WEEKDAYS[t.w]}`;
+      let when = dateText;
+      if (occ.lunar) when = `农历${lunarText(occ.lunar)} · ${t.m}月${t.d}日`;
+      else if (item.repeat === 'year' || item.repeat === 'lunar') when = `每年 ${t.m}月${t.d}日`;
+      if (occ.years > 0) when += ` · ${occ.years} 周年`;
+      const count = diff === 0 ? '<b>今天</b>' : `<b>${Math.abs(diff)}</b><span>${diff > 0 ? '天后' : '天前'}</span>`;
+      return `<li class="days-item${diff < 0 ? ' is-past' : diff === 0 ? ' is-today' : diff <= 7 ? ' is-soon' : ''}" data-day="${id}">
+        <span class="days-text"><span class="days-name">${name}</span><span class="days-when" title="${escapeHtml(dateText)}">${escapeHtml(when)}</span></span>
+        <span class="days-count">${count}</span>
+        <span class="todo-actions">
+          <button type="button" class="todo-icon-btn" data-day-act="edit" title="修改" aria-label="修改：${name}">${icon('edit')}</button>
+          <button type="button" class="todo-icon-btn is-danger" data-day-act="delete" title="删除" aria-label="删除：${name}">${icon('trash')}</button>
+        </span>
+      </li>`;
+    }
+    function renderDays() {
+      const locked = deckLocked(), broken = STATE.deck_error || '';
+      const rows = locked || broken ? [] : dayRows(DECK.today);
+      const sig = JSON.stringify([DECK.today, locked, broken, DAYS.formOpen, DAYS.editing, rows.map(r => [r.item.id, r.item.name, r.item.date, r.item.repeat])]);
+      if (sig === DAYS.sig) return;
+      DAYS.sig = sig;
+      const next = rows.find(r => r.diff >= 0);
+      $('deckDaysMeta').textContent = locked || broken || !rows.length ? '' : next ? (next.diff ? `最近的还有 ${next.diff} 天` : '就是今天') : `${rows.length} 个都已过去`;
+      const state = $('daysState');
+      state.hidden = false;
+      if (locked) state.innerHTML = deckLockedHtml('倒数日');
+      else if (broken) state.textContent = broken;
+      else if (!rows.length && !DAYS.formOpen) state.textContent = '还没有倒数日。生日、纪念日、截止日期都可以记在这里。';
+      else state.hidden = true;
+      $('daysList').innerHTML = rows.map(dayRowHtml).join('');
+      $('daysList').hidden = !rows.length;
+      $('daysForm').hidden = !DAYS.formOpen || locked || !!broken;
+      $('daysAdd').hidden = DAYS.formOpen || locked || !!broken;
+    }
+    function openDaysForm(id) {
+      if (!guardAdmin()) return;
+      const item = id ? deckData().days.find(d => d.id === id) : null;
+      DAYS.editing = item ? item.id : '';
+      DAYS.formOpen = true;
+      $('daysName').value = item ? item.name : '';
+      $('daysDate').value = item ? item.date : dayKey(CAL.picked || todayNum());   // 新建时顺手带上月历里点选的那一天
+      $('daysRepeat').value = item ? item.repeat : 'none';
+      $('daysFormHint').textContent = '';
+      $('daysSave').textContent = item ? '保存修改' : '保存';
+      renderDays();
+      $('daysName').focus();
+    }
+    function closeDaysForm(refocus) {
+      DAYS.formOpen = false;
+      DAYS.editing = '';
+      renderDays();
+      if (refocus) $('daysAdd').focus();
+    }
+    $('daysAdd').addEventListener('click', () => openDaysForm(''));
+    $('daysCancel').addEventListener('click', () => closeDaysForm(true));
+    $('daysForm').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDaysForm(true); } });
+    $('daysForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (DAYS.busy || !guardAdmin()) return;
+      const name = $('daysName').value.replace(/\s+/g, ' ').trim(), date = $('daysDate').value, repeat = $('daysRepeat').value;
+      if (!name) { $('daysFormHint').textContent = '先起个名字'; $('daysName').focus(); return; }
+      if (!parseDayKey(date)) { $('daysFormHint').textContent = '选一个日期'; $('daysDate').focus(); return; }
+      DAYS.busy = true;
+      $('daysSave').disabled = true;
+      let data;
+      try {
+        data = DAYS.editing
+          ? await deckApi('/api/deck/days/' + encodeURIComponent(DAYS.editing), 'PUT', { name, date, repeat })
+          : await deckApi('/api/deck/days', 'POST', { name, date, repeat });
+      } catch (err) { data = { ok: false, error: err.message }; }
+      DAYS.busy = false;
+      $('daysSave').disabled = false;
+      if (!data.ok) { $('daysFormHint').textContent = data.error || '保存失败'; return; }
+      STATE.deck = data.deck;
+      DAYS.formOpen = false;
+      DAYS.editing = '';
+      renderDeck();
+      $('daysAdd').focus();
+    });
+    $('daysList').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-day-act]'), row = btn && btn.closest('[data-day]');
+      if (!row) return;
+      if (btn.dataset.dayAct === 'edit') { openDaysForm(row.dataset.day); return; }
+      if (DAYS.busy || !guardAdmin()) return;
+      DAYS.busy = true;
+      let data;
+      try { data = await deckApi('/api/deck/days/' + encodeURIComponent(row.dataset.day), 'DELETE'); } catch (err) { data = { ok: false, error: err.message }; }
+      DAYS.busy = false;
+      if (!data.ok) { toast(data.error || '删除失败', 'err'); if (data.deck === undefined) loadConfigs(); return; }
+      STATE.deck = data.deck;
+      if (DAYS.editing === row.dataset.day) { DAYS.formOpen = false; DAYS.editing = ''; }
+      renderDeck();
+      $('daysAdd').focus();
+    });
+
+    // ===== 首页组件：便签 =====
+    // 停笔约一秒自动保存，失焦、切到后台时立刻保存；正在写（有焦点或有没保存的字）时，服务端来的内容不往输入框里灌。
+    const MEMO = { dirty: false, saving: false, again: false, timer: 0 };
+    const MEMO_SAVE_MS = 900;
+    function setMemoStatus(text) { $('deckMemoMeta').textContent = text; }
+    function renderMemo() {
+      const locked = deckLocked(), broken = STATE.deck_error || '', state = $('memoState'), box = $('memoText');
+      state.hidden = !(locked || broken);
+      if (locked) state.innerHTML = deckLockedHtml('便签');
+      else if (broken) state.textContent = broken;
+      $('memoForm').hidden = locked || !!broken;
+      if (locked || broken) { setMemoStatus(''); return; }
+      const memo = deckData().memo;
+      if (MEMO.dirty || MEMO.saving || document.activeElement === box) return;
+      if (box.value !== memo.text) box.value = memo.text;
+      setMemoStatus(memo.updated_at ? '保存于 ' + shortStamp(memo.updated_at) : '');
+    }
+    async function saveMemo(keepalive) {
+      clearTimeout(MEMO.timer);
+      if (!MEMO.dirty) return;
+      if (MEMO.saving) { MEMO.again = true; return; }   // 上一次还没回来：等它回来再存一次最新的
+      if (!canEdit()) { setMemoStatus('未解锁，没有保存'); return; }
+      const text = $('memoText').value;
+      MEMO.saving = true;
+      MEMO.dirty = false;
+      setMemoStatus('保存中…');
+      let data;
+      try { data = await deckApi('/api/deck/memo', 'PUT', { text }, keepalive); } catch (err) { data = { ok: false, error: err.message }; }
+      MEMO.saving = false;
+      if (data.ok) {
+        STATE.deck = data.deck;
+        setMemoStatus(MEMO.dirty ? '有未保存的修改…' : '已保存 ' + shortStamp(deckData().memo.updated_at));
+      } else {
+        MEMO.dirty = true;
+        setMemoStatus('保存失败：' + (data.error || '网络错误'));
+      }
+      if (MEMO.again && data.ok) { MEMO.again = false; if (MEMO.dirty) saveMemo(); }
+      MEMO.again = false;
+    }
+    $('memoText').addEventListener('input', () => {
+      MEMO.dirty = true;
+      setMemoStatus('有未保存的修改…');
+      clearTimeout(MEMO.timer);
+      MEMO.timer = setTimeout(saveMemo, MEMO_SAVE_MS);
+      if (MEMO.timer && typeof MEMO.timer.unref === 'function') MEMO.timer.unref();
+    });
+    $('memoText').addEventListener('blur', () => saveMemo());
+    $('memoForm').addEventListener('submit', (e) => { e.preventDefault(); saveMemo(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) saveMemo(true); });
+
+    // ===== 首页组件：到期提醒 =====
+    // 站点看板里配了「时间」字段的站点，每个取最早到期的那个字段，按先后排。没放上首页的站点也在里面。
+    const EXPIRY = { limit: 6, sig: '' };
+    function expiryRows() {
+      const rows = [];
+      (STATE.bookmarks || []).forEach((b, i) => {
+        const times = enabledFields(b).filter(f => (f.type || 'amount') === 'time' && !f.error && isFinite(Number(f.raw)) && Number(f.raw) > 0);
+        if (!times.length) return;
+        const f = times.reduce((a, c) => (Number(c.raw) < Number(a.raw) ? c : a));
+        rows.push({ b, i, f, raw: Number(f.raw), kind: fieldAlert(f) });
+      });
+      return rows.sort((a, b) => a.raw - b.raw);
+    }
+    function renderExpiry() {
+      const rows = expiryRows(), hot = rows.filter(r => r.kind).length;
+      const sig = JSON.stringify([DECK.today, openMode(), rows.map(r => [r.b.name, r.b.url, r.f.label, r.raw, r.f.value, r.kind])]);
+      if (sig === EXPIRY.sig) return;
+      EXPIRY.sig = sig;
+      $('deckExpiryMeta').textContent = !rows.length ? '' : hot ? `${hot} 个要留意` : '都还早';
+      const state = $('expiryState');
+      state.hidden = !!rows.length;
+      if (!rows.length) state.textContent = (STATE.bookmarks || []).length ? '看板里还没有站点配「时间」类型的字段（到期时间、续费日……）。' : '站点看板还是空的。';
+      const shown = rows.slice(0, EXPIRY.limit);
+      $('expiryList').innerHTML = shown.map(r => {
+        const rel = relativeTime(r.raw), safe = safeUrl(r.b.url), name = escapeHtml(r.b.name);
+        const when = r.kind !== 'expired' ? rel.text : rel.text === '刚刚' ? '刚过期' : '已过期 ' + rel.text.replace(/前$/, '');   // 「已过期 9 天」，不说「9 天前」
+        const cls = r.kind === 'expired' ? ' is-past' : r.kind === 'soon' ? ' is-soon' : '';
+        return `<li class="expiry-item${cls}">
+          ${safe ? `<a class="expiry-name" href="${escapeHtml(safe)}" ${linkTargetAttrs()} title="${name} · ${escapeHtml(r.b.url)}">${name}</a>` : `<span class="expiry-name">${name}</span>`}
+          <span class="expiry-when" title="${escapeHtml(r.f.label)}：${escapeHtml(r.f.value == null ? '' : r.f.value)}">${escapeHtml(when)}</span>
+        </li>`;
+      }).join('') + (rows.length ? `<li class="expiry-more"><button type="button" class="deck-link" data-expiry-all>${rows.length > shown.length ? `还有 ${rows.length - shown.length} 个 · ` : ''}去站点看板</button></li>` : '');
+      $('expiryList').hidden = !rows.length;
+    }
+    $('expiryList').addEventListener('click', (e) => { if (e.target.closest('[data-expiry-all]')) openLibPage('monitor'); });
+
+    // ===== 首页组件：签到状态 =====
+    const CHECKIN_DECK = { sig: '' };
+    function checkinStats() {
+      const on = STATE.configs_hidden ? [] : (STATE.configs || []).filter(c => c && c.enabled);
+      return { total: on.length, done: on.filter(c => c.checked_in_today).length };
+    }
+    function renderCheckinDeck() {
+      const hidden = !!STATE.configs_hidden, s = checkinStats(), sch = STATE.schedule || {}, all = (STATE.configs || []).length;
+      const sig = JSON.stringify([hidden, s, all, sch.enabled, sch.time, sch.last_run_time, sch.pending_today]);
+      if (sig === CHECKIN_DECK.sig) return;
+      CHECKIN_DECK.sig = sig;
+      const state = $('checkinDeckState'), box = $('checkinDeck');
+      $('deckCheckinMeta').textContent = hidden || !s.total ? '' : s.done === s.total ? '今天都签了' : `还差 ${s.total - s.done} 个`;
+      state.hidden = !(hidden || !s.total);
+      box.hidden = !state.hidden;
+      if (hidden) { state.innerHTML = deckLockedHtml('签到状态'); return; }
+      if (!s.total) { state.innerHTML = `<span>${all ? '签到账户都停用着。' : '还没有签到账户。'}</span><button type="button" class="btn ghost sm" data-checkin-go>去签到中心</button>`; return; }
+      const pct = Math.round(s.done / s.total * 100);
+      const plan = sch.enabled ? `每天 ${escapeHtml(sch.time || '')} 自动签到` + (sch.pending_today ? ` · ${Number(sch.pending_today)} 个等补签` : '') : '定时签到没开';
+      box.innerHTML = `<div class="checkin-deck-top"><span class="checkin-deck-num"><b>${s.done}</b> / ${s.total}</span><span class="checkin-deck-label">今天已签到</span></div>
+        <div class="checkin-deck-bar${s.done === s.total ? ' is-done' : ''}" role="img" aria-label="今天已签到 ${s.done} 个，共 ${s.total} 个"><i style="width:${pct}%"></i></div>
+        <div class="checkin-deck-foot"><span>${plan}${sch.last_run_time ? ` · 上次 ${escapeHtml(shortStamp(sch.last_run_time))}` : ''}</span><button type="button" class="deck-link" data-checkin-go>去签到中心</button></div>`;
+    }
+    $('deckCheckin').addEventListener('click', (e) => { if (e.target.closest('[data-checkin-go]')) switchView('checkin'); });
+
     // ===== 首页待办 =====
     // 数据在服务端的 data/todos.json（读写都要管理权限，未解锁时 /api/configs 不下发）；
-    // 「显示 / 收起 / 隐藏」记在本浏览器的 Cookie bh_home_todo 里，各设备可以各设各的。
-    const TODO_PREFS = ['open', 'closed', 'off'];
+    // 它是首页组件里的一张卡片：上不上首页、排第几、收没收起来，归上面的 renderDeck() 管。
     // queue：写操作排成一队按序发出；inflight：队里还有几个没回来；resync：队里有失败的，清空后向服务端重新要一份；
     // moveJob：还没发出去的那次挪动（连按方向键时并成一次请求）。
     const TODO = { editing: '', queue: Promise.resolve(), inflight: 0, resync: false, moveJob: null, clearTimer: 0, clearCount: 0 };
     const TODO_SORT = { row: null, list: null, pointerId: null, x: 0, y: 0, lastY: 0, grabY: 0, active: false, raf: 0, endedAt: 0 };
     const TODO_MENU = { id: '', top: 0 };
-    // 没选过时的默认值看版面：宽屏有右侧一列放得下，默认展开；窄屏 / 手机上待办叠在图标上方，
-    // 默认收成一条（点一下展开），免得把图标挤出首屏。选过之后以 Cookie 为准。
-    const TODO_WIDE_QUERY = '(min-width: 1100px)';
-    function todoPref() {
-      const wide = !!(window.matchMedia && window.matchMedia(TODO_WIDE_QUERY).matches);
-      return readPref('bh_home_todo', TODO_PREFS, wide ? 'open' : 'closed');
-    }
     function todoItems() { return Array.isArray(STATE.todos) ? STATE.todos : []; }
     async function todoApi(url, method, body) {
       const resp = await fetch(url, { method, headers: adminHeaders(), body: body === undefined ? undefined : JSON.stringify(body) });
@@ -2179,21 +3175,9 @@
     function renderTodos() {
       if (TODO_SORT.active) return;   // 拖到一半不重绘：DOM 一换，手里那一行就没了；松手时会补画
       closeTodoSortMenu();
-      const box = $('homeTodo');
-      const pref = todoPref();
-      // 私密模式未解锁时整页都是空壳，待办也不出现；其余情况由 Cookie 决定显示与否。
-      const wasHidden = box.hidden;
-      box.hidden = pref === 'off' || !STATE_LOADED || !!(STATE.private && STATE.locked);
-      $('homeBody').classList.toggle('has-todo', !box.hidden);
-      if (box.hidden !== wasHidden) relayoutHomeGrid();   // 右侧那一列出现 / 消失，主区放得下的列数跟着变
-      if (box.hidden) return;
-      const open = pref !== 'closed';
+      if ($('homeTodo').hidden) return;   // 没放上首页（或整页还是空壳）：显隐与收起由 renderDeck() 决定
       const items = todoItems();
       const pending = items.filter(t => !t.done), done = items.filter(t => t.done);
-      box.classList.toggle('is-collapsed', !open);
-      $('todoBody').hidden = !open;
-      $('todoCollapse').setAttribute('aria-expanded', String(open));
-      $('todoCollapse').title = open ? '收起待办' : '展开待办';
       const locked = !!STATE.todos_locked, broken = STATE.todos_error || '';
       $('todoCount').textContent = locked || broken ? '' : pending.length ? `${pending.length} 项未完成` : items.length ? '全部完成' : '';
       $('todoForm').hidden = locked || !!broken;
@@ -2476,10 +3460,6 @@
       if (!text) { input.focus(); return; }
       if (await todoRun(() => todoApi('/api/todos', 'POST', { text })) && input.value.replace(/\s+/g, ' ').trim() === text) input.value = '';
       input.focus();
-    });
-    $('todoCollapse').addEventListener('click', () => {
-      writePref('bh_home_todo', todoPref() === 'closed' ? 'open' : 'closed');
-      renderTodos();
     });
     // 「清除已完成」原地二次确认（和字段编辑器的删除一个路数）：第一下只把按钮变成「确认清除 N 条？」，
     // 3 秒内再点才真删；超时、失焦、按 Esc 都还原。不用原生 confirm——它会把整页卡住，样子也和别处脱节。
@@ -4277,6 +5257,8 @@
       { keys: ['Alt', '↑/↓'], desc: '焦点在首页某条待办上时，调整它的顺序；修改待办时 Enter 保存、Esc 取消' },
       { keys: ['↑/↓'], desc: '焦点在待办行首的排序把手上时：直接上下挪；Home / End 移到最前 / 最后，Enter 打开排序菜单' },
       { keys: ['←/→'], desc: '「编辑首页」时焦点在图标上：在分组内前后挪动；Delete 从首页移除，Esc 退出编辑' },
+      { keys: ['←/→', '↑/↓'], desc: '焦点在首页月历里：按天 / 按周走；Home / End 到周一 / 周日，PageUp / PageDown 翻月' },
+      { keys: ['↑/↓'], desc: '「首页组件」弹窗里焦点在排序把手上时：调整组件的先后' },
       { keys: ['Esc'], desc: '关闭弹窗；或清空当前搜索框' },
       { keys: ['?'], desc: '打开本表' },
     ];
@@ -4702,6 +5684,7 @@
       $('heroGreeting').textContent = greetingFor(now.getHours());
       $('heroDate').textContent = `${now.getMonth() + 1}月${now.getDate()}日`;
       $('heroWeekday').textContent = WEEKDAYS[now.getDay()];
+      deckTick();   // 过了零点，日历 / 倒数日跟着换一天
     }
     // 对准下一个整分再响一次，而不是固定周期轮询：一分钟只醒一次，分钟一跳就更新。
     // （页面里刻意不出现周期定时器——死链检查的测试把它当作「没有后台自动探测」的护栏。）
@@ -4764,7 +5747,7 @@
       }).join('');
       setSegmented('#wallDimSeg [data-wall-dim]', 'wallDim', wallDimPref(), !current);
       setSegmented('#homeNavSeg [data-home-nav]', 'homeNav', homeNavPref(), false);
-      setSegmented('#homeTodoSeg [data-home-todo]', 'homeTodo', todoPref() === 'off' ? 'off' : 'on', false);
+      $('homeDeckSummary').textContent = deckSummaryText();
       setSegmented('#homeFreqSeg [data-home-freq]', 'homeFreq', homeFreqOn() ? 'on' : 'off', false);
       const forced = current && wallMinDim(current.lum) > WALL_DIMS[wallDimPref()];
       $('wallDimHint').textContent = !current ? '启用壁纸后可调。'
@@ -4794,15 +5777,6 @@
       writePref('bh_wp_dim', btn.dataset.wallDim);
       refreshHomeLook();
     });
-    $('homeTodoSeg').addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-home-todo]');
-      if (!btn) return;
-      // 「显示」不覆盖已有的收起状态；只有从隐藏切回来时才落到展开。
-      if (btn.dataset.homeTodo === 'off') writePref('bh_home_todo', 'off');
-      else if (todoPref() === 'off') writePref('bh_home_todo', 'open');
-      renderHomeLook();
-      renderTodos();
-    });
     $('homeFreqSeg').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-home-freq]');
       if (!btn || !HOME_FREQ_PREFS.includes(btn.dataset.homeFreq)) return;
@@ -4817,6 +5791,7 @@
       if (!btn) return;
       writePref('bh_home_nav', btn.dataset.homeNav);
       refreshHomeLook();
+      if (STATE_LOADED) renderDeck();
     });
 
     // 上传前在浏览器里压缩：长边收到 2560px 以内、转成 WebP（不支持就 JPEG），顺手量出画面亮度。

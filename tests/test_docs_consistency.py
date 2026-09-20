@@ -71,7 +71,9 @@ class SecurityDocAccuracyTest(unittest.TestCase):
     def test_admin_only_endpoints_listed_in_the_table_are_really_guarded(self):
         for path, func in (("/api/diagnostics", "api_diagnostics"),
                            ("/api/history", "api_history"),
-                           ("/api/configs/export", "api_export")):
+                           ("/api/configs/export", "api_export"),
+                           ("/api/todos", "api_todos"),
+                           ("/api/deck", "api_deck")):
             self.assertIn(path, self.security, "%s 未出现在 SECURITY.md 的权限表里" % path)
             body = self.code[self.code.index("def %s(" % func):]
             self.assertIn("_guard_admin()", body[:400], "%s 实际并未加管理鉴权" % func)

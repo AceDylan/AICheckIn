@@ -1555,32 +1555,225 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 }
 
 /* ==========================================================================
-   首页待办
-   和监控小组件同一种卡片（实底 + 细边，不开毛玻璃）。窄屏叠在图标上方；宽屏挪到右侧一列并吸顶，
-   图标仍然留在首屏——起始页的第一件事是点开网站，待办不该把图标挤到折叠线以下。
+   首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）
+   和监控小组件同一种卡片（实底 + 细边，不开毛玻璃）。起始页的第一件事是点开网站，组件不该把图标挤到折叠线以下：
+   - 窄屏 / 手机：组件收成一行标签（每枚标签带一句要紧的话），点哪个展开哪个，同一时间只展开一张；
+   - 宽屏：挪到图标右侧一列并吸顶，各卡片可以单独收起；这一列比窗口还高时自己滚动。
+   哪张卡片显示由两个类决定：is-open（标签条里展开的那张）与 is-folded（右侧一列里收起的），脚本两个都标，
+   版面用哪一个由下面的媒体查询决定——窗口拉宽拉窄不用等脚本。
    ========================================================================== */
-.home-body { display: flex; flex-direction: column; gap: 26px; margin-top: clamp(24px, 4.5vh, 44px); }
+.home-body { --deck-col: 300px; display: flex; flex-direction: column; gap: 26px; margin-top: clamp(24px, 4.5vh, 44px); }
 .home-main { min-width: 0; }
-.home-todo {
-  width: min(100%, 560px); margin-inline: auto; padding: 14px 16px 12px;
-  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+.home-deck { width: min(100%, 560px); min-width: 0; margin-inline: auto; }
+.home-deck[hidden], .deck-card[hidden], .deck-state[hidden], .days-list[hidden], .days-form[hidden], .deck-add[hidden], .memo-form[hidden], .expiry-list[hidden], .checkin-deck[hidden], .cal-today[hidden] { display: none; }
+/* 标签条：放得下就居中，放不下横向滑动（首尾的 auto 外边距在溢出时自动归零，不会把第一枚标签裁到屏幕外）。 */
+.deck-tabs { display: flex; gap: 8px; margin: -3px; padding: 3px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.deck-tabs::-webkit-scrollbar { display: none; }
+.deck-tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 36px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text-2); font: inherit; font-size: 12.5px; font-weight: 650; white-space: nowrap; cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.deck-tab:first-child { margin-left: auto; }
+.deck-tab:last-child { margin-right: auto; }
+.deck-tab .ic { width: 15px; height: 15px; color: var(--accent); }
+.deck-tab-meta { color: var(--text-3); font-weight: 600; font-variant-numeric: tabular-nums; }
+.deck-tab:hover { background: var(--surface-hover); color: var(--text); }
+.deck-tab.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.deck-tab.active .deck-tab-meta { color: var(--text-2); }
+.deck-tab.is-manage { justify-content: center; width: 36px; padding: 0; border-style: dashed; }
+.deck-tab.is-manage .ic { color: var(--text-3); }
+.deck-tab:focus-visible, .deck-icon-btn:focus-visible, .deck-add:focus-visible, .deck-link:focus-visible, .cal-next-main:focus-visible, .cal-chip:focus-visible, .cal-today:focus-visible, .expiry-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.deck-cards { display: flex; flex-direction: column; }
+.deck-card {
+  padding: 14px 16px 12px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
   box-shadow: var(--shadow-1), inset 0 1px 0 rgba(255, 255, 255, .05);
 }
-.home-todo[hidden], .todo-body[hidden], .todo-list[hidden], .todo-state[hidden], .todo-form[hidden], .todo-done[hidden] { display: none; }
-.home-todo.is-collapsed { padding-block: 10px; }   /* 收起后只剩标题一行：上下留白对称，别显得头轻脚重 */
+.deck-card:not(.is-open) { display: none; }
+.deck-card.is-open { margin-top: 10px; }
+.deck-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.deck-title { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
+.deck-title .ic { width: 16px; height: 16px; color: var(--accent); }
+.deck-meta { flex: 1; min-width: 0; overflow: hidden; color: var(--text-3); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.todo-icon-btn, .deck-icon-btn { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); cursor: pointer; transition: background .14s ease, color .14s ease; }
+.todo-icon-btn:hover, .deck-icon-btn:hover:not(:disabled), .deck-icon-btn[aria-expanded="true"][data-deck-menu] { background: var(--surface-hover); color: var(--text); }
+.todo-icon-btn.is-danger:hover { background: var(--danger-soft); color: var(--danger); }
+.todo-icon-btn .ic, .deck-icon-btn .ic { width: 15px; height: 15px; }
+.deck-icon-btn:disabled { opacity: .35; cursor: default; }
+.deck-fold .ic { transform: rotate(180deg); transition: transform .2s ease; }   /* 标签条布局：这个按钮就是「收起来」，箭头朝上 */
+.deck-body { margin-top: 10px; }
+.todo-state, .deck-state { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; padding: 14px 10px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-3); font-size: 12.5px; text-align: center; }
+.deck-body > .deck-state:first-child { margin-top: 0; }
+.deck-add { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 36px; margin-top: 8px; border: 1px dashed var(--border-strong); border-radius: 10px; background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .14s ease, color .14s ease; }
+.deck-add:hover { border-color: var(--accent); color: var(--accent); }
+.deck-add .ic { width: 14px; height: 14px; }
+.deck-link { padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.deck-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- 日历 ---------- */
+.cal-next-main { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 14px; background: var(--accent-soft); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: filter .14s ease; }
+.cal-next-main:hover { filter: brightness(1.08); }
+.cal-next-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.cal-next-label { color: var(--text-2); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.cal-next-name { font-size: 17px; font-weight: 750; line-height: 1.25; letter-spacing: .01em; }
+.cal-next-sub { color: var(--text-2); font-size: 11.5px; overflow-wrap: anywhere; }
+.cal-next-count { display: flex; flex: 0 0 auto; align-items: baseline; gap: 3px; color: var(--accent); font-size: 11.5px; font-weight: 650; }
+.cal-next-count b { font-size: 30px; font-weight: 750; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.cal-next-more { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cal-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-2); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: background .14s ease, color .14s ease; }
+.cal-chip:hover { background: var(--surface-hover); color: var(--text); }
+.cal-chip b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-chip.is-off::before { content: "休"; color: var(--success); font-size: 10px; font-weight: 750; }
+.cal-bar { display: flex; align-items: center; gap: 2px; margin-top: 12px; }
+.cal-month { flex: 1; min-width: 0; padding-left: 4px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-today { margin-right: 4px; padding: 3px 9px; border: 0; border-radius: 7px; background: var(--accent-soft); color: var(--accent); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 4px; }
+.cal-head { padding: 4px 0; color: var(--text-3); font-size: 10.5px; font-weight: 650; text-align: center; }
+.cal-head.is-weekend { color: var(--accent); }
+.cal-day {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; min-height: 40px; padding: 3px 0;
+  border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; cursor: pointer; transition: background .12s ease;
+}
+.cal-num { font-size: 13px; font-weight: 650; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.cal-sub { max-width: 100%; overflow: hidden; color: var(--text-3); font-size: 10px; line-height: 1.15; white-space: nowrap; }
+.cal-badge { position: absolute; top: 3px; right: 4px; font-size: 9px; font-style: normal; font-weight: 750; line-height: 1; }
+.cal-day:hover { background: var(--surface-hover); }
+.cal-day.is-other { opacity: .4; }
+.cal-day.is-fest .cal-sub { color: var(--accent); font-weight: 650; }
+.cal-day.is-off { background: color-mix(in srgb, var(--success) 13%, transparent); }
+.cal-day.is-off .cal-badge { color: var(--success); }
+.cal-day.is-work { background: var(--warning-soft); }
+.cal-day.is-work .cal-badge { color: var(--warning); }
+.cal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.cal-day.is-today .cal-num { color: var(--accent); }
+.cal-day.is-picked, .cal-day.is-picked:hover { background: var(--accent); box-shadow: none; color: var(--accent-ink); }
+.cal-day.is-picked .cal-num, .cal-day.is-picked .cal-sub, .cal-day.is-picked .cal-badge { color: inherit; }
+.cal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cal-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 11.5px; line-height: 1.5; }
+@media (forced-colors: active) { .cal-day.is-picked { outline: 2px solid Highlight; } .cal-day.is-today { outline: 1px solid CanvasText; } }
+
+/* ---------- 倒数日 ---------- */
+.days-list { max-height: 264px; margin: 0 -6px; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; }
+.days-item { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 10px; transition: background .14s ease; }
+.days-item:hover, .days-item:focus-within { background: var(--surface-hover); }
+.days-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.days-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.days-when { overflow: hidden; color: var(--text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.days-count { display: flex; flex: 0 0 auto; align-items: baseline; gap: 3px; color: var(--text-3); font-size: 11px; font-weight: 600; }
+.days-count b { color: var(--text); font-size: 18px; font-weight: 750; line-height: 1; font-variant-numeric: tabular-nums; }
+.days-item.is-soon .days-count b { color: var(--warning); }
+.days-item.is-today .days-count b { color: var(--accent); font-size: 14px; }
+.days-item.is-past .days-name, .days-item.is-past .days-count b { color: var(--text-3); }
+.days-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.days-form-row { display: flex; gap: 8px; }
+.days-form-row > .todo-input { flex: 1 1 0; }
+.days-form select.todo-input { padding-right: 6px; }
+.days-form-actions { display: flex; align-items: center; gap: 8px; }
+.days-form-hint { flex: 1; min-width: 0; color: var(--danger); font-size: 11.5px; }
+
+/* ---------- 便签 ---------- */
+.memo-text {
+  display: block; width: 100%; min-height: 132px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; resize: vertical;
+  background: var(--surface-input); color: var(--text); font: inherit; font-size: 13px; line-height: 1.6; transition: border-color .14s ease, box-shadow .14s ease;
+}
+.memo-text::placeholder { color: var(--text-3); }
+.memo-text:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+
+/* ---------- 到期提醒 ---------- */
+.expiry-list { margin: 0 -6px; padding: 0; list-style: none; }
+.expiry-item { display: flex; align-items: baseline; gap: 10px; padding: 6px; border-radius: 10px; }
+.expiry-item:hover { background: var(--surface-hover); }
+.expiry-name { flex: 1; min-width: 0; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 600; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; }
+a.expiry-name:hover { color: var(--accent); }
+.expiry-when { flex: 0 0 auto; color: var(--text-2); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.expiry-item.is-soon .expiry-when { color: var(--warning); }
+.expiry-item.is-past .expiry-when { color: var(--danger); }
+.expiry-more { padding: 4px 6px 0; text-align: right; }
+
+/* ---------- 签到状态 ---------- */
+.checkin-deck-top { display: flex; align-items: baseline; gap: 8px; }
+.checkin-deck-num { color: var(--text-2); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.checkin-deck-num b { color: var(--text); font-size: 26px; font-weight: 750; line-height: 1; letter-spacing: -.02em; }
+.checkin-deck-label { color: var(--text-3); font-size: 11.5px; font-weight: 600; }
+.checkin-deck-bar { height: 6px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: var(--surface-hover); }
+.checkin-deck-bar i { display: block; height: 100%; border-radius: inherit; background: var(--warning); transition: width .3s ease; }
+.checkin-deck-bar.is-done i { background: var(--success); }
+.checkin-deck-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 10px; color: var(--text-3); font-size: 11.5px; }
+@media (forced-colors: active) { .checkin-deck-bar { border: 1px solid CanvasText; } .checkin-deck-bar i { background: Highlight; } }
+
+/* ---------- 「首页组件」弹窗 ---------- */
+.deck-picker { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
+.deck-pick { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 12px 8px 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2); transition: border-color .14s ease, opacity .14s ease; }
+.deck-pick:not(.is-on) { background: transparent; }
+.deck-pick:not(.is-on) .deck-pick-icon, .deck-pick:not(.is-on) .deck-pick-text { opacity: .62; }
+.deck-pick .deck-pick-grip { flex: 0 0 22px; width: 22px; height: 30px; margin: 0; }
+.deck-pick-icon { display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.deck-pick-icon .ic { width: 17px; height: 17px; }
+.deck-pick-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.deck-pick-text b { font-size: 13.5px; font-weight: 700; }
+.deck-pick-text small { color: var(--text-3); font-size: 11.5px; line-height: 1.4; }
+.deck-pick-move { display: flex; flex: 0 0 auto; gap: 2px; }
+.deck-pick.is-dragging { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-2); }
+.deck-picker.is-sorting, .deck-picker.is-sorting .deck-pick-grip { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (forced-colors: active) { .deck-pick.is-dragging { outline: 2px solid Highlight; } }
+
+/* 右侧一列：图标栏（72px）下 1100px 起就放得下；完整侧栏（252px）要到 1280px。两段规则相同，只是门槛不同。
+   脚本里的 DECK_SIDE_QUERIES 用的是同一对门槛。 */
+@media (min-width: 1100px) {
+  html.nav-rail .home-body.has-deck { display: grid; grid-template-columns: minmax(0, 1fr) var(--deck-col); gap: 0 32px; align-items: start; }
+  /* 图标视图：主区只占图标网格那么宽（--grid-w 由脚本量出），「图标 + 组件」作为一个整体居中在时钟和搜索框下面。 */
+  html.nav-rail .home-body.has-deck.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--deck-col); justify-content: center; }
+  html.nav-rail .home-body.has-deck .home-main { grid-column: 1; grid-row: 1; }
+  html.nav-rail .home-body.has-deck .home-deck { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; max-height: calc(100vh - 48px); margin: -3px -8px 0; padding: 3px 8px 12px; overflow-y: auto; scrollbar-width: thin; }
+  html.nav-rail .home-body.has-deck .deck-tabs { display: none; }
+  html.nav-rail .home-body.has-deck .deck-cards { gap: 12px; }
+  html.nav-rail .home-body.has-deck .deck-card:not([hidden]) { display: block; margin-top: 0; }
+  html.nav-rail .home-body.has-deck .deck-card.is-folded { padding-block: 10px; }
+  html.nav-rail .home-body.has-deck .deck-card.is-folded .deck-body { display: none; }
+  html.nav-rail .home-body.has-deck .deck-fold .ic { transform: none; }
+  html.nav-rail .home-body.has-deck .deck-card.is-folded .deck-fold .ic { transform: rotate(-90deg); }
+}
+@media (min-width: 1280px) {
+  .home-body.has-deck { display: grid; grid-template-columns: minmax(0, 1fr) var(--deck-col); gap: 0 32px; align-items: start; }
+  .home-body.has-deck.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--deck-col); justify-content: center; }
+  .home-body.has-deck .home-main { grid-column: 1; grid-row: 1; }
+  .home-body.has-deck .home-deck { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; max-height: calc(100vh - 48px); margin: -3px -8px 0; padding: 3px 8px 12px; overflow-y: auto; scrollbar-width: thin; }
+  .home-body.has-deck .deck-tabs { display: none; }
+  .home-body.has-deck .deck-cards { gap: 12px; }
+  .home-body.has-deck .deck-card:not([hidden]) { display: block; margin-top: 0; }
+  .home-body.has-deck .deck-card.is-folded { padding-block: 10px; }
+  .home-body.has-deck .deck-card.is-folded .deck-body { display: none; }
+  .home-body.has-deck .deck-fold .ic { transform: none; }
+  .home-body.has-deck .deck-card.is-folded .deck-fold .ic { transform: rotate(-90deg); }
+}
+@media (min-width: 1440px) { .home-body { --deck-col: 320px; } }
+@media (max-width: 760px) {
+  .home-body { gap: 20px; margin-top: 16px; }
+  .deck-card { padding: 12px 12px 10px; border-radius: 16px; }
+  .deck-tab { min-height: 40px; font-size: 13px; }
+  .deck-tab.is-manage { width: 40px; }
+  .deck-icon-btn { flex-basis: 32px; width: 32px; height: 32px; }
+  .cal-day { min-height: 44px; }
+  .cal-num { font-size: 14px; }
+  .cal-chip { min-height: 32px; font-size: 12.5px; }
+  .days-item { padding: 10px 6px; }
+  .days-name, .expiry-name { font-size: 14px; }
+  .expiry-item { padding: 9px 6px; }
+  .memo-text { font-size: 16px; }   /* 16px：iOS 聚焦输入框时不自动放大页面 */
+  .days-form-row { flex-wrap: wrap; }
+  .days-form-row > .todo-input { flex-basis: 140px; }
+  .deck-pick { padding-right: 10px; }
+  .deck-pick .deck-pick-grip { flex-basis: 28px; width: 28px; height: 36px; margin: 0; opacity: .7; }
+}
+@media (prefers-reduced-motion: reduce) { .deck-tab, .deck-fold .ic, .cal-day, .cal-next-main, .checkin-deck-bar i, .deck-pick { transition: none; } }
+
+/* ==========================================================================
+   首页待办（首页组件里的一张卡片：卡片外观、标题行、收起都在上面的「首页组件」里）
+   ========================================================================== */
+.todo-body[hidden], .todo-list[hidden], .todo-state[hidden], .todo-form[hidden], .todo-done[hidden] { display: none; }
 /* 写操作是乐观更新，请求在路上时列表不变暗（只有「添加」要等服务端给 id，那一下用按钮表示）。 */
 .home-todo.is-busy .todo-add { opacity: .6; cursor: progress; }
-.todo-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.todo-title { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .01em; }
-.todo-title .ic { width: 16px; height: 16px; color: var(--accent); }
-.todo-count { flex: 1; min-width: 0; overflow: hidden; color: var(--text-3); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-.todo-icon-btn { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); cursor: pointer; transition: background .14s ease, color .14s ease; }
-.todo-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
-.todo-icon-btn.is-danger:hover { background: var(--danger-soft); color: var(--danger); }
-.todo-icon-btn .ic { width: 15px; height: 15px; }
-#todoCollapse .ic { transition: transform .2s ease; }
-.home-todo.is-collapsed #todoCollapse .ic { transform: rotate(-90deg); }
-.todo-body { margin-top: 10px; }
 .todo-form { display: flex; gap: 8px; }
 .todo-input, .todo-edit {
   flex: 1; min-width: 0; min-height: 38px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px;
@@ -1592,7 +1785,6 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 .todo-add:hover { filter: brightness(1.08); }
 .todo-add:active { transform: scale(.96); }
 .todo-add .ic { width: 17px; height: 17px; stroke-width: 2.4; }
-.todo-state { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; padding: 14px 10px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-3); font-size: 12.5px; text-align: center; }
 .todo-list { position: relative; max-height: 264px; margin: 8px -6px 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; }
 .todo-item { display: flex; align-items: flex-start; gap: 10px; padding: 7px 6px; border-radius: 10px; transition: background .14s ease; }
 .todo-item:hover, .todo-item:focus-within { background: var(--surface-hover); }
@@ -1616,11 +1808,11 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 /* 有鼠标的设备：操作按钮平时不占位（否则每条待办都要为两个看不见的按钮提前换行），悬停 / 键盘聚焦时浮在行尾。
    浮层用实底，盖住底下的文字；触屏设备没有悬停，按钮常驻在行尾。 */
 @media (hover: hover) {
-  .todo-item { position: relative; }
+  .todo-item, .days-item { position: relative; }
   .todo-actions { position: absolute; top: 3px; right: 3px; margin: 0; padding: 1px; border-radius: 9px; background: var(--todo-actions-bg, var(--surface-solid, var(--surface))); box-shadow: 0 0 0 1px var(--border), var(--shadow-1); opacity: 0; pointer-events: none; transition: opacity .14s ease; }
-  .todo-item:hover .todo-actions, .todo-item:focus-within .todo-actions { opacity: 1; pointer-events: auto; }
+  .days-item:hover .todo-actions, .days-item:focus-within .todo-actions, .todo-item:hover .todo-actions, .todo-item:focus-within .todo-actions { opacity: 1; pointer-events: auto; }
 }
-html.wall-on .home-todo { --todo-actions-bg: #1a2130; }
+html.wall-on .home-todo, html.wall-on .deck-days { --todo-actions-bg: #1a2130; }
 .todo-done { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .todo-done > summary { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-radius: 8px; color: var(--text-3); font-size: 11.5px; font-weight: 650; cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none; }
 .todo-done > summary::-webkit-details-marker { display: none; }
@@ -1668,29 +1860,16 @@ html.wall-on .home-todo { --todo-drag-bg: #232c3f; }
 /* 强制颜色模式下背景色会被系统抹掉：勾选状态靠那道勾（边框，颜色跟随系统）辨认，边框保持可见即可。 */
 @media (forced-colors: active) { .todo-check { border-color: CanvasText; } .todo-check:checked::after { border-color: CanvasText; } }
 
-/* 右侧一列：图标栏（72px）下 1100px 起就放得下；完整侧栏（252px）要到 1280px。两段规则相同，只是门槛不同。 */
+/* 右侧一列里（门槛见「首页组件」）：列表可以高一些，但整列还要放得下别的卡片。 */
 @media (min-width: 1100px) {
-  html.nav-rail .home-body.has-todo { display: grid; grid-template-columns: minmax(0, 1fr) var(--todo-col, 300px); gap: 0 32px; align-items: start; }
-  /* 图标视图：主区只占图标网格那么宽（--grid-w 由脚本量出），「图标 + 待办」作为一个整体居中在时钟和搜索框下面。 */
-  html.nav-rail .home-body.has-todo.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--todo-col, 300px); justify-content: center; }
-  html.nav-rail .home-body.has-todo .home-main { grid-column: 1; grid-row: 1; }
-  html.nav-rail .home-body.has-todo .home-todo { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; margin: 0; }
-  html.nav-rail .home-body.has-todo .todo-list { max-height: min(36vh, 420px); }
-  html.nav-rail .home-body.has-todo .todo-done .todo-list { max-height: min(22vh, 220px); }
+  html.nav-rail .home-body.has-deck .todo-list { max-height: min(36vh, 420px); }
+  html.nav-rail .home-body.has-deck .todo-done .todo-list { max-height: min(22vh, 220px); }
 }
 @media (min-width: 1280px) {
-  .home-body.has-todo { display: grid; grid-template-columns: minmax(0, 1fr) var(--todo-col, 300px); gap: 0 32px; align-items: start; }
-  .home-body.has-todo.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--todo-col, 300px); justify-content: center; }
-  .home-body.has-todo .home-main { grid-column: 1; grid-row: 1; }
-  .home-body.has-todo .home-todo { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; margin: 0; }
-  .home-body.has-todo .todo-list { max-height: min(36vh, 420px); }
-  .home-body.has-todo .todo-done .todo-list { max-height: min(22vh, 220px); }
+  .home-body.has-deck .todo-list { max-height: min(36vh, 420px); }
+  .home-body.has-deck .todo-done .todo-list { max-height: min(22vh, 220px); }
 }
-@media (min-width: 1440px) { .home-body { --todo-col: 320px; } }
 @media (max-width: 760px) {
-  .home-body { gap: 20px; margin-top: 16px; }
-  .home-todo { padding: 12px 12px 10px; border-radius: 16px; }
-  .home-todo.is-collapsed { padding-block: 8px; }
   .todo-input, .todo-edit { min-height: 42px; font-size: 16px; }   /* 16px：iOS 聚焦输入框时不自动放大页面 */
   .todo-add { flex-basis: 42px; width: 42px; height: 42px; }
   .todo-item { gap: 12px; padding: 10px 6px; }
@@ -1705,4 +1884,4 @@ html.wall-on .home-todo { --todo-drag-bg: #232c3f; }
   .todo-sort-menu button { min-height: 44px; font-size: 14px; }
   .todo-list { max-height: 252px; }
 }
-@media (prefers-reduced-motion: reduce) { #todoCollapse .ic, .todo-done > summary::before, .todo-add, .todo-grip { transition: none; } .todo-sort-menu { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .todo-done > summary::before, .todo-add, .todo-grip { transition: none; } .todo-sort-menu { animation: none; } }

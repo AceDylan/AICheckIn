@@ -2042,6 +2042,7 @@ def api_configs():
             # 未解锁时 /api/wallpaper 同样被挡住，这里如实说「没有」，页面回落到内置壁纸。
             "wallpaper": {"custom": False, "v": "", "lum": None},
             "todos": [], "todos_locked": True,
+            "deck": _coerce_deck({}), "deck_locked": True, "deck_error": "",
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -2062,11 +2063,17 @@ def api_configs():
     configs_hidden = bool(ADMIN_PASSWORD) and not unlocked
     # 待办比收藏更私人：未解锁时不下发。todos.json 读坏了也不该拖垮整个页面，只把原因带给首页组件。
     todos, todos_error = [], ""
+    deck, deck_error = _coerce_deck({}), ""
     if unlocked:
         try:
             todos = read_todos()
         except RuntimeError as exc:
             todos_error = str(exc)
+        # 倒数日 / 便签与待办同一个待遇：未解锁不下发，读坏了只影响那两个组件。
+        try:
+            deck = read_deck()
+        except RuntimeError as exc:
+            deck_error = str(exc)
     return jsonify({
         "ok": True,
         "configs": [] if configs_hidden else configs_out,
@@ -2100,6 +2107,7 @@ def api_configs():
         "locked": False,
         "wallpaper": public_wallpaper(),
         "todos": todos, "todos_locked": not unlocked, "todos_error": todos_error,
+        "deck": deck, "deck_locked": not unlocked, "deck_error": deck_error,
     })
 
 
@@ -4019,6 +4027,207 @@ def api_todo_move(tid):
     return _todos_call(change)
 
 
+# =========================
+# 首页组件数据（倒数日 / 便签）
+# =========================
+#
+# 首页组件里，日历、到期提醒、签到状态都是拿现成数据现算的；只有「倒数日」和「便签」有自己的内容，
+# 存在 data/deck.json。不进 config.json 的理由和待办一样（高频小改动不该去冲那份装着凭据的文件的 .bak），
+# 读改写全程持锁、自己留一份 .bak，「导出 JSON」带 deck 键、导入时有这个键才覆盖。
+# 同样比收藏更私人：设了管理密码时读写都要解锁，开放的 /api/configs 也不会下发。
+#
+# 哪些组件上首页、排什么顺序是「这台设备怎么用」的事（手机和电脑可以各摆各的），记在浏览器 Cookie 里，不进这个文件。
+MAX_DECK_DAYS = 50
+DECK_DAY_NAME_MAX = 40
+DECK_MEMO_MAX = 2000
+# none：只这一次；year：每年公历同月同日；lunar：每年农历同月同日（换算在浏览器里做，这里只存一个公历基准日）。
+DECK_DAY_REPEATS = ("none", "year", "lunar")
+_DECK_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+_deck_lock = threading.Lock()
+
+
+def _deck_path():
+    # 每次现取 DATA_DIR：测试会把它重定向到逐用例的临时目录。
+    return Path(DATA_DIR) / "deck.json"
+
+
+def _valid_deck_date(value):
+    """'YYYY-MM-DD' 且真有这一天（1900–2200 年）才算数；否则回空串。"""
+    m = _DECK_DATE_RE.match(str(value or "").strip())
+    if not m:
+        return ""
+    year, month, day = (int(x) for x in m.groups())
+    if not 1900 <= year <= 2200:
+        return ""
+    try:
+        datetime.date(year, month, day)
+    except ValueError:
+        return ""
+    return m.group(0)
+
+
+def _clean_deck_day(payload):
+    """写接口的严格校验：抛 ValueError。"""
+    name = payload.get("name")
+    if not isinstance(name, str):
+        raise ValueError("名称需为文字")
+    name = _clean_text(name, DECK_DAY_NAME_MAX, "名称", required=True)
+    date = _valid_deck_date(payload.get("date")) if isinstance(payload.get("date"), str) else ""
+    if not date:
+        raise ValueError("日期无效（格式 YYYY-MM-DD，1900–2200 年）")
+    repeat = payload.get("repeat", "none")
+    if repeat not in DECK_DAY_REPEATS:
+        raise ValueError("重复方式无效")
+    return {"name": name, "date": date, "repeat": repeat}
+
+
+def _memo_text(value):
+    """便签保留换行；其余控制字符去掉，行尾统一成 \\n。"""
+    text = str(value if value is not None else "").replace("\r\n", "\n").replace("\r", "\n")
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
+
+
+def _coerce_deck(raw):
+    """读取 / 导入路径的宽松规整：不抛错，丢掉不成形的项，修好重复或非法的 id。"""
+    raw = raw if isinstance(raw, dict) else {}
+    days, taken = [], set()
+    for item in raw.get("days") if isinstance(raw.get("days"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        name = _squash_text(item.get("name"), DECK_DAY_NAME_MAX)
+        date = _valid_deck_date(item.get("date"))
+        if not name or not date:
+            continue
+        did = str(item.get("id") or "").strip()
+        if not _LINK_ID_RE.match(did) or did in taken:
+            did = _gen_link_id(taken)
+        taken.add(did)
+        repeat = item.get("repeat")
+        days.append({"id": did, "name": name, "date": date,
+                     "repeat": repeat if repeat in DECK_DAY_REPEATS else "none",
+                     "created_at": _todo_stamp(item.get("created_at"))})
+        if len(days) >= MAX_DECK_DAYS:
+            break
+    memo = raw.get("memo") if isinstance(raw.get("memo"), dict) else {}
+    return {"days": days,
+            "memo": {"text": _memo_text(memo.get("text"))[:DECK_MEMO_MAX],
+                     "updated_at": _todo_stamp(memo.get("updated_at"))}}
+
+
+def read_deck():
+    path = _deck_path()
+    if not path.is_file():
+        return _coerce_deck({})
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise RuntimeError("读取首页组件数据失败：{0}".format(exc))
+    return _coerce_deck(raw)
+
+
+def _write_deck_locked(deck):
+    """调用方须已持有 _deck_lock。"""
+    path = _deck_path()
+    text = json.dumps(deck, ensure_ascii=False, indent=2)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            try:
+                _write_text_atomic(path.with_name(path.name + ".bak"), path.read_text(encoding="utf-8"))
+            except OSError:
+                pass  # 备份失败不该挡住正常保存
+        _write_text_atomic(path, text)
+    except OSError as exc:
+        raise RuntimeError("首页组件数据写入失败（请检查数据目录是否可写）：{0}".format(exc))
+
+
+def mutate_deck(change):
+    """锁内「读 → 改 → 写」。change(deck) 就地修改，可抛 ValueError / LookupError；返回写入后的整份数据。"""
+    with _deck_lock:
+        deck = read_deck()
+        change(deck)
+        _write_deck_locked(deck)
+        return deck
+
+
+def _deck_call(change):
+    """组件数据写接口的公共骨架：鉴权 → 锁内修改 → 统一的错误映射。每个写接口都回带整份数据。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        deck = mutate_deck(change)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except LookupError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify({"ok": True, "deck": deck})
+
+
+def _find_deck_day(days, did):
+    for pos, item in enumerate(days):
+        if item["id"] == did:
+            return pos
+    raise LookupError("这个倒数日已不存在，请刷新")
+
+
+@app.get("/api/deck")
+def api_deck():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        return jsonify({"ok": True, "deck": read_deck()})
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.post("/api/deck/days")
+def api_deck_day_create():
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(deck):
+        fields = _clean_deck_day(payload)
+        if len(deck["days"]) >= MAX_DECK_DAYS:
+            raise ValueError("倒数日最多 {0} 个，先删掉一些过去的吧".format(MAX_DECK_DAYS))
+        deck["days"].append(dict(fields, id=_gen_link_id({d["id"] for d in deck["days"]}), created_at=_now_str()))
+    return _deck_call(change)
+
+
+@app.put("/api/deck/days/<did>")
+def api_deck_day_update(did):
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(deck):
+        fields = _clean_deck_day(payload)
+        deck["days"][_find_deck_day(deck["days"], did)].update(fields)
+    return _deck_call(change)
+
+
+@app.delete("/api/deck/days/<did>")
+def api_deck_day_delete(did):
+    return _deck_call(lambda deck: deck["days"].pop(_find_deck_day(deck["days"], did)))
+
+
+@app.put("/api/deck/memo")
+def api_deck_memo():
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(deck):
+        if not isinstance(payload.get("text"), str):
+            raise ValueError("便签内容需为文字")
+        text = _memo_text(payload["text"])
+        if len(text) > DECK_MEMO_MAX:
+            raise ValueError("便签过长（最多 {0} 字）".format(DECK_MEMO_MAX))
+        deck["memo"] = {"text": text, "updated_at": _now_str()}
+    return _deck_call(change)
+
+
 @app.get("/api/configs/export")
 def api_export():
     guard = _guard_admin()
@@ -4026,8 +4235,9 @@ def api_export():
         return guard
     try:
         store = read_store()
-        # 待办存在单独的 todos.json 里，导出时并进来，一份文件带走全部数据。
+        # 待办存在单独的 todos.json 里，导出时并进来，一份文件带走全部数据；首页组件的倒数日 / 便签（deck.json）同理。
         store["todos"] = read_todos()
+        store["deck"] = read_deck()
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
     return jsonify(store)
@@ -4107,6 +4317,10 @@ def api_import():
         if isinstance(payload, dict) and isinstance(payload.get("todos"), list):
             imported_todos = _coerce_todos(payload["todos"])
             mutate_todos(lambda items: items.__setitem__(slice(None), imported_todos))
+        # 首页组件数据也一样：带了 deck 对象才覆盖。
+        if isinstance(payload, dict) and isinstance(payload.get("deck"), dict):
+            imported_deck = _coerce_deck(payload["deck"])
+            mutate_deck(lambda deck: deck.update(imported_deck))
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except RuntimeError as exc:

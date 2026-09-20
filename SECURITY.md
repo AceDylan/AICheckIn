@@ -76,6 +76,8 @@
 | 查看 / 恢复配置备份（`/api/backups`、`/api/configs/restore`） | ❌ | ✅ |
 | 加载壁纸（全部页面共用；内置 `/static/wallpapers/*`、自定义 `GET /api/wallpaper`） | ✅（私密模式未解锁时自定义壁纸不可见，回落到内置） | ✅ |
 | 上传 / 移除自定义壁纸（`PUT` / `DELETE /api/wallpaper`） | ❌ | ✅ |
+| 首页待办、倒数日、便签的读写（`/api/todos*`、`/api/deck*`） | ❌（`/api/configs` 里也不下发） | ✅ |
+| 首页日历、到期提醒（浏览器里现算，只用上面已经公开的字段） | ✅ | ✅ |
 
 **未设置 `GYQD_ADMIN_PASSWORD` 时上表整列放开**——这是给本地 / 内网部署留的口子，
 公网部署务必设置。
@@ -113,9 +115,17 @@
   导航形态沿用 Cookie `bh_home_nav`（值域白名单 `rail` / `full`），`<head>` 里只对它做固定字符串匹配。
 - 首页待办比收藏更私人：`/api/todos*` 全部要管理权限，开放的 `/api/configs` 只在已解锁（或未设密码）时下发待办，
   私密模式的空壳里同样没有。内容存在 `data/todos.json`（不进 `config.json`，勾选待办不会重写装着凭据的那个文件），
-  长度 ≤ 200 字、最多 200 条，渲染时一律转义。显示偏好沿用 Cookie `bh_home_todo`（值域白名单 `open` / `closed` / `off`）。
+  长度 ≤ 200 字、最多 200 条，渲染时一律转义。旧版的显示偏好 Cookie `bh_home_todo`（值域白名单 `open` / `closed` / `off`）现在只读不写，用来给首页组件推默认值。
   排序接口 `POST /api/todos/<id>/move` 同样要管理权限：只接受 `before` / `after` 二选一、值必须是另一条现存待办的 id，
   校验不过（缺参、两个都给、以自己为参照、参照物不存在）一律不落盘；它只改顺序，不接收也不回显任何新内容。
+- 首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）：倒数日与便签和待办同一个待遇——`/api/deck*` 全部要管理权限，
+  开放的 `/api/configs` 只在已解锁（或未设密码）时下发，私密模式的空壳里没有；内容存在 `data/deck.json`（不进 `config.json`，自带 `.bak`，
+  随「导出 JSON」的 `deck` 键带走）。校验：名称 ≤ 40 字、日期必须是 1900–2200 年间真实存在的 `YYYY-MM-DD`、重复方式只认 `none` / `year` / `lunar`、
+  最多 50 个；便签 ≤ 2000 字，去掉换行和制表符之外的控制字符。名称渲染时一律转义，便签内容只写进 `<textarea>` 的 `value`，不经过 HTML。
+  日历、节日、农历全部在浏览器里现算（页面内置 1900–2100 年农历表与当年的放假安排），**不向任何外部服务发请求**，CSP 没有为它放宽；
+  到期提醒只用看板本来就公开的字段，签到状态在未解锁时不显示（账号清单本来就不下发）。
+  组件的布局是纯本机偏好：Cookie `bh_home_deck`（已添加的组件及顺序）、`bh_home_deck_fold`（右侧一列里收起的）、`bh_home_deck_open`（标签条里展开的那个），
+  读取时按 `[a-z.]` 字符集整体匹配、再逐个按组件 id 白名单过滤，被改成别的内容就回落到默认值，不会被拼进页面。
 - 待办里的网址可点，但只认 `http://` / `https://`（`javascript:`、`data:` 等不会被识别成链接，`safeUrl` 再兜一层），
   链接一律 `target="_blank" rel="noopener noreferrer nofollow"`：对方拿不到 `window.opener`，Referer 里也不会出现起始页地址。
   显示文字取自 `new URL()` 解析后的主机名 + 路径而不是原文，`https://银行@evil.example` 这类障眼法会如实显示成 `evil.example`；

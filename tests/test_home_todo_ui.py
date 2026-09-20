@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""首页待办组件：页面结构、无障碍标注、偏好白名单、样式护栏，以及用真实页面脚本跑一遍渲染。"""
+"""首页待办（首页组件里的一张卡片）：页面结构、无障碍标注、旧偏好的迁移、样式护栏，以及用真实页面脚本跑一遍渲染。
+
+卡片的显隐 / 先后 / 收起归「首页组件」管，见 tests/test_home_deck_ui.py。"""
 import copy
 import json
 import re
@@ -30,6 +32,9 @@ class PageMarkupTest(StoreIsolationMixin, unittest.TestCase):
         todo = self.block('id="homeTodo"', '</section>')
         self.assertNotIn('id="homeList"', todo)
         self.assertIn("if (!TODO.editing) renderTodos();", self.html)
+        # 卡片在组件容器里，和其它组件一样是静态节点；renderHome() 只通过 renderDeck() 间接碰它。
+        deck = self.block('id="homeDeck"', 'class="home-main"')
+        self.assertIn('id="homeTodo" data-deck="todo"', deck)
 
     def test_widget_is_labelled_for_assistive_tech(self):
         todo = self.block('id="homeTodo"', '</section>')
@@ -74,13 +79,12 @@ class PageMarkupTest(StoreIsolationMixin, unittest.TestCase):
         self.assertIn('maxlength="200"', form)
         self.assertNotIn('type="password"', form)
 
-    def test_preference_cookie_is_whitelisted(self):
-        self.assertIn("const TODO_PREFS = ['open', 'closed', 'off'];", self.html)
-        self.assertIn("readPref('bh_home_todo', TODO_PREFS,", self.html)
-        writes = re.findall(r"writePref\('bh_home_todo', (.+?)\);", self.html)
-        self.assertEqual(sorted(writes), sorted(["'off'", "'open'", "todoPref() === 'closed' ? 'open' : 'closed'"]))
-        self.assertIn('data-home-todo="on"', self.html)
-        self.assertIn('data-home-todo="off"', self.html)
+    def test_legacy_preference_cookie_is_read_only_and_whitelisted(self):
+        """旧版的 bh_home_todo（open / closed / off）只用来推默认值：照旧按白名单读，但不再有任何地方写它。"""
+        self.assertIn("function legacyTodoPref() { return readPref('bh_home_todo', ['open', 'closed', 'off'], ''); }", self.html)
+        self.assertEqual(re.findall(r"writePref\('bh_home_todo'", self.html), [])
+        self.assertNotIn('data-home-todo=', self.html)      # 「外观」里的显示 / 隐藏开关换成了「首页组件」入口
+        self.assertIn('id="openDeckModal"', self.html)
 
     def test_no_browser_storage_or_polling(self):
         script = _inline_script()
@@ -123,19 +127,18 @@ class StyleGuardTest(unittest.TestCase):
         self.assertLess(self.css.index(".tag {"), self.css.index(".tag-btn {"))
 
     def test_card_uses_a_solid_surface_not_per_item_blur(self):
-        self.assertNotIn("backdrop-filter", self.todo)
-        self.assertRegex(self.todo, r"\.home-todo \{[^}]*background: var\(--surface\)")
+        deck = self.css[self.css.index("首页组件（"):]
+        self.assertNotIn("backdrop-filter", deck)
+        self.assertRegex(deck, r"\n\.deck-card \{[^}]*background: var\(--surface\)")
 
     def test_hidden_attribute_wins_over_display_rules(self):
-        self.assertRegex(self.todo, r"\.home-todo\[hidden\][^{]*\{ display: none; \}")
+        self.assertRegex(self.todo, r"\.todo-body\[hidden\][^{]*\{ display: none; \}")
 
-    def test_side_column_only_on_wide_screens_and_follows_the_nav(self):
+    def test_lists_get_taller_in_the_side_column(self):
         rail = self.todo[self.todo.index("@media (min-width: 1100px)"):self.todo.index("@media (min-width: 1280px)")]
-        self.assertIn("html.nav-rail .home-body.has-todo { display: grid;", rail)
-        full = self.todo[self.todo.index("@media (min-width: 1280px)"):self.todo.index("@media (min-width: 1440px)")]
-        self.assertRegex(full, r"\n  \.home-body\.has-todo \{ display: grid;")
-        self.assertIn("position: sticky", full)
-        self.assertRegex(self.css, r"const TODO_WIDE_QUERY|" + re.escape(".home-body { display: flex; flex-direction: column;"))
+        self.assertIn("html.nav-rail .home-body.has-deck .todo-list { max-height: min(36vh, 420px); }", rail)
+        full = self.todo[self.todo.index("@media (min-width: 1280px)"):self.todo.index("@media (max-width: 760px)")]
+        self.assertRegex(full, r"\n  \.home-body\.has-deck \.todo-list \{ max-height: min\(36vh, 420px\); \}")
 
     def test_touch_and_keyboard_affordances(self):
         mobile = self.todo[self.todo.index("@media (max-width: 760px)"):]
@@ -176,7 +179,7 @@ class StyleGuardTest(unittest.TestCase):
 
     def test_degradation_paths(self):
         self.assertRegex(self.todo, r"@media \(forced-colors: active\) \{ \.todo-check \{ border-color: CanvasText; \}")
-        self.assertIn("@media (prefers-reduced-motion: reduce) { #todoCollapse .ic", self.todo)
+        self.assertIn("@media (prefers-reduced-motion: reduce) { .todo-done > summary::before", self.todo)
         self.assertIn(".todo-sort-menu { animation: none; }", self.todo)
         # 让路动画由脚本写行内过渡，「减少动态效果」要在脚本里判。
         self.assertIn("window.matchMedia('(prefers-reduced-motion: reduce)').matches", (ROOT / "templates" / "index.html").read_text(encoding="utf-8"))
@@ -244,16 +247,27 @@ class TodoRenderTest(unittest.TestCase):
             assert.equal($('todoForm').hidden, true);
         """, configs={"todos": []})
 
-    def test_cookie_controls_visibility_and_collapse(self):
+    def test_legacy_cookie_still_decides_visibility_and_collapse_until_the_deck_is_customised(self):
+        """老用户升级：以前把待办藏起来 / 收起来的，换成组件之后还是藏着 / 收着；一旦动过组件设置，就以新 Cookie 为准。"""
         self.run_js("""
-            assert.equal(todoPref(), 'off');
+            globalThis.matchMedia = () => ({ matches: true, addEventListener() {} });      // 宽屏：右侧一列
+            assert.equal(legacyTodoPref(), 'off');
+            assert.deepEqual(deckOrder(), ['calendar']);
             assert.equal($('homeTodo').hidden, true);
-            document.cookie = 'bh_home_todo=closed'; renderTodos();
+            assert.equal($('deckCalendar').hidden, false);
+            document.cookie = 'bh_home_todo=closed'; renderDeck();
             assert.equal($('homeTodo').hidden, false);
-            assert.equal($('todoBody').hidden, true);
-            assert.equal($('todoCollapse').title, '展开待办');     // DOM 桩不存 attribute；aria-expanded 由浏览器验证覆盖
-            document.cookie = 'bh_home_todo=<script>'; renderTodos();      // 白名单之外的值一律当没设
-            assert.ok(['open', 'closed'].includes(todoPref()));
+            assert.ok($('homeTodo').classList.contains('is-folded'));
+            assert.ok(!$('deckCalendar').classList.contains('is-folded'));
+            document.cookie = 'bh_home_todo=<script>'; renderDeck();      // 白名单之外的值一律当没设
+            assert.equal(legacyTodoPref(), '');
+            assert.deepEqual(deckOrder(), ['calendar', 'todo']);
+            assert.ok(!$('homeTodo').classList.contains('is-folded'));
+            // 新 Cookie 写过之后，旧 Cookie 不再作数。
+            document.cookie = 'bh_home_todo=off; bh_home_deck=todo; bh_home_deck_fold=none'; renderDeck();
+            assert.deepEqual(deckOrder(), ['todo']);
+            assert.equal($('homeTodo').hidden, false);
+            assert.equal($('deckCalendar').hidden, true);
         """, cookie="bh_home_todo=off")
 
     def test_private_shell_hides_the_widget(self):

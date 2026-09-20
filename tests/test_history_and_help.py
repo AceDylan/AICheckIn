@@ -109,6 +109,9 @@ class ShortcutHelpTest(unittest.TestCase):
         self.assertIn("event.metaKey || event.ctrlKey", self.html)   # ⌘K
         self.assertIn("omniOpen(omniResults[omniActive], e.shiftKey)", self.html)  # Shift+Enter
         self.assertIn("if (!e.altKey", self.html)                    # Alt+方向键
+        self.assertIn("PageUp / PageDown 翻月", table)                 # 首页月历
+        self.assertIn("if (e.key === 'PageUp' || e.key === 'PageDown')", self.html)
+        self.assertIn("const grip = e.target.closest('[data-deck-grip]')", self.html)   # 组件弹窗里的排序把手
 
     def test_styles_exist(self):
         for rule in (".keys-list", ".keys-combo", ".keys-hint"):
