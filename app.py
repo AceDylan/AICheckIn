@@ -30,7 +30,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urlencode, urljoin, urlparse
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -1647,6 +1647,60 @@ def issue_chat_ticket(purpose, issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
     return message + "." + hmac.new(_chat_key(), message.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+# ---- 带着一个问题进聊天 ----
+#
+# HaloWebUI 的 /auth 认 ?redirect=（它那边只许站内路径），落地页的 Chat.svelte 认 ?q= 且
+# 拿到就自动发出去。所以「发送到 AI 聊天」不用对面改一行代码，地址长这样：
+#
+#     <CHAT_URL>/auth?redirect=<「/?q=<问题>」整体编码>#hub_ticket=<票据>
+#
+# 问题被编码两次（先当 q 的值，再当 redirect 的值），所以 & # % + 和中文都不会把地址拆散。
+# 代价是长度：一个汉字编码两次要 15 个字符。因此下面按「编码后整条地址的长度」限长，
+# 而不是按字数——按字数算出来的上限对中文和英文会差一个数量级。
+CHAT_PROMPT_MAX = 4000   # 编码前先砍到这么多字；真正的闸门是下面那条
+CHAT_URL_MAX = 6000      # 整条地址的上限。nginx 默认只给请求行 8KB，这里留足余量
+
+
+def clean_chat_prompt(value):
+    """送进聊天的问题：保留换行，去掉其余控制字符，掐掉首尾空白并限长。"""
+    if not isinstance(value, str):
+        return ""
+    text = value.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+    text = re.sub(r"[\x00-\x09\x0b-\x1f\x7f]", "", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()[:CHAT_PROMPT_MAX]
+
+
+def chat_target_url(base, prompt="", ticket=""):
+    """iframe / 新标签页要打开的地址。返回 (地址, 真正带过去的问题, 是否被截断)。
+
+    没有问题时保持老行为：有票据就 /auth#hub_ticket=…，没有就首页。
+    有问题而地址放不下时截断到放得下为止，并在末尾留一个省略号——
+    宁可少带几个字，也不发一个被反代截断成半截的地址。
+    """
+    fragment = ("#hub_ticket=" + ticket) if ticket else ""
+    plain = (base + "/auth" + fragment) if ticket else (base + "/")
+
+    def build(text):
+        return base + "/auth?redirect=" + quote("/?q=" + quote(text, safe=""), safe="") + fragment
+
+    if not prompt:
+        return plain, "", False
+    url = build(prompt)
+    if len(url) <= CHAT_URL_MAX:
+        return url, prompt, False
+    low, high = 0, len(prompt)
+    while low < high:                     # 最长的、放得下的前缀
+        mid = (low + high + 1) // 2
+        if len(build(prompt[:mid] + "\u2026")) <= CHAT_URL_MAX:
+            low = mid
+        else:
+            high = mid - 1
+    if not low:
+        return plain, "", True            # 域名长到连一个字都放不下：宁可不带问题
+    text = prompt[:low] + "\u2026"
+    return build(text), text, True
+
+
 def request_public_origin():
     """本站在浏览器眼里的源。优先显式配置，其次浏览器自己填的 Origin（页面脚本改不了），最后按反代头拼。"""
     if PUBLIC_ORIGIN:
@@ -1735,6 +1789,279 @@ def start_chat_handshake():
     没配就等第一个管理员打开标签页时再握（那时从请求里取）。"""
     if PUBLIC_ORIGIN:
         ensure_chat_handshake(PUBLIC_ORIGIN)
+
+
+# =========================
+# 笔记（WebObsidian）
+# =========================
+#
+# 单向、窄通道：本站往 Vault 里写「速记」和一篇待办镜像，并替已解锁的管理员搜笔记。
+# 走的是 WebObsidian 自带的 Agent API（/api/v1，API key + scope + 每 key 限流），
+# 不是 iframe——WebObsidian 的 helmet 把 frame-ancestors 设成了 'none'，嵌不进来。
+#
+#   HUB_VAULT_URL       WebObsidian 的完整源（https://host:port）。留空 = 整个功能不存在。
+#   HUB_VAULT_API_KEY   那边「设置 → API Keys」生成的 key。只进请求头，不入库、不下发前端、不进地址。
+#   HUB_VAULT_INBOX     收件箱文件夹，默认「收件箱」。本站**只**往这个文件夹底下写。
+#   HUB_VAULT_TIMEOUT   出站超时秒数，默认 5。跨机一次冷调用约 0.6 秒，gunicorn 只有 8 个线程，
+#                       所以宁可超时也不能挂住一个工作线程。
+#   HUB_VAULT_TODO_MIRROR  置 1 时，待办每次变动都在后台重写一遍镜像（默认只在点按钮时同步）。
+#
+# 为什么写入只许一个文件夹：给本站一把 write key 就等于「攻破本站的管理密码 = 能写整个 Vault」。
+# 路径由后端自己拼（日期 / 固定文件名），前端连参数都递不进来；vault_writable_path() 是最后一道闸。
+# 部署前请先在 WebObsidian 打开 git 的自动提交，否则误写没有版本可回滚。
+VAULT_API_KEY = os.environ.get("HUB_VAULT_API_KEY", "").strip()
+VAULT_TODO_NOTE = "待办.md"      # 收件箱里的镜像文件名，写死在代码里
+VAULT_CAPTURE_MAX = 4000         # 一条速记的字数上限
+VAULT_SEARCH_LIMIT = 8           # 一次最多回几条搜索结果
+VAULT_RESPONSE_MAX = 256 * 1024  # 读这么多字节就够了，别把整个 Vault 拉进内存
+VAULT_PATH_MAX = 400
+
+# 一段路径：不许有斜杠、反斜杠和控制字符，也不许太长。
+_VAULT_SEGMENT_RE = re.compile(r"^[^\x00-\x1f\x7f/\\]{1,80}$")
+# 速记的来源：只认这张表里的词，别的一律不写进笔记（来源是要出现在正文里的）。
+_VAULT_SOURCES = {
+    "memo": "便签", "todo": "待办", "link": "收藏",
+    "search": "搜索", "chat": "AI 聊天", "note": "随手记",
+}
+_VAULT_ERRORS = {
+    0: "连不上笔记服务（WebObsidian）。",
+    401: "笔记服务不认这把 API key（检查 HUB_VAULT_API_KEY）。",
+    403: "这把 API key 缺少所需的 scope（写要 write，搜要 search）。",
+    404: "笔记服务没有这个接口（版本太旧？）。",
+    429: "笔记服务正在限流，稍后再试。",
+}
+
+
+def _parse_vault_url(raw):
+    if not str(raw or "").strip():
+        return ""
+    origin = _clean_origin(raw)
+    if not origin:
+        sys.stderr.write("[gyqd-web] 警告：HUB_VAULT_URL 不是完整的源"
+                         "（形如 https://host:port），已忽略，笔记功能不会出现\n")
+    return origin
+
+
+def _parse_vault_folder(raw):
+    """收件箱文件夹：一段或多段，每段都不许是 . / .. / 以点开头 / 带斜杠或控制字符。"""
+    folder = str(raw or "").strip().replace("\\", "/").strip("/")
+    if not folder or len(folder) > 120:
+        return ""
+    parts = folder.split("/")
+    if any(not _VAULT_SEGMENT_RE.match(p) or p.startswith(".") for p in parts):
+        sys.stderr.write("[gyqd-web] 警告：HUB_VAULT_INBOX 不是一个干净的"
+                         "文件夹名，已忽略\n")
+        return ""
+    return "/".join(parts)
+
+
+def _parse_vault_timeout(raw):
+    try:
+        return max(1.0, min(float(str(raw or "5").strip() or "5"), 15.0))
+    except ValueError:
+        return 5.0
+
+
+VAULT_URL = _parse_vault_url(os.environ.get("HUB_VAULT_URL", ""))
+VAULT_INBOX = _parse_vault_folder(os.environ.get("HUB_VAULT_INBOX", "收件箱"))
+VAULT_TIMEOUT = _parse_vault_timeout(os.environ.get("HUB_VAULT_TIMEOUT", "5"))
+VAULT_TODO_MIRROR = os.environ.get("HUB_VAULT_TODO_MIRROR", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def vault_enabled():
+    return bool(VAULT_URL and VAULT_API_KEY and VAULT_INBOX)
+
+
+def clean_vault_path(value):
+    """任意一篇笔记的 Vault 相对路径（搜索结果走这里）。不合法回空串。
+
+    不许穿越、不许绝对路径、不许点开头的目录（.git / .trash / .obsidian）。
+    """
+    if not isinstance(value, str):
+        return ""
+    text = value.strip().replace("\\", "/").lstrip("/")
+    if not text or len(text) > VAULT_PATH_MAX:
+        return ""
+    parts = text.split("/")
+    if any(not _VAULT_SEGMENT_RE.match(p) or p.startswith(".") for p in parts):
+        return ""
+    return text
+
+
+def vault_writable_path(value):
+    """本站允许写的路径 = 收件箱底下的一篇笔记。别的一律回空串。
+
+    这是最后一道闸：写入路径本来就由后端自己拼，前端递不进来，但拼错一次的代价是
+    「管理密码 = 整个 Vault 的写权限」，所以还是每次都验一遍。
+    """
+    path = clean_vault_path(value)
+    if not path or not VAULT_INBOX:
+        return ""
+    prefix = VAULT_INBOX + "/"
+    return path if path.startswith(prefix) and len(path) > len(prefix) else ""
+
+
+def vault_note_path(name):
+    """收件箱里的一篇笔记。name 由后端自己给（日期 / 固定文件名），绝不来自请求。"""
+    return vault_writable_path(VAULT_INBOX + "/" + str(name))
+
+
+def vault_capture_note():
+    return vault_note_path(_today_str() + ".md")
+
+
+def vault_todo_note():
+    return vault_note_path(VAULT_TODO_NOTE)
+
+
+def vault_note_url(path):
+    """在 WebObsidian 里打开这篇笔记的深链（web/src/lib/urlsync.ts 定的形状）。"""
+    if not VAULT_URL or not path:
+        return ""
+    return VAULT_URL + "/note/" + "/".join(quote(part, safe="") for part in path.split("/"))
+
+
+def _vault_error(status):
+    return _VAULT_ERRORS.get(status) or "笔记服务返回 HTTP {0}。".format(status)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不跟重定向。跟了就等于把 X-API-Key 原样递给 Location 指的那台机器——
+    笔记服务是自己的，但一条被改坏的反代规则不该让这把 key 跑到别人家去。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _vault_opener():
+    """每次现建一个不跟重定向的 opener。开销可以忽略，省得把状态挂在模块上。"""
+    return urllib.request.build_opener(_NoRedirect)
+
+
+def vault_call(method, path, payload=None, params=""):
+    """向 Agent API 发一次请求。返回 (状态码, 字典)；连不上回 (0, {})。
+
+    key 只进请求头：地址会进对面的访问日志，请求头不会。超时是硬性的——
+    这台机器上跑的是 gunicorn 的 8 个线程，一次卡死的出站调用就少一个能干活的线程。
+    """
+    # safe="/%" 是幂等的：已经 percent-encode 过的路径原样通过，没编过的（中文、空格）补上。
+    # 不做这一步，一个带中文的路径会让 urllib 直接抛 UnicodeEncodeError。
+    url = VAULT_URL + "/api/v1" + quote(path, safe="/%") + (("?" + params) if params else "")
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    headers = {"X-API-Key": VAULT_API_KEY, "Accept": "application/json"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with _vault_opener().open(req, timeout=VAULT_TIMEOUT) as resp:
+            status, raw = resp.status, resp.read(VAULT_RESPONSE_MAX)
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read(VAULT_RESPONSE_MAX)
+    except Exception as exc:  # noqa: BLE001 - 连不上、超时、证书不对：都只是「这次没写成」
+        sys.stderr.write("[gyqd-web] 笔记服务调用失败：{0} {1}\n"
+                         .format(method, type(exc).__name__))
+        return 0, {}
+    try:
+        body = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        body = {}
+    return status, body if isinstance(body, dict) else {}
+
+
+def vault_append(path, text):
+    """往收件箱里的一篇笔记追加一段（那边的 PATCH 语义就是「追加，没有就新建」）。
+
+    返回 (成功?, 出错时给人看的一句话)。
+    """
+    safe = vault_writable_path(path)
+    if not safe:
+        return False, "笔记路径不合法"
+    status, _ = vault_call("PATCH", "/notes/" + quote(safe, safe="/"), {"append": text})
+    return (True, "") if 200 <= status < 300 else (False, _vault_error(status))
+
+
+def vault_overwrite(path, text):
+    """整篇覆盖。只用于「本站是真相源」的镜像——对别的东西用这个会吃掉人家的改动。"""
+    safe = vault_writable_path(path)
+    if not safe:
+        return False, "笔记路径不合法"
+    status, _ = vault_call("PUT", "/notes/" + quote(safe, safe="/"), {"content": text})
+    return (True, "") if 200 <= status < 300 else (False, _vault_error(status))
+
+
+def vault_capture_block(text, source=""):
+    """一条速记在笔记里长什么样：时间 + 来源做标题行，正文整体缩进成它的子块。
+
+    正文原样保留（只做缩进），不做 Markdown 转义：写进去的是自己的笔记，
+    保留原格式比防住一个根本不存在的「注入」有用。
+    """
+    label = _VAULT_SOURCES.get(source, "")
+    head = "- **{0}**{1}".format(datetime.datetime.now().strftime("%H:%M"),
+                                 (" · " + label) if label else "")
+    body = "\n".join(("  " + line).rstrip() for line in str(text).split("\n"))
+    return "\n" + head + "\n" + body + "\n"
+
+
+def _vault_one_line(text):
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def vault_todo_markdown(items):
+    """待办镜像的**全部**内容：本站是真相源，每次同步整篇覆盖。"""
+    pending = [t for t in items if not t.get("done")]
+    done = [t for t in items if t.get("done")]
+    lines = [
+        "# 待办（来自 Bookmark Hub）",
+        "",
+        "> 这篇笔记由 Bookmark Hub 单向写入，每次同步整篇覆盖。"
+        "在这里改动不会回到 Hub，下一次同步就没了。",
+        "> 最近同步：" + _now_str(),
+        "",
+        "## 未完成（{0}）".format(len(pending)),
+        "",
+    ]
+    lines.extend("- [ ] " + _vault_one_line(t.get("text")) for t in pending)
+    if not pending:
+        lines.append("（空）")
+    lines.extend(["", "## 已完成（{0}）".format(len(done)), ""])
+    lines.extend("- [x] " + _vault_one_line(t.get("text")) for t in done)
+    if not done:
+        lines.append("（空）")
+    return "\n".join(lines) + "\n"
+
+
+def mirror_todos_later(items):
+    """待办变了就在后台把镜像重写一遍（HUB_VAULT_TODO_MIRROR=1 才开）。
+
+    丢后台线程、不等结果、失败只进日志：Hub 才是真相源，笔记那边差一次不影响任何事，
+    但一个卡住的出站调用会让「加一条待办」也跟着卡住。返回那个线程（测试要 join）。
+    """
+    if not (VAULT_TODO_MIRROR and vault_enabled()):
+        return None
+    snapshot = [dict(t) for t in items]
+
+    def run():
+        ok, err = vault_overwrite(vault_todo_note(), vault_todo_markdown(snapshot))
+        if not ok:
+            sys.stderr.write("[gyqd-web] 待办镜像写入失败：{0}\n".format(err))
+
+    thread = threading.Thread(target=run, name="gyqd-vault-mirror", daemon=True)
+    thread.start()
+    return thread
+
+
+def log_vault_state():
+    """启动时说一句这台部署会不会碰 Vault。不含任何密钥材料。"""
+    if not VAULT_URL:
+        return
+    if not VAULT_API_KEY:
+        sys.stderr.write("[gyqd-web] 笔记：配了 HUB_VAULT_URL 但没配 "
+                         "HUB_VAULT_API_KEY，功能仍然关着\n")
+        return
+    sys.stderr.write("[gyqd-web] 笔记：{0}，只写 {1}/，超时 {2}s，"
+                     "待办镜像 {3}\n"
+                     .format(VAULT_URL, VAULT_INBOX, VAULT_TIMEOUT,
+                             "自动" if VAULT_TODO_MIRROR else "手动"))
 
 
 # =========================
@@ -2387,8 +2714,8 @@ def api_configs():
             "wallpaper": {"custom": False, "v": "", "lum": None},
             "todos": [], "todos_locked": True,
             "deck": _coerce_deck({}), "deck_locked": True, "deck_error": "",
-            # 未解锁：连「有没有 AI 聊天、它在哪」都不说。
-            "chat": None,
+            # 未解锁：连「有没有 AI 聊天 / 笔记服务、它们在哪」都不说。
+            "chat": None, "vault": None,
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -2457,6 +2784,8 @@ def api_configs():
         # 「AI 聊天」标签页：HaloWebUI 的地址只给已解锁的人（没设管理密码时人人都算已解锁）。
         # 免登录票据另走 POST /api/chat/ticket，这里只有地址。
         "chat": {"url": CHAT_URL} if chat_enabled() and unlocked else None,
+        # 笔记服务：地址和收件箱名只给已解锁的人；API key 永远不下发。
+        "vault": {"url": VAULT_URL, "inbox": VAULT_INBOX} if vault_enabled() and unlocked else None,
     })
 
 
@@ -4285,6 +4614,7 @@ def _todos_call(change):
         return jsonify({"ok": False, "error": str(exc)}), 404
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+    mirror_todos_later(items)   # 开了镜像才会做，且只丢一个后台线程，不影响这次响应
     return jsonify({"ok": True, "todos": items})
 
 
@@ -4867,12 +5197,18 @@ _CHAT_SSO_HINTS = {
 @app.post("/api/chat/ticket")
 def api_chat_ticket():
     """「AI 聊天」标签页的 iframe 地址。只给已解锁的管理员；每次调用都是一张新的一次性凭据，
-    所以是 POST、不可缓存。签不了票时照样回 HaloWebUI 的普通地址和原因——标签页不能因此打不开。"""
+    所以是 POST、不可缓存。签不了票时照样回 HaloWebUI 的普通地址和原因——标签页不能因此打不开。
+
+    可选的 {"prompt": "..."} 会被编进地址，对面落地就自动发出去（见 chat_target_url）。
+    问题过长时后端自己截断并在回包里说明，前端据此提示，不会发出一条被反代截断的地址。
+    """
     guard = _guard_admin()
     if guard:
         return guard
     if not chat_enabled():
         return jsonify({"ok": False, "error": "接口不存在"}), 404
+    payload = request.get_json(silent=True)
+    prompt = clean_chat_prompt(payload.get("prompt")) if isinstance(payload, dict) else ""
     issuer = request_public_origin()
     blocker = chat_sso_blocker() or ("" if issuer else "issuer_unknown")
     handshake = ensure_chat_handshake(issuer)
@@ -4881,16 +5217,107 @@ def api_chat_ticket():
     framed_ok = None   # 对面的 frame-ancestors 里有没有本站；不知道就是 None
     if isinstance(handshake["frame_ancestors"], list) and issuer:
         framed_ok = issuer in handshake["frame_ancestors"]
-    url = CHAT_URL + "/"
-    if not blocker:
-        url = CHAT_URL + "/auth#hub_ticket=" + issue_chat_ticket(CHAT_PURPOSE_ENTER, issuer, CHAT_URL)
+    ticket = "" if blocker else issue_chat_ticket(CHAT_PURPOSE_ENTER, issuer, CHAT_URL)
+    url, sent, truncated = chat_target_url(CHAT_URL, prompt, ticket)
     resp = jsonify({
         "ok": True, "url": url, "sso": not blocker,
         "reason": blocker, "hint": _CHAT_SSO_HINTS.get(blocker, ""),
         "framed_ok": framed_ok,
+        "prompt": sent, "prompt_truncated": truncated,
     })
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+
+# =========================
+# 路由：笔记（WebObsidian）
+# =========================
+#
+# 三个接口都要管理权限，且只在部署配置了笔记服务时存在（否则 404）。
+# 写入路径一律由后端自己拼，请求体里没有、也不会有「路径」这个参数。
+
+def _guard_vault():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    if not vault_enabled():
+        return jsonify({"ok": False, "error": "没有配置笔记服务"}), 404
+    return None
+
+
+@app.post("/api/vault/capture")
+def api_vault_capture():
+    """速记进收件箱：追加到「收件箱/<今天>.md」。路径后端定，前端只给正文和来源。"""
+    guard = _guard_vault()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    text = clean_chat_prompt(payload.get("text"))[:VAULT_CAPTURE_MAX]
+    if not text:
+        return jsonify({"ok": False, "error": "内容不能为空"}), 400
+    source = str(payload.get("source") or "").strip().lower()
+    path = vault_capture_note()
+    if not path:
+        return jsonify({"ok": False, "error": "收件箱配置不合法"}), 500
+    ok, err = vault_append(path, vault_capture_block(text, source if source in _VAULT_SOURCES else ""))
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 502
+    return jsonify({"ok": True, "path": path, "url": vault_note_url(path)})
+
+
+@app.get("/api/vault/search")
+def api_vault_search():
+    """在 Vault 里搜笔记。只读，跨机一次约半秒——所以前端是「回车才搜」，不是边打边搜。"""
+    guard = _guard_vault()
+    if guard:
+        return guard
+    query = str(request.args.get("q") or "").strip()[:200]
+    if not query:
+        return jsonify({"ok": True, "hits": []})
+    try:
+        limit = int(request.args.get("limit") or VAULT_SEARCH_LIMIT)
+    except (TypeError, ValueError):
+        limit = VAULT_SEARCH_LIMIT
+    limit = max(1, min(limit, VAULT_SEARCH_LIMIT))
+    status, body = vault_call("GET", "/search", None, urlencode({"q": query, "limit": limit}))
+    if not 200 <= status < 300:
+        return jsonify({"ok": False, "error": _vault_error(status)}), 502
+    hits = []
+    raw_hits = body.get("hits") if isinstance(body.get("hits"), list) else []
+    for hit in raw_hits[:limit]:
+        if not isinstance(hit, dict):
+            continue
+        path = clean_vault_path(hit.get("path"))
+        if not path:
+            continue
+        hits.append({
+            "path": path,
+            "title": str(hit.get("title") or path)[:200],
+            "snippet": _vault_one_line(hit.get("snippet"))[:200],
+            "url": vault_note_url(path),
+        })
+    return jsonify({"ok": True, "hits": hits})
+
+
+@app.post("/api/vault/todos/sync")
+def api_vault_todos_sync():
+    """把待办整篇镜像进「收件箱/待办.md」。单向：Hub 是真相源，笔记那边的改动不会回来。"""
+    guard = _guard_vault()
+    if guard:
+        return guard
+    try:
+        items = read_todos()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    path = vault_todo_note()
+    if not path:
+        return jsonify({"ok": False, "error": "收件箱配置不合法"}), 500
+    ok, err = vault_overwrite(path, vault_todo_markdown(items))
+    if not ok:
+        return jsonify({"ok": False, "error": err}), 502
+    return jsonify({"ok": True, "path": path, "url": vault_note_url(path), "count": len(items)})
 
 
 # =========================
@@ -5079,6 +5506,8 @@ def start_scheduler():
 start_scheduler()
 # 「AI 聊天」的启动握手：后台线程，不阻塞启动，失败也只是记一笔。
 start_chat_handshake()
+# 笔记服务：启动时只说一句配没配，不发任何请求。
+log_vault_state()
 
 
 if __name__ == "__main__":

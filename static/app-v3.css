@@ -1679,6 +1679,20 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 .memo-text::placeholder { color: var(--text-3); }
 .memo-text:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 
+/* ---------- 发送到 AI 聊天 / 存入笔记 ---------- */
+/* 一个编辑框，两个去处。故意不加自己的断点：内容靠 flex 换行，窄屏下按钮自己排成两行。 */
+.ask-form { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.ask-text { min-height: 152px; }
+.ask-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; min-height: 16px; color: var(--text-3); font-size: 12px; }
+.ask-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.ask-hint { flex: 1 1 auto; min-width: 0; color: var(--text-2); text-align: right; }
+.ask-form .modal-actions { flex-wrap: wrap; margin-top: 4px; }
+
+/* 首页搜索下拉里的笔记结果：和收藏行同一套骨架，只是右边的角标写「笔记」。 */
+.home-search-row.is-note .omni-sub { font-variant-numeric: normal; }
+.home-search-state { display: flex; align-items: center; gap: 10px; padding: 9px 12px; color: var(--text-3); font-size: 12.5px; }
+
+
 /* ---------- 到期提醒 ---------- */
 .expiry-list { margin: 0 -6px; padding: 0; list-style: none; }
 .expiry-item { display: flex; align-items: baseline; gap: 10px; padding: 6px; border-radius: 10px; }

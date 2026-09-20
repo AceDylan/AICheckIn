@@ -427,7 +427,12 @@ class PageShapeTest(unittest.TestCase):
         self.assertIn("data.url.startsWith(base + '/')) target = data.url;", self.html)
 
     def test_the_ticket_travels_in_the_fragment(self):
-        self.assertIn('CHAT_URL + "/auth#hub_ticket=" + issue_chat_ticket(', _read("app.py"))
+        # 票据只许待在 # 后面：查询串会进反代日志，也会跟着 Referer 走出去。
+        # 带不带问题都一样——带问题的那条多了 ?redirect=，票据还是在 #。
+        for prompt in ("", "帮我看看这个"):
+            url, _, _ = app_module.chat_target_url(HALO, prompt, "TICKET")
+            self.assertTrue(url.endswith("#hub_ticket=TICKET"), url)
+            self.assertNotIn("hub_ticket", url.split("#", 1)[0])
 
     def test_nothing_is_left_of_being_framed_ourselves(self):
         for token in ("data-embedded", "EMBEDDED", "/embed/enter", "consumeSsoNotice", "Sec-Fetch-Dest"):

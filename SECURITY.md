@@ -137,6 +137,32 @@
 - **持有这个密钥 + 本站管理密码的人就是 HaloWebUI 的管理员**。它的保管等级与 `GYQD_ADMIN_PASSWORD` 相同；
   怀疑泄露就两边同时换掉。
 
+### 笔记（WebObsidian）：单向、只许写一个文件夹（可选）
+
+本站可以把「速记」和一篇待办镜像写进自己的 Obsidian Vault，并替已解锁的管理员搜笔记。
+走的是 WebObsidian 自带的 Agent API（`/api/v1`，API key + scope + 每 key 限流），**不是 iframe**——
+对面的 helmet 把 `frame-ancestors` 设成了 `'none'`，本来也嵌不进来。
+
+- **只有三个接口，都要管理权限**：`POST /api/vault/capture`（速记进收件箱）、
+  `GET /api/vault/search`（搜笔记，只读）、`POST /api/vault/todos/sync`（待办整篇镜像）。
+  没配 `HUB_VAULT_URL` / `HUB_VAULT_API_KEY` 时三个都 404，页面上也没有入口。
+- **写入路径永远由后端自己拼**：速记进 `<收件箱>/<今天>.md`，待办镜像进 `<收件箱>/待办.md`。
+  请求体里没有、也不会有「路径」这个参数；`vault_writable_path()` 是最后一道闸，
+  只放行收件箱前缀下、不含 `..`、不含反斜杠与控制字符、不含点开头目录（`.git` / `.trash`）的相对路径。
+- **为什么要这么小心**：给本站一把 `write` key 就等于「攻破本站的管理密码 = 能写整个 Vault」。
+  把写入面缩到一个文件夹，最坏情况是收件箱被塞垃圾，而不是知识库被改写。
+- **上线前先在 WebObsidian 打开 git 的自动提交**（`git.enabled` + `autoCommitOnSave`），
+  否则误写没有版本可回滚。
+- **方向单向**：待办镜像是「本站是真相源，整篇覆盖」。在笔记里改这篇，下一次同步就没了——
+  笔记正文里也这么写着。不做双向同步：Agent API 的 `PUT` 没有条件写（没有 If-Match），双向必丢写。
+- **搜索是「回车才搜」**，不是边打边搜：跨机一次冷调用约 0.6 秒，而 gunicorn 只有 8 个线程。
+  所有出站调用都带 `HUB_VAULT_TIMEOUT`（默认 5 秒）的硬超时。
+- **key 的保管等级与 `GYQD_ADMIN_PASSWORD` 相同**：只写进部署机的 `.env`（0600），怀疑泄露就在
+  WebObsidian 里吊销重建。对面的访问日志会记下被读写的笔记路径（`[api] <key 名> PATCH /notes/…`）。
+- 反代前置时，Agent API 要能绕过网页版的 Basic Auth：给 `/api/v1/` 单独开一个
+  `location`（`auth_basic off;`），并且**不要**在那里 `include` 受信代理头的片段——
+  那个头本身就等于「不用 key 也算已登录」。
+
 ### 实现要点
 
 - `/api/configs` 是首页唯一的开放读接口，走 `public_bookmark` / `public_config` 脱敏：
@@ -222,6 +248,11 @@
 | `HUB_CHAT_URL` | 空 | 「AI 聊天」标签页里嵌的 HaloWebUI（完整的源，不支持通配符）。空 = 没有这个标签页 |
 | `HUB_TRUSTED_EMBED_ADMIN_SECRET` | 空 | 与 HaloWebUI 共享的密钥，≥ 32 字符，用来替已解锁的管理员签票免登录。部署时现场生成，**绝不入库**。空 = 框里自己登录 |
 | `HUB_PUBLIC_ORIGIN` | 空 | 本站对外的源，写进票据的签发方。通常不用配（取浏览器的 `Origin`） |
+| `HUB_VAULT_URL` | 空 | 笔记服务（WebObsidian）的完整源。空 = 笔记相关的三个接口全部 404，页面上也没有入口 |
+| `HUB_VAULT_API_KEY` | 空 | 笔记服务的 API key。只进请求头，**绝不入库、不下发前端、不进地址**。写要 `write`，搜要 `search` |
+| `HUB_VAULT_INBOX` | `收件箱` | 收件箱文件夹名。本站**只**往这个文件夹底下写；不合法的值会被忽略（= 功能关着） |
+| `HUB_VAULT_TIMEOUT` | `5` | 调用笔记服务的超时秒数，夹在 1..15 之间 |
+| `HUB_VAULT_TODO_MIRROR` | `0` | 设 `1` 时待办每次变动都在后台重写一遍镜像；默认只在点「同步到笔记」时写 |
 
 ---
 

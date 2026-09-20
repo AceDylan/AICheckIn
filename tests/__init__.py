@@ -15,6 +15,9 @@ os.environ.pop("GYQD_PRIVATE", None)
 os.environ.pop("HUB_CHAT_URL", None)                    # 宿主机的 .env 不该影响用例：没有 AI 聊天 / 密钥是每个用例的起点
 os.environ.pop("HUB_TRUSTED_EMBED_ADMIN_SECRET", None)
 os.environ.pop("HUB_PUBLIC_ORIGIN", None)
+for _name in ("HUB_VAULT_URL", "HUB_VAULT_API_KEY", "HUB_VAULT_INBOX",
+              "HUB_VAULT_TIMEOUT", "HUB_VAULT_TODO_MIRROR"):
+    os.environ.pop(_name, None)                         # 同理：笔记服务默认「没配」，要用的用例自己设模块全局
 os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
 
 import app as _app_module  # noqa: E402  必须排在上面几行环境变量之后

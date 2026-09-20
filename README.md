@@ -249,8 +249,85 @@ HaloWebUI 验签通过后签发它自己的（较短的）会话。签不了票�
 只是要在框里自己登录，页面顶部会说明原因。票据格式、密钥保管与「哪些情况绝不签票」见 [SECURITY.md](SECURITY.md)。
 
 收藏库现在**默认登录后才出现**（设了管理密码即私密模式；确实要把首页当公开导航页给路人看的，显式设 `HUB_PUBLIC_LIBRARY=1`）。
-Service Worker 的缓存版本随这次改动 +1（v17）。
 升级后第一次在 HaloWebUI 里打开若仍被浏览器拒绝，单独打开本站刷新一次即可。
+
+### 发送到 AI 聊天
+
+配好上面两项之后，站里四个地方可以把一段话直接送进聊天，**都会先弹一个可编辑的框**——
+搜索框里那半句话、一条待办、一整篇便签，原样丢给模型往往不是想问的问题：
+
+| 在哪 | 按钮 | 带过去的是 |
+|---|---|---|
+| 首页搜索框 | 下拉里的「用 AI 回答「…」」 | 你输入的那几个字 |
+| 收藏卡片的「···」 | 问 AI | 名称、网址、备注、标签 + 一句提问 |
+| 待办每一条 | 让 AI 拆解 | 这条待办 + 「拆成可执行的几步」 |
+| 便签组件的标题栏 | 发给 AI | 便签全文 |
+
+确认后切到「AI 聊天」标签页，HaloWebUI 落地就自动把问题发出去（地址形如
+`<HUB_CHAT_URL>/auth?redirect=%2F%3Fq%3D<问题>#hub_ticket=<票据>`）。
+地址有硬上限（6000 字符），超了后端自己截断并在页面上说一声——一个汉字编码两次要 15 个字符，
+一篇长便签足以撑爆一条 HTTP 请求行。Ctrl / ⌘ + Enter 直接发。
+
+---
+
+## 笔记（WebObsidian）：速记进收件箱 / 搜笔记 / 待办镜像（可选）
+
+接上自己的 [WebObsidian](https://github.com/AceDylan/webobsidian) 之后：
+
+- 上面那个编辑框多一个「**存入笔记**」——追加到 `<收件箱>/<今天>.md`，带时间和来源；
+- 首页搜索下拉多一行「**在笔记里搜索「…」**」，选中才真的去搜（**不是边打边搜**：跨机一次约半秒），
+  结果点开就是 WebObsidian 的 `/note/<路径>` 深链；
+- 待办组件标题栏多一个「**同步到笔记**」——把整份待办镜像成 `<收件箱>/待办.md`。
+  **单向**：本站是真相源，每次整篇覆盖，在笔记里改这一篇下次同步就没了。
+
+```bash
+# .env
+HUB_VAULT_URL=https://host.acedylan.us:3003   # 完整的源。留空 = 没有这些功能，接口一律 404
+HUB_VAULT_API_KEY=wok_...                     # 对面「设置 → API Keys」生成，只给 write + search
+HUB_VAULT_INBOX=收件箱                         # 本站只往这个文件夹底下写
+HUB_VAULT_TIMEOUT=5                           # 出站超时（1..15 秒）
+HUB_VAULT_TODO_MIRROR=0                       # 1 = 待办每次变动都在后台重写镜像
+```
+
+WebObsidian 那边要做的三件事：
+
+1. **建 key**：设置 → API Keys，只勾 `write` 和 `search`（不需要 `read`）。原始 key 只显示一次。
+2. **打开 git 自动提交**（设置 → Git：`enabled` + `autoCommitOnSave`）。
+   **先做这一步再把 key 填进来**——否则误写进 Vault 的东西没有版本可回滚。
+3. **反代放行 Agent API**：网页版若挂着 Basic Auth，`/api/v1/` 要单独开一个 `location`：
+
+   ```nginx
+   location /api/v1/ {
+       auth_basic off;               # Agent API 用自己的 X-API-Key 认证
+       proxy_pass http://127.0.0.1:18787;
+       proxy_http_version 1.1;
+       proxy_set_header Host $http_host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto https;
+       # 千万别 include 受信代理头的片段：那个头本身就等于「不用 key 也算已登录」。
+       # allow <Hub 的公网 IP>; deny all;   # 建议再加一层来源白名单
+   }
+   ```
+
+   `nginx -t && systemctl reload nginx`，然后验证：
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}
+' -H "X-API-Key: $KEY" https://<笔记地址>/api/v1/health   # 200
+   curl -s -o /dev/null -w '%{http_code}
+' https://<笔记地址>/api/v1/health                        # 401
+   ```
+
+本站只有三个笔记接口，都要管理权限、都在没配置时 404：`POST /api/vault/capture`、
+`GET /api/vault/search`、`POST /api/vault/todos/sync`。**写入路径永远由后端自己拼**，
+请求体里没有「路径」这个参数，最后还要过一道「只许收件箱前缀」的闸。理由与威胁模型见
+[SECURITY.md](SECURITY.md)。
+
+> 想让 HaloWebUI 里的 AI **自己**去查笔记，用 HaloWebUI 仓库里的
+> `integrations/webobsidian-tool/`（工作空间 → 工具，只读，另配一把 `read` + `search` 的 key）。
+
+Service Worker 的缓存版本随这两次改动升到 v18。
 
 ---
 

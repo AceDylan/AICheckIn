@@ -32,6 +32,13 @@ services:
       HUB_CHAT_URL: "${HUB_CHAT_URL:-}"
       HUB_TRUSTED_EMBED_ADMIN_SECRET: "${HUB_TRUSTED_EMBED_ADMIN_SECRET:-}"
       HUB_PUBLIC_ORIGIN: "${HUB_PUBLIC_ORIGIN:-}"
+      # 笔记（WebObsidian，可选）：地址 + API key 放 .env。留空 = 没有这些功能。
+      # key 只进请求头，绝不要写进本文件——它是要进 git 的。
+      HUB_VAULT_URL: "${HUB_VAULT_URL:-}"
+      HUB_VAULT_API_KEY: "${HUB_VAULT_API_KEY:-}"
+      HUB_VAULT_INBOX: "${HUB_VAULT_INBOX:-收件箱}"
+      HUB_VAULT_TIMEOUT: "${HUB_VAULT_TIMEOUT:-5}"
+      HUB_VAULT_TODO_MIRROR: "${HUB_VAULT_TODO_MIRROR:-0}"
     volumes:
       # 挂载可写数据目录：存放 config.json 与 history.json，支持页面在线增删改。
       # 首次使用：mkdir -p data && cp config.example.json data/config.json

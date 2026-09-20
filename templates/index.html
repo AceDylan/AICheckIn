@@ -188,6 +188,7 @@
                     <div class="deck-head todo-head">
                       <h2 class="deck-title todo-title" id="todoTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/></svg>待办</h2>
                       <span class="deck-meta todo-count" id="todoCount" aria-live="polite"></span>
+                      <button type="button" class="deck-icon-btn" id="todoVaultSync" hidden title="把整份待办镜像进笔记的收件箱（单向：这里是真相源）" aria-label="同步待办到笔记"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="m9 11 2 2 4-4"/></svg></button>
                       <button type="button" class="deck-icon-btn" data-deck-menu="todo" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="待办：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
                       <button type="button" class="deck-icon-btn deck-fold todo-icon-btn" id="todoCollapse" data-deck-fold="todo" aria-expanded="true" aria-controls="todoBody" title="收起待办"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
                     </div>
@@ -241,6 +242,7 @@
                     <div class="deck-head">
                       <h2 class="deck-title" id="deckMemoTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 20v-5a1 1 0 0 1 1-1h5M8 9h8M8 13h4"/></svg>便签</h2>
                       <span class="deck-meta" id="deckMemoMeta"></span>
+                      <button type="button" class="deck-icon-btn" id="memoAsk" hidden title="把便签发给 AI（可以先改）" aria-label="把便签发给 AI"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-5 4z"/></svg></button>
                       <button type="button" class="deck-icon-btn" data-deck-menu="memo" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="便签：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
                       <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="memo" aria-expanded="true" aria-controls="deckMemoBody" title="收起便签"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
                     </div>
@@ -592,6 +594,26 @@
       <p class="sr-only" id="deckSortHint">按上下方向键调整顺序。</p>
       <ul class="deck-picker" id="deckPicker" aria-label="全部组件"></ul>
       <div class="modal-actions"><button type="button" class="btn ghost sm" id="deckReset" title="回到「日历 + 待办」">恢复默认</button><span style="flex:1"></span><button type="button" class="btn sm" id="deckModalClose">完成</button></div>
+    </div>
+  </div>
+
+  <!-- 「发送到 AI 聊天 / 存入笔记」的编辑框。
+       送出去的东西先摆在这里让人改一遍：搜索框里那半句话、一条待办、一整篇便签，
+       原样丢给模型往往不是想问的问题。确认之后才跳转（跳过去就自动发出）。 -->
+  <div class="modal-mask" id="askModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+      <div class="modal-head"><div><h3 id="askTitle">发送到 AI 聊天</h3><div class="modal-sub" id="askSub">改好再发。发送后会切到「AI 聊天」标签页并自动提问。</div></div></div>
+      <form class="ask-form" id="askForm" action="#" autocomplete="off" novalidate>
+        <label class="sr-only" for="askText">要发送的内容</label>
+        <textarea class="memo-text ask-text" id="askText" name="ask" maxlength="4000" rows="7" autocomplete="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="想问点什么…"></textarea>
+        <div class="ask-foot"><span class="ask-count" id="askCount"></span><span class="ask-hint" id="askHint" role="status"></span></div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost sm" id="askVault" hidden title="追加到笔记的收件箱">存入笔记</button>
+          <span style="flex:1"></span>
+          <button type="button" class="btn ghost sm" id="askCancel">取消</button>
+          <button type="submit" class="btn sm" id="askSend">发送到 AI 聊天</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -1513,6 +1535,11 @@
       LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && currentViewName() !== 'bookmarks'); });
       const chatTab = document.querySelector('.tab[data-view="chat"]');
       if (chatTab) chatTab.hidden = !chatAvailable();
+      // 只在真有地方可送时才留入口：没接 AI 聊天 / 笔记服务（或已锁定）就整个收起来。
+      // 每一条待办上的「让 AI 拆解」同理（见 todoItemHtml）——那颗按钮会占掉一行 34px，
+      // 手机上足以把文字挤成两行、连带改变拖拽排序的落点，不能白占。
+      $('todoVaultSync').hidden = !vaultAvailable();
+      $('memoAsk').hidden = !askAvailable();
       if (!chatAvailable()) closeChat();   // 锁定 / 会话过期：框里的页面一并卸掉
       // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库；连收藏库也收起来了就去解锁面板。
       const here = currentViewName();
@@ -1524,7 +1551,7 @@
     // ===== AI 聊天 =====
     // 框里是自己的 HaloWebUI（地址来自部署的 HUB_CHAT_URL，随 /api/configs 只发给已解锁的人）。
     // 第一次点开才加载，之后切到别的标签页也不卸载——聊到一半去翻个收藏再回来，对话还在。
-    const CHAT = { src: '', busy: false };
+    const CHAT = { src: '', busy: false, queued: '' };
     const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
     function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
     function chatFrame() { return $('chatStage') ? $('chatStage').querySelector('iframe') : null; }
@@ -1539,8 +1566,12 @@
       if (frame) frame.remove();
       CHAT.src = '';
     }
+    // queued：从别处「发送到 AI 聊天」排在这里的一句话。带着它进来就换一张新的框，
+    // 哪怕框里已经有页面——那正是「问一个新问题」的意思。
     async function openChat(force) {
-      if (!chatAvailable() || CHAT.busy || (CHAT.src && !force)) return;
+      const prompt = CHAT.queued || '';
+      if (!chatAvailable() || CHAT.busy || (CHAT.src && !force && !prompt)) return;
+      CHAT.queued = '';
       const base = STATE.chat.url;
       CHAT.busy = true;
       try {
@@ -1550,10 +1581,16 @@
         let target = base + '/', note = ['', ''];
         try {
           // 每次都是一张新的一次性票据；签不了票（没配密钥、管理密码不合格……）时后端照样回普通地址和原因。
-          const resp = await fetch('/api/chat/ticket', { method: 'POST', headers: adminHeaders() });
+          const resp = await fetch('/api/chat/ticket', {
+            method: 'POST', headers: adminHeaders(),
+            body: JSON.stringify(prompt ? { prompt } : {}),
+          });
           const data = await resp.json();
           // 只认指向配置的那个源的地址，别的一概不往框里放。
           if (data.ok && typeof data.url === 'string' && data.url.startsWith(base + '/')) target = data.url;
+          // 地址装不下整段问题时后端会自己截断。这属于这一次发送的事，说一声就过去，
+          // 不做成顶部那条可以「不再提示」的提示条。
+          if (data.ok && data.prompt_truncated) toast('问题太长，已截断到地址放得下的长度', 'err');
           if (data.ok && data.framed_ok === false) note = ['framed', 'HaloWebUI 还没有允许本站嵌入它（它的 HUB_URL 要写成本站的地址）。下面若是空白，请先用「新标签页打开」。'];
           else if (data.ok && !data.sso && data.hint) note = [data.reason, data.hint];
         } catch (_) { /* 拿不到票据不耽误打开：框里自己登录就是了 */ }
@@ -1579,6 +1616,149 @@
       if (CHAT_NOTE_SEEN.includes(key)) writePref('bh_chat_note', key);
       $('chatNote').hidden = true;
     });
+
+
+    // ===== 发送到 AI 聊天 / 存入笔记 =====
+    // 一个编辑框，两个去处：
+    //   - 「发送到 AI 聊天」→ 后端签票时把问题一起编进地址，落地就自动提问（见 /api/chat/ticket）；
+    //   - 「存入笔记」→ 追加到 WebObsidian 收件箱里今天那篇（路径后端说了算，这里递不了路径）。
+    // 为什么先弹框再发：搜索框里那半句话、一条待办、一整篇便签，原样丢给模型往往不是想问的问题。
+    const ASK = { source: '', busy: false };
+    const ASK_MAX = 4000;   // 与后端 CHAT_PROMPT_MAX / VAULT_CAPTURE_MAX 一致
+
+    function vaultAvailable() { return !!(STATE.vault && STATE.vault.url) && canEdit(); }
+    // 「发送到…」的入口只在真有地方可送时才出现：两个去处有一个就算有。
+    function askAvailable() { return chatAvailable() || vaultAvailable(); }
+    function vaultInbox() { return (STATE.vault && STATE.vault.inbox) || '收件箱'; }
+
+    function renderAskCount() {
+      const n = $('askText').value.length;
+      $('askCount').textContent = n ? `${n} / ${ASK_MAX} 字` : '';
+    }
+    function openAsk(text, source, title) {
+      if (!guardAdmin()) return;
+      if (!askAvailable()) { toast('这台部署还没有接 AI 聊天或笔记服务', 'err'); return; }
+      ASK.source = source || '';
+      $('askTitle').textContent = title || '发送到 AI 聊天';
+      $('askText').value = String(text == null ? '' : text).slice(0, ASK_MAX);
+      $('askHint').textContent = '';
+      $('askSend').hidden = !chatAvailable();
+      $('askVault').hidden = !vaultAvailable();
+      $('askSub').textContent = chatAvailable()
+        ? '改好再发。发送后会切到「AI 聊天」标签页并自动提问。'
+        : `改好再存。会追加到笔记的「${vaultInbox()}」里。`;
+      $('askModal').classList.add('show');
+      renderAskCount();
+      const box = $('askText');
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+    function closeAsk() { $('askModal').classList.remove('show'); }
+
+    function askSend() {
+      const text = $('askText').value.trim();
+      if (!text) { $('askHint').textContent = '先写点什么。'; return; }
+      if (!chatAvailable()) { $('askHint').textContent = '这台部署没有接 AI 聊天。'; return; }
+      closeAsk();
+      CHAT.queued = text;
+      // 已经在聊天页时 switchView 也会走到 openChat()，所以两种情况都只调它一次。
+      if (currentViewName() === 'chat') openChat(true); else switchView('chat');
+    }
+    async function askToVault() {
+      const text = $('askText').value.trim();
+      if (!text) { $('askHint').textContent = '先写点什么。'; return; }
+      if (!vaultAvailable() || ASK.busy) return;
+      ASK.busy = true;
+      $('askVault').disabled = true;
+      $('askHint').textContent = '正在写入笔记…';
+      let data;
+      try {
+        const resp = await fetch('/api/vault/capture', {
+          method: 'POST', headers: adminHeaders(), body: JSON.stringify({ text, source: ASK.source }),
+        });
+        data = await resp.json();
+      } catch (_) { data = { ok: false, error: '连不上服务器' }; }
+      ASK.busy = false;
+      $('askVault').disabled = false;
+      if (data && data.ok) { closeAsk(); toast(`已存入「${data.path}」`); }
+      else $('askHint').textContent = (data && data.error) || '写入失败';
+    }
+
+    function askAboutLink(gid, lid) {
+      const group = libGroups().find(g => g.id === gid);
+      const link = group && (group.links || []).find(l => l.id === lid);
+      if (!link) { toast('这条收藏已不存在，请刷新', 'err'); return; }
+      const lines = ['帮我看看这个网站：', (link.name || '') + ' ' + (link.url || '')];
+      if (link.desc) lines.push('我的备注：' + link.desc);
+      if ((link.tags || []).length) lines.push('标签：' + link.tags.join('、'));
+      lines.push('', '它是做什么的？值得注意的地方是什么？');
+      openAsk(lines.join('\n'), 'link', '问 AI：' + (link.name || '这条收藏'));
+    }
+    function askAboutTodo(id) {
+      const item = todoItems().find(t => t.id === id);
+      if (!item) { toast('这条待办已不存在，请刷新', 'err'); return; }
+      openAsk('帮我把这件事拆成可执行的几步，并指出最先该做哪一步：\n\n' + item.text, 'todo', '让 AI 拆解');
+    }
+    function askAboutMemo() {
+      const text = ($('memoText').value || '').trim();
+      if (!text) { toast('便签还是空的', 'err'); return; }
+      openAsk(text, 'memo', '把便签发给 AI');
+    }
+
+    $('askCancel').addEventListener('click', closeAsk);
+    $('askVault').addEventListener('click', askToVault);
+    $('askText').addEventListener('input', renderAskCount);
+    $('askText').addEventListener('keydown', (e) => {
+      // Ctrl / ⌘ + Enter 直接发：多行输入框里单独的 Enter 要留给换行。
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); askSend(); }
+    });
+    $('askForm').addEventListener('submit', (e) => { e.preventDefault(); askSend(); });
+    $('memoAsk').addEventListener('click', askAboutMemo);
+
+    // ===== 待办 → 笔记的单向镜像 =====
+    // 本站是真相源：每次整篇覆盖「<收件箱>/待办.md」。不做双向同步——
+    // 对面的 Agent API 没有条件写（没有 If-Match），双向迟早丢写。
+    const VAULT = { syncing: false };
+    async function syncTodosToVault() {
+      if (!vaultAvailable() || VAULT.syncing) return;
+      VAULT.syncing = true;
+      $('todoVaultSync').disabled = true;
+      let data;
+      try {
+        const resp = await fetch('/api/vault/todos/sync', { method: 'POST', headers: adminHeaders() });
+        data = await resp.json();
+      } catch (_) { data = { ok: false, error: '连不上服务器' }; }
+      VAULT.syncing = false;
+      $('todoVaultSync').disabled = false;
+      if (data && data.ok) toast(`已把 ${data.count} 条待办镜像到「${data.path}」`);
+      else toast((data && data.error) || '同步失败', 'err');
+    }
+    $('todoVaultSync').addEventListener('click', syncTodosToVault);
+
+    // ===== 首页搜索：在笔记里搜 =====
+    // 跨机一次调用约半秒，而后端只有几个工作线程：所以这里是「选中那一行、回车才搜」，
+    // 绝不边打边搜。字一变，上一次的结果就不再匹配，下拉里自动换回「在笔记里搜索…」。
+    const NOTE_SEARCH = { query: '', loading: false, hits: [], error: '' };
+    const NOTE_SEARCH_LIMIT = 6;
+    async function runNoteSearch(query) {
+      if (!vaultAvailable() || !query) return;
+      NOTE_SEARCH.query = query;
+      NOTE_SEARCH.loading = true;
+      NOTE_SEARCH.hits = [];
+      NOTE_SEARCH.error = '';
+      renderHomeSearch(true);
+      let data;
+      try {
+        const resp = await fetch(`/api/vault/search?q=${encodeURIComponent(query)}&limit=${NOTE_SEARCH_LIMIT}`,
+          { headers: adminHeaders() });
+        data = await resp.json();
+      } catch (_) { data = { ok: false, error: '连不上服务器' }; }
+      if (NOTE_SEARCH.query !== query) return;   // 这会儿又搜了别的：这次结果已经过时
+      NOTE_SEARCH.loading = false;
+      if (data && data.ok) NOTE_SEARCH.hits = (data.hits || []).slice(0, NOTE_SEARCH_LIMIT);
+      else NOTE_SEARCH.error = (data && data.error) || '搜索失败';
+      if ($('homeSearch').value.trim() === query) renderHomeSearch(true);
+    }
 
     function renderConfigs() {
       const list = $('cfgList'), empty = $('cfgEmpty');
@@ -3286,10 +3466,15 @@
       }
       const stamp = t.done ? (t.done_at ? '完成于 ' + shortStamp(t.done_at) : '') : (t.created_at ? '记于 ' + shortStamp(t.created_at) : '');
       const grip = sortable ? `<button type="button" class="todo-grip" data-todo-grip aria-label="排序：${text}" aria-describedby="todoSortHint" aria-haspopup="menu" aria-expanded="false" title="按住拖动排序；点一下出排序菜单">${icon('grip')}</button>` : '';
+      // 没接 AI 聊天 / 笔记服务时不画这颗：它会占掉 34px，手机上足以把这条的文字挤成两行。
+      const ask = askAvailable()
+        ? `<button type="button" class="todo-icon-btn" data-todo-act="ask" title="让 AI 拆解这件事" aria-label="让 AI 拆解：${text}">${icon('chat')}</button>`
+        : '';
       return `<li class="todo-item${t.done ? ' is-done' : ''}${sortable ? ' is-sortable' : ''}" data-todo="${id}">
         ${grip}<input type="checkbox" class="todo-check" id="todo-${id}" data-todo-check${t.done ? ' checked' : ''} aria-label="${t.done ? '已完成' : '标记为完成'}：${text}" title="Alt + ↑/↓ 调整顺序">
         <label class="todo-text" for="todo-${id}"${stamp ? ` title="${escapeHtml(stamp)}"` : ''}>${linkifyHtml(t.text)}</label>
         <span class="todo-actions">
+          ${ask}
           <button type="button" class="todo-icon-btn" data-todo-act="edit" title="修改" aria-label="修改：${text}">${icon('edit')}</button>
           <button type="button" class="todo-icon-btn is-danger" data-todo-act="delete" title="删除" aria-label="删除：${text}">${icon('trash')}</button>
         </span>
@@ -3324,7 +3509,7 @@
       const target = row && (row.querySelector(selector || '[data-todo-check]') || row.querySelector('[data-todo-check]'));
       if (target) target.focus(); else $('todoInput').focus();
     }
-    const TODO_FOCUSABLE = ['[data-todo-grip]', '[data-todo-check]', '[data-todo-act="edit"]', '[data-todo-act="delete"]'];
+    const TODO_FOCUSABLE = ['[data-todo-grip]', '[data-todo-check]', '[data-todo-act="ask"]', '[data-todo-act="edit"]', '[data-todo-act="delete"]'];
     function todoFocusKey() {
       const at = document.activeElement, row = at && at.closest ? at.closest('#homeTodo [data-todo]') : null;
       const sel = row ? TODO_FOCUSABLE.find(q => at.matches(q)) : '';
@@ -3636,6 +3821,7 @@
       if (!btn) return;
       const act = btn.dataset.todoAct, row = btn.closest('[data-todo]'), id = row ? row.dataset.todo : '';
       if (act === 'unlock') { switchView('settings'); return; }
+      if (act === 'ask') { askAboutTodo(id); return; }
       if (act === 'edit') {
         if (!guardAdmin()) return;
         TODO.editing = id;
@@ -4626,6 +4812,7 @@
           <details class="action-menu">
             <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(l.name)} 的更多操作">···</summary>
             <div class="menu-popover">
+              ${askAvailable() ? `<button onclick="askAboutLink('${gid}','${lid}')">问 AI</button><div class="sep"></div>` : ''}
               <button onclick="toggleHomeLink('${gid}','${lid}')">${l.show_on_home ? '从首页移除' : '展示到首页'}</button>
               <button onclick="togglePinLink('${gid}','${lid}')">${l.pinned ? '取消置顶' : '置顶'}</button>
               <button onclick="editLink('${gid}','${lid}')">编辑</button>
@@ -5663,6 +5850,16 @@
       if (direct && canEdit() && !rows.some(r => r.type === 'item' && siteOrigin(r.item.url) === siteOrigin(direct))) rows.push({ type: 'add', url: direct });
       // #标签 是收藏库内部的筛选语法，丢给搜索引擎没有意义。
       if (!text.startsWith('#')) rows.push({ type: 'web', query: text });
+      if (!text.startsWith('#') && chatAvailable()) rows.push({ type: 'ai', query: text });
+      // 笔记：只有明确选中这一行才真的去搜（跨机一次约半秒）。搜完这一行换成结果，
+      // 字一改结果就不再匹配，自动换回「在笔记里搜索…」。
+      if (!text.startsWith('#') && vaultAvailable()) {
+        if (NOTE_SEARCH.query !== text) rows.push({ type: 'notes', query: text });
+        else if (NOTE_SEARCH.loading) rows.push({ type: 'noteState', text: '正在搜索笔记…' });
+        else if (NOTE_SEARCH.error) rows.push({ type: 'noteState', text: NOTE_SEARCH.error });
+        else if (!NOTE_SEARCH.hits.length) rows.push({ type: 'noteState', text: '笔记里没有匹配的内容' });
+        else for (const hit of NOTE_SEARCH.hits) rows.push({ type: 'note', hit });
+      }
       return rows;
     }
     function homeSearchRowHtml(row, i) {
@@ -5675,16 +5872,32 @@
           : siteAvatarHtml(item.title, item.url, 'link-avatar omni-avatar', item.emoji, item.customIcon);
         return `<button type="button" ${attrs}>${avatar}<span class="omni-text"><span class="omni-title"><span>${escapeHtml(item.title)}</span></span><span class="omni-sub">${escapeHtml(item.host || item.sub)}</span></span><span class="home-search-tag">${escapeHtml(item.kind === 'link' ? item.sub : OMNI_KIND_LABEL[item.kind])}</span></button>`;
       }
-      const glyph = row.type === 'web' ? 'search' : row.type === 'add' ? 'plus' : 'globe';
+      if (row.type === 'noteState') {
+        return `<div class="home-search-state">${icon('note')}<span>${escapeHtml(row.text)}</span></div>`;
+      }
+      if (row.type === 'note') {
+        const hit = row.hit;
+        return `<button type="button" class="home-search-row is-note${active ? ' is-active' : ''}" role="option" aria-selected="${active}" data-home-row="${i}"><span class="omni-ic">${icon('note')}</span><span class="omni-text"><span class="omni-title"><span>${escapeHtml(hit.title || hit.path)}</span></span><span class="omni-sub">${escapeHtml(hit.snippet || hit.path)}</span></span><span class="home-search-tag">笔记</span></button>`;
+      }
+      const glyph = row.type === 'web' ? 'search' : row.type === 'add' ? 'plus'
+        : row.type === 'ai' ? 'chat' : row.type === 'notes' ? 'note' : 'globe';
       const text = row.type === 'web' ? `用 <b>${escapeHtml(currentEngine().name)}</b> 搜索「${escapeHtml(row.query)}」`
+        : row.type === 'ai' ? `用 <b>AI</b> 回答「${escapeHtml(row.query)}」`
+        : row.type === 'notes' ? `在<b>笔记</b>里搜索「${escapeHtml(row.query)}」`
         : row.type === 'add' ? `收藏 <b>${escapeHtml(siteHost(row.url))}</b> 到收藏库…`
         : `打开 <b>${escapeHtml(row.url)}</b>`;
       return `<button type="button" ${attrs}><span class="omni-ic">${icon(glyph)}</span><span class="omni-text"><span class="omni-title"><span>${text}</span></span></span>${active ? '<kbd class="omni-kbd">↵</kbd>' : ''}</button>`;
     }
+    // 「正在搜索笔记…」这类行只是状态，不该被方向键停住，也按不动。
+    function homeRowSelectable(row) { return !!row && row.type !== 'noteState'; }
     function renderHomeSearch(keepActive) {
       const list = $('homeSearchList');
       HOME_SEARCH.rows = homeSearchRows($('homeSearch').value);
       if (!keepActive || HOME_SEARCH.active >= HOME_SEARCH.rows.length) HOME_SEARCH.active = 0;
+      if (HOME_SEARCH.rows.length && !homeRowSelectable(HOME_SEARCH.rows[HOME_SEARCH.active])) {
+        const first = HOME_SEARCH.rows.findIndex(homeRowSelectable);
+        HOME_SEARCH.active = first < 0 ? 0 : first;
+      }
       const open = HOME_SEARCH.rows.length > 0;
       list.hidden = !open;
       $('homeSearch').setAttribute('aria-expanded', String(open));
@@ -5704,11 +5917,16 @@
     if (window.visualViewport) for (const type of ['resize', 'scroll']) window.visualViewport.addEventListener(type, fitHomeSearchList);
     function clearHomeSearch() {
       $('homeSearch').value = '';
+      NOTE_SEARCH.query = '';   // 下一次搜「同样的字」还要重新去问一遍笔记
       renderHomeSearch();
     }
     function runHomeSearchRow(row) {
       if (!row) return;
+      if (row.type === 'noteState') return;
       if (row.type === 'item') { clearHomeSearch(); omniOpen(row.item, false); return; }
+      if (row.type === 'ai') { const q = row.query; clearHomeSearch(); openAsk(q, 'search', '用 AI 回答'); return; }
+      if (row.type === 'notes') { runNoteSearch(row.query); return; }   // 不清空搜索框：结果要挂在这几个字下面
+      if (row.type === 'note') { clearHomeSearch(); openUrl(row.hit.url); return; }
       if (row.type === 'add') {
         const target = (libGroups()[0] || {}).id;
         if (!target) { toast('请先新建一个分组', 'err'); return; }
@@ -5730,7 +5948,13 @@
       const rows = HOME_SEARCH.rows;
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length) {
         e.preventDefault();
-        HOME_SEARCH.active = (HOME_SEARCH.active + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
+        const step = e.key === 'ArrowDown' ? 1 : rows.length - 1;
+        let next = HOME_SEARCH.active;
+        for (let n = 0; n < rows.length; n++) {          // 跳过纯状态行，最多绕一圈
+          next = (next + step) % rows.length;
+          if (homeRowSelectable(rows[next])) break;
+        }
+        HOME_SEARCH.active = next;
         renderHomeSearch(true);
       } else if (e.key === 'Enter') {
         e.preventDefault();

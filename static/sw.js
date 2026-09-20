@@ -14,7 +14,9 @@
  */
 // v17：外壳新增「AI 聊天」标签页（HaloWebUI 的 iframe），响应头里多了 frame-src、frame-ancestors 回到 'none'。
 // 缓存里的旧外壳带着旧的 CSP 头，不换版本号的话，框会被旧头挡住。
-const CACHE_VERSION = 'bh-shell-v17';
+// v18：外壳新增「发送到 AI 聊天 / 存入笔记」的编辑框与笔记搜索。外壳走的是
+// stale-while-revalidate，不换号也会在下一次访问更新；换掉只是让部署后第一次打开就是新的。
+const CACHE_VERSION = 'bh-shell-v18';
 const SHELL = [
   '/',
   '/static/app-v3.css',
