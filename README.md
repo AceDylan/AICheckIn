@@ -102,6 +102,7 @@ static/app-v3.css   界面样式
 static/wallpapers/  内置首页壁纸（WebP：横版 / 竖版 / 缩略图）+ manifest.json（主色与亮度）
 tools/              开发期工具：make_icons.py（PWA 图标）、make_wallpapers.py（内置壁纸）
 tests/              unittest 测试套件
+tests/browser/      真实浏览器回归（Playwright + Chromium，自起隔离实例、合成数据；不随 unittest 跑，见「开发」）
 data/               运行数据（config.json / todos.json / deck.json / history.json / metrics.json / favicons/ / wallpaper/），不入库
 ```
 
@@ -123,6 +124,34 @@ python -m unittest tests.test_api_exposure
 GYQD_CONFIG_FILE=$PWD/data/config.json GYQD_ADMIN_PASSWORD=dev-password-please-change \
   python app.py
 ```
+
+### 真实浏览器回归
+
+拖拽、触摸、焦点、版面这些只有真浏览器里才验得出来的行为，放在 `tests/browser/`（PC 与手机视口都跑）：
+
+```bash
+pip install playwright && playwright install chromium   # 只是开发期依赖；已有 Chromium 的话用 BH_CHROME=/path/to/chrome 指过去
+
+python tests/browser/run_all.py                          # 五套全跑，约 3 分钟，末尾一张汇总
+python tests/browser/verify.py todo_desktop todo_mobile  # 只跑某一套里点名的几段
+```
+
+| 脚本 | 覆盖 |
+| --- | --- |
+| `verify.py` | 待办排序（鼠标 / 触摸 / 菜单 / 键盘，按 id 核对拖的是哪一条）、首页版面与列网格、编辑首页、自定义首页弹窗、常用一行、分组折叠、权限与 XSS、减少动态效果 / 强制颜色、性能 |
+| `verify_deck.py` | 首页组件：右侧一列 / 标签条、添加移除排序、日历、倒数日、便签、访客视角 |
+| `verify_polish.py` | 空库引导、小字对比度、键盘下的搜索下拉、壁纸场景浮层、清除已完成 |
+| `verify_railtip.py` | 图标栏的即时名字提示 |
+| `verify_transport.py` | gzip、ETag / 304、壁纸新鲜期、回到页面静默对数据、首次加载失败自动重试 |
+
+每次运行都用当前工作树在 `127.0.0.1` 的空闲端口上现起一个实例：数据是 `tests/browser/seed/` 里的**合成数据**（拷到临时目录，跑完即删），
+管理密码每次现生成、只存在于进程环境里；站点图标在浏览器侧用本地现画的 PNG 顶替，任何离开本机的请求都会被掐掉并记为失败——
+不碰真实部署，也不向外发一个字节。`BH_VERIFY_SHOTS=<目录>` 可以把过程截图留下来。
+
+首页默认版面下待办卡片排在日历下面、1440×900 时落在首屏以外，而页面开着平滑滚动：脚本里凡是要按坐标操作的地方，
+都先用 `settle()` 瞬时滚进视野并等位置停稳再量坐标，否则鼠标会落在别的行上。
+这几套不进 `unittest discover`（没装 Chromium 的机器照常能跑单测），但 `tests/test_browser_suite.py` 会静态核对
+脚本里点名的每个 `#id` / `data-*` 在页面里都还在——页面删了元素而脚本没跟上，当次提交的单测就会红。
 
 ### 内置壁纸与素材授权
 
