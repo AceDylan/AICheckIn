@@ -11,9 +11,8 @@ from pathlib import Path
 from tests.test_script_boot import NODE, STUB, RESPONSES, _inline_script
 
 
-@unittest.skipIf(NODE is None, "未安装 node")
-class RevisitRefreshTest(unittest.TestCase):
-    def run_js(self, assertions, offline_at_boot=False):
+class PageScriptCase(unittest.TestCase):
+    def run_js(self, assertions, offline_at_boot=False, prelude=""):
         responses = copy.deepcopy(RESPONSES)
         responses["/api/configs"].update({"todos": [], "todos_locked": False, "todos_error": "",
                                           "deck": {"days": [], "memo": {"text": "", "updated_at": ""}},
@@ -32,6 +31,7 @@ class RevisitRefreshTest(unittest.TestCase):
             "fetch = (url, opts) => { if (!OFFLINE) return stubFetch(url, opts);"
             "  __CALLS.fetches.push(String(url)); return Promise.reject(new Error('Failed to fetch')); };",
             "const toasts = []; globalThis.__toastSink = (msg) => toasts.push(msg);",
+            prelude,
             _inline_script().replace("function toast(msg, kind) {", "function toast(msg, kind) { return __toastSink(msg);", 1),
             "const tick = () => new Promise(r => setTimeout(r, 5));",
             "const loads = () => __CALLS.fetches.filter(u => u === '/api/configs').length;",
@@ -48,6 +48,9 @@ class RevisitRefreshTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr[-3000:])
         self.assertIn("ok", proc.stdout)
 
+
+@unittest.skipIf(NODE is None, "未安装 node")
+class RevisitRefreshTest(PageScriptCase):
     def test_a_long_absence_refetches_and_redraws(self):
         self.run_js("""
             assert.equal(loads(), 1);
@@ -176,6 +179,46 @@ class RevisitRefreshTest(unittest.TestCase):
             await tick();
             assert.equal(loads(), 2);
         """)
+
+
+@unittest.skipIf(NODE is None, "未安装 node")
+class EarlyConfigsTest(PageScriptCase):
+    """<head> 里提前发出的 /api/configs：主脚本的第一次加载接手它，省掉一个来回；只用一次，失败就按老路重发。"""
+
+    def test_head_fires_the_request_before_the_stylesheet(self):
+        html = (Path(__file__).resolve().parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
+        head = html[:html.index("</head>")]
+        self.assertIn("window.__bootConfigs = fetch('/api/configs'", head)
+        self.assertLess(head.index("window.__bootConfigs = fetch("), head.index('rel="stylesheet"'))
+        # 拿不到就交回 null，让主脚本自己重发；不在这里处理数据、不碰 DOM。
+        self.assertIn(".catch(function () { return null; })", head)
+
+    def test_first_load_adopts_the_early_response_without_a_second_request(self):
+        self.run_js("""
+            assert.equal(STATE_LOADED, true);
+            assert.equal(loads(), 0);                                         // 没有再发一次
+            assert.equal(STATE.link_groups[0].name, '提前到的');
+            assert.equal(window.__bootConfigs, null);                         // 只用一次
+            assert.equal(await loadConfigs(), true);
+            assert.equal(loads(), 1);                                         // 之后每次都是新请求
+            assert.equal(STATE.link_groups[0].name, '常用');
+        """, prelude="window.__bootConfigs = Promise.resolve(Object.assign(JSON.parse(JSON.stringify(__RESPONSES['/api/configs'])),"
+                     " { link_groups: [{ id: 'early', name: '提前到的', icon: 'globe', color: 'mint', links: [] }] }));")
+
+    def test_a_failed_early_request_falls_back_to_a_normal_one(self):
+        self.run_js("""
+            assert.equal(STATE_LOADED, true);
+            assert.equal(loads(), 1);
+            assert.deepEqual(toasts, []);
+        """, prelude="window.__bootConfigs = Promise.resolve(null);")
+
+    def test_an_early_server_error_is_reported_like_before(self):
+        self.run_js("""
+            assert.equal(STATE_LOADED, false);
+            assert.equal(toasts.length, 1);
+            assert.ok(toasts[0].includes('配置恢复'));
+            assert.equal(currentViewName(), 'settings');
+        """, prelude="window.__bootConfigs = Promise.resolve({ ok: false, error: '读取配置文件失败' });")
 
 
 if __name__ == "__main__":

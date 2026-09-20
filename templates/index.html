@@ -17,6 +17,12 @@
       // 导航形态同理（默认图标栏）：全站生效，先定下来，免得侧栏先画成 252px 再缩回去。
       if (!/(?:^|; )bh_home_nav=full(?:;|$)/.test(document.cookie)) document.documentElement.classList.add('nav-rail');
     })();
+    // 页面数据提前出发：主脚本在这份 HTML 的最后面，等它下载、解析完再发请求，白白晚了一个来回。
+    // 这里先把 /api/configs 发出去，主脚本的第一次 loadConfigs() 直接接手结果；失败就交回 null，由它按老路重发。
+    try {
+      window.__bootConfigs = fetch('/api/configs', { headers: { 'Content-Type': 'application/json' } })
+        .then(function (r) { return r.json(); }).catch(function () { return null; });
+    } catch (_) { window.__bootConfigs = null; }
   </script>
   <!-- PWA：可「添加到主屏 / 安装」，独立窗口打开，图标由 tools/make_icons.py 生成。 -->
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
@@ -1405,8 +1411,14 @@
     async function loadConfigs(opts) {
       const quiet = !!(opts && opts.quiet);
       try {
-        const resp = await fetch('/api/configs', { headers: adminHeaders() });
-        const data = await resp.json();
+        // 第一次加载：<head> 里已经把请求发出去了（见那里的说明），直接接手；只用一次，之后每次都是新请求。
+        const early = window.__bootConfigs;
+        window.__bootConfigs = null;
+        let data = early ? await early : null;
+        if (!data) {
+          const resp = await fetch('/api/configs', { headers: adminHeaders() });
+          data = await resp.json();
+        }
         if (!data.ok && quiet) return false;
         if (!data.ok) {
           // 多半是 config.json 读不出来了。别只丢一句「加载失败」就不管，
