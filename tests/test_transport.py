@@ -83,8 +83,8 @@ class ShellRevalidationTest(TransportCase):
 
     def test_security_headers_survive_on_the_shell(self):
         resp = self.client.get("/", headers=GZIP)
-        self.assertEqual(resp.headers["X-Frame-Options"], "DENY")
-        self.assertIn("frame-ancestors 'none'", resp.headers["Content-Security-Policy"])
+        self.assertEqual(resp.headers["X-Frame-Options"], "SAMEORIGIN")
+        self.assertIn("frame-ancestors 'self'", resp.headers["Content-Security-Policy"])
 
 
 class GzipTest(TransportCase):

@@ -269,11 +269,12 @@ class SecurityHeadersTest(ExposureTestBase):
     def test_page_carries_hardening_headers(self):
         resp = self.client.get("/")
         self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
-        self.assertEqual(resp.headers["X-Frame-Options"], "DENY")
+        # 没配嵌入白名单：只许同源嵌入，外站一律嵌不进来（白名单行为见 tests/test_embed.py）。
+        self.assertEqual(resp.headers["X-Frame-Options"], "SAMEORIGIN")
         self.assertEqual(resp.headers["Referrer-Policy"], "no-referrer")
         csp = resp.headers["Content-Security-Policy"]
         self.assertIn("default-src 'self'", csp)
-        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertTrue(csp.endswith("frame-ancestors 'self'"), csp)
 
     def test_api_responses_are_not_cached(self):
         self.assertEqual(self.client.get("/api/configs").headers["Cache-Control"], "no-store")

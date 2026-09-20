@@ -1463,8 +1463,8 @@ def _session_key():
     return hashlib.sha256((_session_secret() + "|" + ADMIN_PASSWORD).encode("utf-8")).digest()
 
 
-def _issue_session_token():
-    exp = str(int(time.time()) + SESSION_MAX_AGE)
+def _issue_session_token(max_age=SESSION_MAX_AGE):
+    exp = str(int(time.time()) + max_age)
     return exp + "." + hmac.new(_session_key(), exp.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
@@ -1484,12 +1484,12 @@ def _request_is_https():
     return proto == "https" if proto else bool(request.is_secure)
 
 
-def _set_session_cookie(resp):
+def _set_session_cookie(resp, max_age=SESSION_MAX_AGE):
     # HttpOnly：JS 读不到，避免 XSS 直接窃取；SameSite=Lax：阻断跨站写操作携带该 Cookie（CSRF）。
     resp.set_cookie(
         SESSION_COOKIE,
-        _issue_session_token(),
-        max_age=SESSION_MAX_AGE,
+        _issue_session_token(max_age),
+        max_age=max_age,
         path="/",
         httponly=True,
         samesite="Lax",
@@ -1519,6 +1519,114 @@ def admin_ok():
     if header and hmac.compare_digest(header, ADMIN_PASSWORD):
         return True
     return _session_token_ok(request.cookies.get(SESSION_COOKIE, ""))
+
+
+# =========================
+# 受信任的嵌入方：共享管理员会话
+# =========================
+#
+# 场景：自己的 HaloWebUI 把本站嵌在 /hub 页面的 iframe 里，希望「HaloWebUI 的管理员已登录 =
+# 这里已解锁」，不用在框里再输一遍管理密码。两个站不同主机，Cookie 互相读不到，所以靠一张
+# 签名票据过桥：
+#
+#   1. 部署时由管理员现场生成一个随机密钥，分别放进两边的环境变量
+#      HUB_TRUSTED_EMBED_ADMIN_SECRET（本站与 HaloWebUI 同名）。它绝不入库、不进前端、不出现在任何 URL 里。
+#   2. HaloWebUI 的后端确认当前用户是它的管理员后，用这个密钥签一张票据：
+#          v1.<用途>.<过期时间戳>.<随机 nonce>.<HMAC-SHA256 十六进制>
+#      用途 enter = 换取会话；probe = 只验证两边密钥一致（启动握手用，换不到任何东西）。
+#   3. 浏览器把 iframe 指向 /embed/enter?ticket=…；本站验签、验有效期、验「没用过」，
+#      通过后下发的就是 /api/auth 那枚 HMAC 会话 Cookie（同一套签发与校验，没有第二套令牌），
+#      再 303 跳到不带票据的地址。
+#
+# 票据出现在 URL 里，所以必须短命且一次性：有效期由签发方定，但本站只认 EMBED_TICKET_MAX_TTL
+# 以内的；nonce 记在进程内存里直到票据过期（Dockerfile 里 gunicorn 是单 worker；改成多 worker 要换成共享存储）。
+# 没配密钥（或密钥太短）时整个功能不存在：两个端点都回 404。
+EMBED_ADMIN_SECRET = os.environ.get("HUB_TRUSTED_EMBED_ADMIN_SECRET", "").strip()
+EMBED_SECRET_MIN_LEN = 32          # 少于 32 个字符一律视为没配：宁可功能不生效，也不接受一个能被猜出来的密钥
+EMBED_TICKET_MAX_TTL = 300         # 票据最长只认 5 分钟（HaloWebUI 实际签 2 分钟）
+EMBED_TICKET_VERSION = "v1"
+EMBED_PURPOSE_ENTER = "enter"
+EMBED_PURPOSE_PROBE = "probe"
+_EMBED_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+_EMBED_MAX_NONCES = 4096
+
+
+def _embed_session_ttl():
+    """经票据换来的会话默认 12 小时：HaloWebUI 每次打开 /hub 都会重新换票，不需要 30 天那么长。"""
+    try:
+        ttl = int(os.environ.get("HUB_TRUSTED_EMBED_SESSION_TTL", str(12 * 3600)))
+    except ValueError:
+        ttl = 12 * 3600
+    return max(300, min(ttl, SESSION_MAX_AGE))
+
+
+EMBED_SESSION_TTL = _embed_session_ttl()
+
+if EMBED_ADMIN_SECRET and len(EMBED_ADMIN_SECRET) < EMBED_SECRET_MIN_LEN:
+    sys.stderr.write("[gyqd-web] 警告：HUB_TRUSTED_EMBED_ADMIN_SECRET 少于 {0} 个字符，已忽略；"
+                     "请用 python3 -c \"import secrets; print(secrets.token_hex(32))\" 重新生成\n"
+                     .format(EMBED_SECRET_MIN_LEN))
+
+_embed_lock = threading.Lock()
+_embed_nonces = {}  # nonce -> 过期时间戳；只有验签通过的票据才会进来
+
+
+def trusted_embed_active():
+    return len(EMBED_ADMIN_SECRET) >= EMBED_SECRET_MIN_LEN
+
+
+def _embed_key():
+    # 加前缀派生：同一个密钥即便被别处拿去做 HMAC，也签不出这里认的票据。
+    return hashlib.sha256(("hub-embed-admin|" + EMBED_ADMIN_SECRET).encode("utf-8")).digest()
+
+
+def _embed_ticket_signature(purpose, exp, nonce):
+    message = ".".join((EMBED_TICKET_VERSION, purpose, exp, nonce))
+    return hmac.new(_embed_key(), message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def issue_embed_ticket(purpose, ttl=120, now=None):
+    """签一张票据。线上由 HaloWebUI 的后端来签；这里留一份同样的实现给测试和本机联调用。"""
+    exp = str(int(now if now is not None else time.time()) + int(ttl))
+    nonce = secrets.token_urlsafe(18)
+    return ".".join((EMBED_TICKET_VERSION, purpose, exp, nonce, _embed_ticket_signature(purpose, exp, nonce)))
+
+
+def consume_embed_ticket(ticket, purpose):
+    """验票并作废。返回 (是否通过, 原因)；原因只用于日志与页面提示，不含任何敏感信息。"""
+    if not trusted_embed_active():
+        return False, "disabled"
+    if not ticket:
+        return False, "missing"
+    parts = str(ticket).split(".")
+    if len(parts) != 5 or len(str(ticket)) > 512:
+        return False, "malformed"
+    version, got_purpose, exp, nonce, sig = parts
+    if (version != EMBED_TICKET_VERSION or not re.match(r"^[a-z]{1,16}$", got_purpose)
+            or not exp.isdigit() or len(exp) > 12 or not _EMBED_NONCE_RE.match(nonce)):
+        return False, "malformed"
+    # 先验签，再看别的：没有密钥的人无论怎么试，得到的都是同一个答案。用途在签名里，probe 票换不了会话。
+    expected = _embed_ticket_signature(got_purpose, exp, nonce)
+    if not hmac.compare_digest(sig.encode("utf-8"), expected.encode("utf-8")):
+        return False, "signature"
+    if got_purpose != purpose:
+        return False, "purpose"
+    now = time.time()
+    expires = int(exp)
+    if expires <= now:
+        return False, "expired"
+    if expires > now + EMBED_TICKET_MAX_TTL:
+        return False, "ttl"
+    with _embed_lock:
+        for seen in [n for n, t in _embed_nonces.items() if t <= now]:
+            del _embed_nonces[seen]
+        if nonce in _embed_nonces:
+            return False, "replayed"
+        if len(_embed_nonces) >= _EMBED_MAX_NONCES:
+            # 只有持密钥的一方才填得满这张表；满了就拒收，绝不能清表——清表等于放行重放。
+            return False, "busy"
+        _embed_nonces[nonce] = expires
+    return True, "ok"
 
 
 # =========================
@@ -1623,8 +1731,8 @@ def _guard_admin():
 # =========================
 #
 # 页面内联了全部脚本与样式（单文件模板），因此 script-src / style-src 必须放行
-# 'unsafe-inline'；其余方向一律收紧到同源，并禁止被嵌进 iframe。
-CONTENT_SECURITY_POLICY = (
+# 'unsafe-inline'；其余方向一律收紧到同源。frame-ancestors 单独拼（见下）。
+CONTENT_SECURITY_POLICY_BASE = (
     "default-src 'self'; "
     "img-src 'self' data:; "
     "style-src 'self' 'unsafe-inline'; "
@@ -1633,8 +1741,44 @@ CONTENT_SECURITY_POLICY = (
     "font-src 'self' data:; "
     "form-action 'self'; "
     "base-uri 'none'; "
-    "frame-ancestors 'none'"
 )
+
+# 谁可以把本站嵌进 iframe：默认只有同源（'self'）。要让另一个站点（例如自己的 HaloWebUI）嵌入，
+# 在 HUB_FRAME_ANCESTORS 里逐个写出它的完整源（协议 + 主机 + 端口），空格或逗号分隔。
+# 只接受精确的源：通配符、路径、裸域名一律丢弃——白名单写错的后果应该是「嵌不进来」，
+# 而不是「谁都能嵌」（点击劫持）。http 只放行回环地址，给本机调试用。
+_FRAME_ANCESTOR_RE = re.compile(
+    r"^(?:https://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+    r"|http://(?:localhost|127\.0\.0\.1))(?::[0-9]{1,5})?$"
+)
+
+
+def _parse_frame_ancestors(raw):
+    """HUB_FRAME_ANCESTORS → 去重后的源列表；不合规的条目丢弃并在日志里点名。"""
+    origins = []
+    for item in re.split(r"[\s,]+", str(raw or "").strip()):
+        if not item:
+            continue
+        origin = item.rstrip("/").lower()
+        if len(origin) > 300 or not _FRAME_ANCESTOR_RE.match(origin):
+            sys.stderr.write("[gyqd-web] 警告：HUB_FRAME_ANCESTORS 里的「{0}」不是完整的源"
+                             "（形如 https://host:port，不支持通配符），已忽略\n".format(item[:120]))
+            continue
+        if origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+FRAME_ANCESTORS = _parse_frame_ancestors(os.environ.get("HUB_FRAME_ANCESTORS", ""))
+
+
+def content_security_policy():
+    return CONTENT_SECURITY_POLICY_BASE + "frame-ancestors " + " ".join(["'self'"] + FRAME_ANCESTORS)
+
+
+def request_is_embedded():
+    """这次页面请求是不是浏览器为一个 iframe 发的。Sec-Fetch-* 由浏览器填写，页面脚本改不了。"""
+    return request.headers.get("Sec-Fetch-Dest", "").strip().lower() == "iframe"
 # HSTS 会把整个域名（含其它端口的服务）锁到 https，默认不开，由部署方按需打开。
 HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 
@@ -1643,9 +1787,11 @@ HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 #  - index / static / service_worker：应用外壳本身，不含任何数据，解锁界面要靠它渲染；
 #  - health：容器 HEALTHCHECK 在调，堵掉会让容器被判定为不健康；
 #  - api_auth / api_logout：解锁与锁定的入口，堵掉就没法解锁了；
-#  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截。
+#  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截；
+#  - embed_enter / api_embed_handshake：和 api_auth 一样是解锁入口，自己校验签名票据。
 _PRIVATE_OPEN_ENDPOINTS = frozenset({
     "index", "static", "service_worker", "health", "api_auth", "api_logout", "api_configs",
+    "embed_enter", "api_embed_handshake",
 })
 
 
@@ -1705,10 +1851,13 @@ def _handle_server_error(exc):
 @app.after_request
 def apply_security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    resp.headers.setdefault("X-Frame-Options", "DENY")
+    # X-Frame-Options 表达不了「同源 + 某个指定站点」（ALLOW-FROM 早已废弃）：配了白名单就不发它，
+    # 交给 CSP 的 frame-ancestors 说了算；没配白名单时两者一致，都是只许同源。
+    if not FRAME_ANCESTORS:
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
     resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
-    resp.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    resp.headers.setdefault("Content-Security-Policy", content_security_policy())
     if HSTS_ENABLED and _request_is_https():
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     # 接口响应可能含配置与运行数据，不允许中间层或浏览器留存；
@@ -1741,7 +1890,7 @@ _GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "a
 _GZIP_CACHE_MAX = 32
 _gzip_cache = {}
 _gzip_cache_lock = threading.Lock()
-_shell_etag_memo = (None, "")   # (上一次渲染出的外壳, 它的 ETag)；整个元组一次换掉，读的人不会看到半新半旧
+_shell_etag_memo = {}   # 外壳变体（"" 顶层 / "embedded" 被嵌入）→ (上一次渲染出的外壳, 它的 ETag)；整个元组一次换掉，读的人不会看到半新半旧
 
 
 def _accepts_gzip():
@@ -1826,22 +1975,29 @@ def cache_builtin_wallpapers(resp):
 # 路由：页面
 # =========================
 
-def _shell_etag(body):
-    """外壳的 ETag = 渲染结果的内容哈希；模板没变就不重算（整段字节比较远比哈希便宜）。"""
-    global _shell_etag_memo
-    memo = _shell_etag_memo
-    if memo[0] != body:
-        memo = _shell_etag_memo = (body, hashlib.sha256(body).hexdigest()[:32])
+def _shell_etag(body, variant=""):
+    """外壳的 ETag = 渲染结果的内容哈希；模板没变就不重算（整段字节比较远比哈希便宜）。
+    顶层页面和被嵌入的页面各记各的，交替请求时不会互相把对方挤掉。"""
+    memo = _shell_etag_memo.get(variant)
+    if memo is None or memo[0] != body:
+        memo = _shell_etag_memo[variant] = (body, hashlib.sha256(body).hexdigest()[:32])
     return memo[1]
 
 
 @app.get("/")
 def index():
-    """应用外壳：不含任何数据，可以放心让浏览器留着——但每次都要回来问一句有没有新版本。"""
-    body = render_template("index.html").encode("utf-8")
+    """应用外壳：不含任何数据，可以放心让浏览器留着——但每次都要回来问一句有没有新版本。
+
+    被嵌进 iframe 时（浏览器自己在 Sec-Fetch-Dest 里说的）外壳多带一个 data-embedded 标记：
+    页面据此把所有外链强制开到新标签页——在框里「当前页打开」会把整个框导航到别人的站，
+    多半还会被对方的 X-Frame-Options 拒掉，只剩一块白屏。"""
+    embedded = request_is_embedded()
+    body = render_template("index.html", embedded=embedded).encode("utf-8")
     resp = app.response_class(body, mimetype="text/html")
-    resp.set_etag(_shell_etag(body))
+    resp.set_etag(_shell_etag(body, "embedded" if embedded else ""))
     resp.headers["Cache-Control"] = "no-cache"
+    # 同一个地址按请求头给出两种外壳，缓存必须分开存。
+    resp.vary.add("Sec-Fetch-Dest")
     return resp.make_conditional(request)
 
 
@@ -4598,6 +4754,73 @@ def api_auth():
 @app.post("/api/logout")
 def api_logout():
     return _clear_session_cookie(jsonify({"ok": True}))
+
+
+# ---- 受信任的嵌入方（HaloWebUI）：票据换会话 ----
+
+# 验票失败里只有这两种像是在猜：计入防爆破。签名是对的、只是过期 / 用过 / 用途不符，说明对方确实持有密钥
+# （多半是两台机器时钟没对上），再计数只会把管理员自己锁在门外。
+_EMBED_GUESSING_REASONS = frozenset({"malformed", "signature"})
+
+
+def _embed_landing(reason=""):
+    """换票之后落到哪：框里是带 ?embed=1 的首页——带查询串的导航 Service Worker 走网络优先，
+    不会拿缓存里那份「顶层页面」的外壳（以及它的旧响应头）来糊弄 iframe；新标签页里直接打开就回干净的首页。"""
+    query = (["embed=1"] if request_is_embedded() else []) + (["sso=" + reason] if reason else [])
+    target = "/" + ("?" + "&".join(query) if query else "")
+    resp = app.response_class("", status=303)
+    resp.headers["Location"] = target
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.get("/embed/enter")
+def embed_enter():
+    """iframe（或「在新标签页打开」）的入口：验一张 enter 票据，通过就下发和 /api/auth 完全一样的会话 Cookie。
+
+    失败不回错误页——照样进首页，只是没解锁（页面会提示一句，框里仍可手动输密码）。
+    验票失败计入防爆破：HMAC 猜不出来，但没理由给人无限次试的机会。"""
+    if not trusted_embed_active():
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    if not ADMIN_PASSWORD:
+        return _embed_landing()  # 没设管理密码 = 本来就全开放，没有什么可解锁的
+    if login_retry_after():
+        return _embed_landing("throttled")
+    ok, reason = consume_embed_ticket(request.args.get("ticket", ""), EMBED_PURPOSE_ENTER)
+    if not ok:
+        if reason in _EMBED_GUESSING_REASONS:
+            record_login_failure()
+        sys.stderr.write("[gyqd-web] 嵌入票据被拒（{0}），来源 {1}\n".format(reason, client_ip()))
+        return _embed_landing(reason)
+    resp = _embed_landing()
+    # 已经持有有效会话（比如之前用密码解锁的 30 天会话）就不动它：别拿一个更短的把它顶掉。
+    if not _session_token_ok(request.cookies.get(SESSION_COOKIE, "")):
+        _set_session_cookie(resp, EMBED_SESSION_TTL)
+    return resp
+
+
+@app.post("/api/embed/handshake")
+def api_embed_handshake():
+    """HaloWebUI 启动时的握手：带一张 probe 票据来，确认两边密钥一致、时钟没偏太多。
+    不下发任何凭据；顺带回报嵌入白名单，让对方能提示「你的地址不在 HUB_FRAME_ANCESTORS 里」
+    （白名单本来就写在每个响应的 CSP 头里，不是秘密）。"""
+    if not trusted_embed_active():
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    wait = login_retry_after()
+    if wait:
+        return _locked_response(wait)
+    data = request.get_json(silent=True)
+    ticket = data.get("ticket", "") if isinstance(data, dict) else ""
+    ok, reason = consume_embed_ticket(ticket, EMBED_PURPOSE_PROBE)
+    if not ok:
+        if reason in _EMBED_GUESSING_REASONS:
+            record_login_failure()
+        return jsonify({"ok": False, "error": "握手票据无效", "reason": reason}), 401
+    return jsonify({
+        "ok": True,
+        "frame_ancestors": list(FRAME_ANCESTORS),
+        "session_ttl": EMBED_SESSION_TTL,
+    })
 
 
 # =========================

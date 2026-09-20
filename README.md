@@ -132,7 +132,7 @@ GYQD_CONFIG_FILE=$PWD/data/config.json GYQD_ADMIN_PASSWORD=dev-password-please-c
 ```bash
 pip install playwright && playwright install chromium   # 只是开发期依赖；已有 Chromium 的话用 BH_CHROME=/path/to/chrome 指过去
 
-python tests/browser/run_all.py                          # 五套全跑，约 3 分钟，末尾一张汇总
+python tests/browser/run_all.py                          # 六套全跑，约 3 分钟，末尾一张汇总
 python tests/browser/verify.py todo_desktop todo_mobile  # 只跑某一套里点名的几段
 ```
 
@@ -143,6 +143,7 @@ python tests/browser/verify.py todo_desktop todo_mobile  # 只跑某一套里点
 | `verify_polish.py` | 空库引导、小字对比度、键盘下的搜索下拉、壁纸场景浮层、清除已完成 |
 | `verify_railtip.py` | 图标栏的即时名字提示 |
 | `verify_transport.py` | gzip、ETag / 304、壁纸新鲜期、回到页面静默对数据、首次加载失败自动重试 |
+| `verify_embed.py` | 被 HaloWebUI 嵌入：白名单内 / 外的宿主页、票据换管理员会话（一次性、过期、伪造、probe）、被嵌入时外链一律新标签页、Service Worker 激活后仍嵌得进来 |
 
 每次运行都用当前工作树在 `127.0.0.1` 的空闲端口上现起一个实例：数据是 `tests/browser/seed/` 里的**合成数据**（拷到临时目录，跑完即删），
 管理密码每次现生成、只存在于进程环境里；站点图标在浏览器侧用本地现画的 PNG 顶替，任何离开本机的请求都会被掐掉并记为失败——
@@ -210,6 +211,39 @@ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5525/api/health
 数据在 `data/` 里、不随代码回滚，旧版本读得了新版本写的 `config.json`
 （新增的 `refresh` 键会被旧版本忽略）。`data/wallpaper/`（自定义壁纸）与图标缓存里新增的版本号
 同样会被旧版本忽略；Service Worker 是 stale-while-revalidate，升级或回滚后首次打开可能还是旧外壳，刷新一次即可。
+
+---
+
+## 嵌进自己的 HaloWebUI（可选）
+
+想在 HaloWebUI 里直接用这个书签库（它的 `/hub` 页面用 iframe 嵌入本站），需要两项配置，都写在本机的 `.env` 里，
+**不要写进任何会入库的文件**：
+
+```bash
+# 1. 允许 HaloWebUI 的地址把本站嵌进 iframe（完整的源，不支持通配符；默认只许同源）
+HUB_FRAME_ANCESTORS=https://host.acedylan.us:3001
+
+# 2. 共享密钥：HaloWebUI 的管理员打开 /hub 时免输管理密码，直接就是这里的管理员会话。
+#    现场生成，HaloWebUI 那边的同名环境变量填同一个值：
+#        python3 -c "import secrets; print(secrets.token_hex(32))"
+HUB_TRUSTED_EMBED_ADMIN_SECRET=<现场生成的随机值>
+```
+
+改完 `docker compose up -d` 重建容器生效。验证：
+
+```bash
+# 白名单已生效：frame-ancestors 里有 HaloWebUI 的源，且不再有 X-Frame-Options
+curl -sI https://<本站地址>/ | grep -i -E 'content-security-policy|x-frame-options'
+# 免密入口已开启：没带票据回 303（落到未解锁的首页）；没配密钥则是 404
+curl -s -o /dev/null -w '%{http_code}\n' 'https://<本站地址>/embed/enter'
+```
+
+工作方式：HaloWebUI 后端确认当前用户是它的管理员后签一张两分钟内有效、只能用一次的票据，iframe 指向
+`/embed/enter?ticket=…`，本站验票通过后下发和密码解锁同一种会话 Cookie。被嵌入时所有外链一律开新标签页。
+票据格式、密钥保管、防重放与防爆破的细节见 [SECURITY.md](SECURITY.md) 的「被自己的 HaloWebUI 嵌入」一节。
+
+Service Worker 的缓存版本随这次改动 +1：旧缓存里的外壳带着旧的「禁止嵌入」响应头，新版本激活时会整体清掉。
+升级后第一次在 HaloWebUI 里打开若仍被浏览器拒绝，单独打开本站刷新一次即可。
 
 ---
 
