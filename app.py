@@ -14,6 +14,7 @@ gyqd 签到逻辑的 Web 封装。
 import base64
 import binascii
 import datetime
+import gzip
 import hashlib
 import hmac
 import json
@@ -1718,12 +1719,130 @@ def apply_security_headers(resp):
 
 
 # =========================
+# 传输压缩与外壳再验证
+# =========================
+#
+# 这是个起始页：每开一个标签页就要一次外壳（/ 与 app-v3.css，合计五百多 KB）。gunicorn 直接对外、
+# 前面没有反代时没人替它压缩，首页 HTML 也没有任何校验头——Service Worker 每次后台刷新都是整份重传。
+#  - gzip：文本类响应（HTML / CSS / JS / JSON）压到原来的三成左右；
+#  - 首页带内容哈希的 ETag：内容没变就是一个 304，几百字节。
+# 前面已有反代在压缩也不冲突：反代看到 Content-Encoding 会原样透传。
+GZIP_MIN_BYTES = 1024      # 再小就不值得：压缩头本身几十字节，还要搭上 CPU
+GZIP_LEVEL = 6
+_GZIP_MIMETYPES = frozenset({
+    "text/html", "text/css", "text/plain", "text/javascript", "application/javascript",
+    "application/json", "application/manifest+json",
+})
+# 会回真实凭据的接口不压缩：「压缩 + 密文长度可观测」是 BREACH 一类攻击的前提。这些响应里没有
+# 攻击者可控的回显、会话 Cookie 也是 SameSite=Lax，本就构不成条件；不压只是把这条路彻底关死。
+_GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "api_export"})
+# 带 ETag 的响应（首页外壳、静态文件）内容不变、压缩结果也不变：按 (路径, ETag) 记下来，
+# 不必每个请求重压一遍。条目只有外壳那几个文件，设个上限防意外膨胀。
+_GZIP_CACHE_MAX = 32
+_gzip_cache = {}
+_gzip_cache_lock = threading.Lock()
+_shell_etag_memo = (None, "")   # (上一次渲染出的外壳, 它的 ETag)；整个元组一次换掉，读的人不会看到半新半旧
+
+
+def _accepts_gzip():
+    return request.accept_encodings["gzip"] > 0
+
+
+def _gzip_pack(data):
+    # mtime=0：同样的内容压出同样的字节，不把服务器时间写进响应里。
+    return gzip.compress(data, compresslevel=GZIP_LEVEL, mtime=0)
+
+
+def _gzip_cache_get(key):
+    with _gzip_cache_lock:
+        return _gzip_cache.get(key)
+
+
+def _gzip_cache_put(key, packed):
+    with _gzip_cache_lock:
+        if len(_gzip_cache) >= _GZIP_CACHE_MAX:
+            _gzip_cache.clear()
+        _gzip_cache[key] = packed
+
+
+@app.after_request
+def compress_response(resp):
+    """按需 gzip 文本类响应。只压完整的 200：206 / 已编码的原样放行，304 只补上 Vary。"""
+    if (resp.status_code not in (200, 304) or resp.mimetype not in _GZIP_MIMETYPES
+            or "Content-Encoding" in resp.headers or request.endpoint in _GZIP_SKIP_ENDPOINTS
+            or (resp.is_streamed and not resp.direct_passthrough)):   # 真正的流式响应不攒；send_file 的直通文件流除外
+        return resp
+    # 同一个地址会按请求头给出两种表示，缓存（浏览器 / 反代）必须分开存；304 要和它对应的 200 说法一致。
+    resp.vary.add("Accept-Encoding")
+    if resp.status_code != 200 or request.method == "HEAD" or not _accepts_gzip():
+        return resp
+    length = resp.content_length
+    if length is not None and length < GZIP_MIN_BYTES:
+        return resp
+    etag = resp.get_etag()[0]
+    key = (request.path, etag) if etag else None
+    packed = _gzip_cache_get(key) if key else None
+    if packed is None:
+        # send_file 给的是直通的文件流，要先读出来才压得了。
+        resp.direct_passthrough = False
+        data = resp.get_data()
+        if len(data) < GZIP_MIN_BYTES:
+            return resp
+        packed = _gzip_pack(data)
+        if len(packed) >= len(data):
+            return resp
+        if key:
+            _gzip_cache_put(key, packed)
+    else:
+        # 命中缓存：原来那个文件流用不上了，当场关掉，别让句柄等到垃圾回收才释放。
+        closer = getattr(resp.response, "close", None)
+        if closer:
+            closer()
+        resp.direct_passthrough = False
+    resp.set_data(packed)
+    resp.headers["Content-Encoding"] = "gzip"
+    if etag:
+        # 压缩后的字节和原文不是同一份表示，强 ETag 不能共用：降成弱校验（nginx 也是这么做的）。
+        # If-None-Match 按规范用弱比较，304 照常命中。
+        resp.set_etag(etag, weak=True)
+    return resp
+
+
+# 内置壁纸几乎不变，Flask 默认给静态文件的却是 no-cache：没有 Service Worker 的环境（http 直连不是
+# 安全上下文，注册不了）每开一个标签页都要先回源问一次才画得出背景。给一天的新鲜期，和站点图标一致；
+# 代价是重画壁纸后旧图最多再留一天。
+STATIC_WALLPAPER_MAX_AGE = 24 * 3600
+
+
+@app.after_request
+def cache_builtin_wallpapers(resp):
+    if (request.endpoint == "static" and request.path.startswith("/static/wallpapers/")
+            and resp.status_code in (200, 304)):
+        resp.headers["Cache-Control"] = "public, max-age={0}".format(STATIC_WALLPAPER_MAX_AGE)
+    return resp
+
+
+# =========================
 # 路由：页面
 # =========================
 
+def _shell_etag(body):
+    """外壳的 ETag = 渲染结果的内容哈希；模板没变就不重算（整段字节比较远比哈希便宜）。"""
+    global _shell_etag_memo
+    memo = _shell_etag_memo
+    if memo[0] != body:
+        memo = _shell_etag_memo = (body, hashlib.sha256(body).hexdigest()[:32])
+    return memo[1]
+
+
 @app.get("/")
 def index():
-    return render_template("index.html")
+    """应用外壳：不含任何数据，可以放心让浏览器留着——但每次都要回来问一句有没有新版本。"""
+    body = render_template("index.html").encode("utf-8")
+    resp = app.response_class(body, mimetype="text/html")
+    resp.set_etag(_shell_etag(body))
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp.make_conditional(request)
 
 
 @app.get("/sw.js")
@@ -3657,7 +3776,9 @@ def api_favicon():
     # 内容来自第三方（SVG 可内嵌脚本）：直接访问该地址时用 CSP 关死脚本与外部加载。
     resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     resp.headers["Content-Disposition"] = "inline"
-    return resp
+    # 一天的新鲜期过后浏览器会回来重新验证：图标没变就是一个 304，首页上百个图标不必每天整份重下一遍。
+    resp.set_etag(hashlib.sha1(hit["data"]).hexdigest())
+    return resp.make_conditional(request)
 
 
 # =========================

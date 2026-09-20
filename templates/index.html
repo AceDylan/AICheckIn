@@ -1401,10 +1401,13 @@
     }
 
     // ===== 配置管理 =====
-    async function loadConfigs() {
+    // quiet：后台悄悄对数据（见「回到页面时对一下数据」）。失败了不弹提示、不跳页，屏幕上原来的内容照旧。
+    async function loadConfigs(opts) {
+      const quiet = !!(opts && opts.quiet);
       try {
         const resp = await fetch('/api/configs', { headers: adminHeaders() });
         const data = await resp.json();
+        if (!data.ok && quiet) return false;
         if (!data.ok) {
           // 多半是 config.json 读不出来了。别只丢一句「加载失败」就不管，
           // 直接把人带到能救命的那个面板。
@@ -1438,7 +1441,11 @@
         refreshActiveView(currentViewName());
         // 分享 / 书签小工具带来的参数要等分组与解锁状态就绪后才能处理。
         if (!SHARE_HANDLED) { SHARE_HANDLED = true; consumeShareParams(); }
-      } catch (e) { toast('加载配置失败：' + e.message, 'err'); }
+        return true;
+      } catch (e) {
+        if (!quiet) toast('加载配置失败：' + e.message, 'err');
+        return false;
+      }
     }
 
     function canEdit() { return !STATE.admin_required || STATE.admin_unlocked; }
@@ -6003,11 +6010,65 @@
       if (el) el.setAttribute('href', bookmarkletHref());
     }
 
+    // ===== 回到页面时对一下数据 =====
+    // 起始页的标签常常一挂就是半天：这期间在手机上勾掉的待办、另一台电脑上加的网址、后台刷新出来的余额，
+    // 这一页都不知道，要手动刷新才看得到。离开够久再回来就悄悄重取一次。
+    //  - 只在收藏库（含首页）做：那里全是展示内容，重绘不丢东西；设置页有填到一半的表单，不去碰；
+    //  - 手上有活就不打扰（弹窗开着、编辑首页、正在改待办 / 倒数日 / 便签、输入框里有字），留到下一次；
+    //  - 失败不提示：多半是电脑刚从睡眠里醒来、网络还没接上。
+    const REVISIT = { hiddenAt: 0, minAwayMs: 60 * 1000, busy: false };
+    function revisitBlocked() {
+      if (!STATE_LOADED || REVISIT.busy || currentViewName() !== 'bookmarks') return true;
+      if (document.querySelector('.modal-mask.show')) return true;
+      if (ARRANGE.on || TODO.editing || TODO.inflight || TODO_SORT.active || DAYS.formOpen || MEMO.dirty || MEMO.saving) return true;
+      const el = document.activeElement;
+      return !!(el && /^(INPUT|TEXTAREA)$/.test(el.tagName) && el.value);
+    }
+    async function revisitRefresh() {
+      const away = REVISIT.hiddenAt ? Date.now() - REVISIT.hiddenAt : 0;
+      REVISIT.hiddenAt = 0;
+      if (away < REVISIT.minAwayMs || revisitBlocked()) return false;
+      REVISIT.busy = true;
+      try { return await loadConfigs({ quiet: true }); } finally { REVISIT.busy = false; }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) REVISIT.hiddenAt = Date.now();
+      else if (!STATE_LOADED) bootRetry();   // 第一次就没取到：回来时再试，不必等够时间
+      else revisitRefresh();
+    });
+    // 同一个标签里点开网址再按「后退」：页面是从往返缓存里整个恢复的，不一定会有 visibilitychange。
+    window.addEventListener('pagehide', () => { if (!REVISIT.hiddenAt) REVISIT.hiddenAt = Date.now(); });
+    window.addEventListener('pageshow', (e) => { if (e.persisted) revisitRefresh(); });
+
+    // ===== 第一次加载没成功：悄悄再试 =====
+    // 新标签页常常开得比网络恢复还快（电脑刚唤醒、手机刚出电梯）：外壳来自缓存秒开，数据却没取到，
+    // 页面就一直空着等人手动刷新。第一次失败照常提示，之后隔几秒静默重试几次；浏览器报告网络恢复（online）
+    // 或人切回这一页时立刻再试。只管「请求没发出去」这一种——服务端明确报错（配置损坏）重试也没用。
+    const BOOT_RETRY = { delays: [2000, 5000, 15000], n: 0, timer: 0, busy: false };
+    function scheduleBootRetry() {
+      clearTimeout(BOOT_RETRY.timer);
+      if (STATE_LOADED || BOOT_RETRY.n >= BOOT_RETRY.delays.length) return;
+      BOOT_RETRY.timer = setTimeout(bootRetry, BOOT_RETRY.delays[BOOT_RETRY.n++]);
+      if (BOOT_RETRY.timer && typeof BOOT_RETRY.timer.unref === 'function') BOOT_RETRY.timer.unref();
+    }
+    async function bootRetry() {
+      if (STATE_LOADED || BOOT_RETRY.busy) return false;
+      BOOT_RETRY.busy = true;
+      let ok = false;
+      try { ok = await loadConfigs({ quiet: true }); } finally { BOOT_RETRY.busy = false; }
+      if (!ok) scheduleBootRetry();
+      return ok;
+    }
+    window.addEventListener('online', () => { bootRetry(); });
+
     // ===== 初始化 =====
     renderLibrary();
     renderBookmarklet();
     renderStartPrefs();
-    loadConfigs().then(autofocusHomeSearch);
+    loadConfigs().then((ok) => {
+      autofocusHomeSearch();
+      if (ok === false) scheduleBootRetry();
+    });
   </script>
 </body>
 </html>

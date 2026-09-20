@@ -12,7 +12,7 @@
  * 用到哪张缓存哪张。上传的自定义壁纸在 /api/wallpaper，和其它接口一样不经过这里，
  * 由带内容哈希的地址 + HTTP 长缓存负责。
  */
-const CACHE_VERSION = 'bh-shell-v14';
+const CACHE_VERSION = 'bh-shell-v15';
 const SHELL = [
   '/',
   '/static/app-v3.css',

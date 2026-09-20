@@ -146,6 +146,15 @@
   浏览器端不保存任何明文密码。
 - 所有响应带 `X-Content-Type-Options` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`
   / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'none'`），`/api/*` 默认 `no-store`。
+- 传输压缩：文本类响应（HTML / CSS / JS / JSON，≥ 1 KB）在客户端声明支持时用 gzip 压缩。**会回真实凭据的接口不压缩**
+  （`/api/configs/<idx>/secret`、`/api/bookmarks/<idx>/secret`、`/api/configs/export`；有测试保证新增的 `*_secret` 端点必须进这张名单）：
+  「压缩 + 可观测的密文长度」是 BREACH 一类攻击的前提。其余接口的响应里没有请求方可控的回显，会话 Cookie 又是 `SameSite=Lax`
+  （跨站子请求不带 Cookie），本就不满足攻击条件；不压缩只是把这条路彻底关死。压缩结果只缓存带 ETag 的外壳文件（首页、静态文件），
+  接口数据不进缓存，`no-store` 等响应头原样保留。
+- 首页外壳（`/`）带内容哈希的 ETag，`Cache-Control: no-cache`（可以留存、但每次都要回源验证）。外壳里没有任何数据——收藏、待办、
+  配置全部来自 `/api/*`（`no-store`）——所以让浏览器留着它不泄漏任何东西，私密模式下同样如此。
+- 「回到页面时自动对一下数据」与「首次加载失败后重试」只是重新请求同一个 `/api/configs`，权限与脱敏规则不变；
+  会话在离开期间过期的话，回来后页面会如实回到未解锁状态。
 
 ---
 

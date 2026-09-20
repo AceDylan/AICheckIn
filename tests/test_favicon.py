@@ -156,6 +156,23 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
         self.assertEqual(self.calls, [], "不在配置里的站点不应发起任何外部请求")
 
+    def test_unchanged_icon_revalidates_with_a_304(self):
+        """一天的新鲜期过后浏览器会回来问：图标没变就别整份重传，首页上有上百个。"""
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="icon" href="/static/i.png"></head>', "text/html"),
+            "https://demo.example/static/i.png": (PNG, "image/png"),
+        })
+        first = self.client.get("/api/favicon?u=https://demo.example/")
+        self.assertTrue(first.headers.get("ETag"))
+        again = self.client.get("/api/favicon?u=https://demo.example/", headers={"If-None-Match": first.headers["ETag"]})
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(again.get_data(), b"")
+        self.assertIn("max-age", again.headers["Cache-Control"])       # 304 把新鲜期续上
+        self.assertIn("default-src 'none'", again.headers["Content-Security-Policy"])
+        stale = self.client.get("/api/favicon?u=https://demo.example/", headers={"If-None-Match": '"someone-else"'})
+        self.assertEqual(stale.status_code, 200)
+        self.assertEqual(stale.get_data(), PNG)
+
     def test_fetches_declared_icon_and_caches_it(self):
         self._patch_http({
             "https://demo.example/": (b'<head><link rel="icon" href="/static/i.png"></head>', "text/html"),
