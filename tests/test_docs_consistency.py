@@ -75,7 +75,9 @@ class SecurityDocAccuracyTest(unittest.TestCase):
                            ("/api/history", "api_history"),
                            ("/api/configs/export", "api_export"),
                            ("/api/todos", "api_todos"),
-                           ("/api/deck", "api_deck")):
+                           ("/api/deck", "api_deck"),
+                           ("/api/holidays/check", "api_holidays_check"),
+                           ("/api/holidays/apply", "api_holidays_apply")):
             self.assertIn(path, self.security, "%s 未出现在 SECURITY.md 的权限表里" % path)
             body = self.code[self.code.index("def %s(" % func):]
             self.assertIn("_guard_admin()", body[:400], "%s 实际并未加管理鉴权" % func)

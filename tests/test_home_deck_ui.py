@@ -95,11 +95,12 @@ class DeckMarkupTest(StoreIsolationMixin, unittest.TestCase):
         section = deck_section(self.script)
         for banned in ("localStorage", "sessionStorage", "setInterval", "eval(", "XMLHttpRequest", "WebSocket"):
             self.assertNotIn(banned, section)
-        self.assertNotRegex(section, r"https?://")                  # 日历、节日全在浏览器里现算，不问任何外部服务
-        urls = re.findall(r"deckApi\('([^']+)'", section)
-        self.assertGreaterEqual(len(urls), 4)
+        # 日历、节日全在浏览器里现算，不问任何外部服务；同步放假安排也只问本站（由服务端去中国政府网取）。
+        self.assertNotRegex(section, r"https?://")
+        urls = re.findall(r"(?:deckApi|holidayApi)\('([^']+)'", section)
+        self.assertGreaterEqual(len(urls), 6)
         for url in urls:
-            self.assertTrue(url.startswith("/api/deck/"), url)
+            self.assertTrue(url.startswith(("/api/deck/", "/api/holidays/")), url)
         self.assertEqual(re.findall(r"fetch\(([^,)]+)", section), ["url"])          # 只有 deckApi 这一处发请求
         # 常驻定时器只有时钟那一个；便签的防抖定时器在 node 里要 unref，否则测试进程不退出。
         self.assertIn("if (MEMO.timer && typeof MEMO.timer.unref === 'function') MEMO.timer.unref();", section)

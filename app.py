@@ -17,6 +17,7 @@ import datetime
 import gzip
 import hashlib
 import hmac
+import html
 import json
 import os
 import random
@@ -2757,6 +2758,7 @@ def api_configs():
             "wallpaper": {"custom": False, "v": "", "lum": None},
             "todos": [], "todos_locked": True,
             "deck": _coerce_deck({}), "deck_locked": True, "deck_error": "",
+            "holidays": {"plans": {}},
             # 未解锁：连「有没有 AI 聊天 / 笔记服务、它们在哪」都不说。
             "chat": None, "vault": None,
         })
@@ -2790,6 +2792,11 @@ def api_configs():
             deck = read_deck()
         except RuntimeError as exc:
             deck_error = str(exc)
+    # 同步来的放假安排：公开信息（日历访客也能看），读坏了只是回落到页面内置的年份。
+    try:
+        holidays = {"plans": read_holidays()}
+    except RuntimeError as exc:
+        holidays = {"plans": {}, "error": str(exc)}
     return jsonify({
         "ok": True,
         "configs": [] if configs_hidden else configs_out,
@@ -2824,6 +2831,7 @@ def api_configs():
         "wallpaper": public_wallpaper(),
         "todos": todos, "todos_locked": not unlocked, "todos_error": todos_error,
         "deck": deck, "deck_locked": not unlocked, "deck_error": deck_error,
+        "holidays": holidays,
         # 「AI 聊天」标签页：HaloWebUI 的地址只给已解锁的人（没设管理密码时人人都算已解锁）。
         # 免登录票据另走 POST /api/chat/ticket，这里只有地址。
         "chat": {"url": CHAT_URL} if chat_enabled() and unlocked else None,
@@ -4967,6 +4975,467 @@ def api_deck_memo():
             raise ValueError("便签过长（最多 {0} 字）".format(DECK_MEMO_MAX))
         deck["memo"] = {"text": text, "updated_at": _now_str()}
     return _deck_call(change)
+
+
+# =========================
+# 法定节假日安排：从中国政府网同步
+# =========================
+#
+# 「哪几天放假、哪几个周末调休上班」每年由国务院办公厅发通知公布，算不出来。页面里内置了已知年份
+# （templates/index.html 的 HOLIDAY_PLANS），新一年的通知出来后，管理员在日历里点「同步放假安排」由这里去取：
+#   1. 用中国政府网「国务院政策文件库」的检索接口（sousuo.www.gov.cn）按标题找
+#      「国务院办公厅关于 YYYY 年部分节假日安排的通知」；检索接口不可用时，也可以直接给一篇通知的链接。
+#   2. 只抓 https://www.gov.cn/zhengce/… 下的通知正文：固定主机 + 路径白名单，跳转出白名单即失败，限时限量。
+#      不接受任意网址——这不是一个通用代理。
+#   3. 正文只当纯文本用：按通知固定的「一、元旦：1月1日（周四）至3日（周六）放假调休，共3天。1月4日（周日）上班。」
+#      句式抽出日期，再逐条自检——括号里的星期几要对得上、「共 N 天」要对得上、七个节日一个不少也不重复、
+#      调休上班只落在周末且不在假期里、元旦 / 劳动节 / 国庆节的假期要包含 1/1、5/1、10/1……
+#      任何一条不符就整份拒收：宁可不更新，也不把错的日子写进日历。抓回来的 HTML 从不下发给浏览器。
+#   4. 检查（/api/holidays/check）只预览、不落盘；管理员在日历里看过、点「保存」（/api/holidays/apply）
+#      才写进 data/holidays.json。两步之间靠预览的指纹对上号，保存的就是看到的那一份。
+# 日历是公开组件，已保存的安排随开放的 /api/configs 下发（本来就是公开信息）；检查和保存要管理权限。
+HOLIDAY_NAMES = ("元旦", "春节", "清明节", "劳动节", "端午节", "中秋节", "国庆节")
+HOLIDAY_SEARCH_URL = "https://sousuo.www.gov.cn/search-gov/data"
+HOLIDAY_SEARCH_PARAMS = (
+    ("t", "zhengcelibrary_gw"), ("q", "部分节假日安排"), ("searchfield", "title"), ("sort", "pubtime"),
+    ("sortType", "1"), ("timetype", "timeqb"), ("type", "gwyzcwjk"), ("p", "1"), ("n", "10"),
+)
+HOLIDAY_TIMEOUT = 12                   # 单次请求超时（秒）
+HOLIDAY_MAX_BYTES = 1024 * 1024        # 通知页约 30KB、检索结果约 20KB，超过 1MB 一定不对
+HOLIDAY_CHECK_REUSE = 60               # 一分钟内重复点「同步」直接复用上一次的结果，不去反复敲政府网
+HOLIDAY_PREVIEW_TTL = 15 * 60          # 预览到保存之间最多隔多久
+_HOLIDAY_TITLE_RE = re.compile(r"^国务院办公厅关于(\d{4})年部分节假日安排的通知$")
+_HOLIDAY_NOTICE_PATH_RE = re.compile(r"^/zhengce/(?:zhengceku|content)/[0-9A-Za-z_/-]+\.htm$")
+_HOLIDAY_NAME_ALT = "|".join(HOLIDAY_NAMES)
+_HOLIDAY_ITEM_RE = re.compile(r"[一二三四五六七八九十]+、((?:{0})(?:、(?:{0}))*)：".format(_HOLIDAY_NAME_ALT))
+_HOLIDAY_DATE_RE = re.compile(r"(?:(\d{4})年)?(?:(\d{1,2})月)?(\d{1,2})日(?:[（(]([^（）()]*)[）)])?")
+_HOLIDAY_WEEKDAY_RE = re.compile(r"(?:周|星期)([一二三四五六日天])")
+_HOLIDAY_DOC_NO_RE = re.compile(r"国办发(?:明电)?〔\d{4}〕\d+号")
+_HOLIDAY_SIGNED_RE = re.compile(r"国务院办公厅(\d{4})年(\d{1,2})月(\d{1,2})日")
+_HOLIDAY_WEEKDAYS = "一二三四五六日"
+_holiday_file_lock = threading.Lock()
+_holiday_check_lock = threading.Lock()
+_holiday_cache = {"checks": {}, "previews": {}}
+
+
+class HolidaySyncError(Exception):
+    """同步失败的原因，原样给管理员看（不含任何抓回来的原文）。"""
+
+
+def _holidays_path():
+    return Path(DATA_DIR) / "holidays.json"
+
+
+def _holiday_this_year():
+    return datetime.datetime.now(_resolve_tz(DEFAULT_TZ)).year
+
+
+def holiday_notice_url(url):
+    """中国政府网通知正文的规范地址（https://www.gov.cn/zhengce/…htm）；不是就回空串。粘贴时漏了 https:// 也认。"""
+    url = str(url or "").strip()
+    if url.lower().startswith("www.gov.cn/"):
+        url = "https://" + url
+    try:
+        parts = urlparse(url)
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or (parts.hostname or "").lower() != "www.gov.cn":
+        return ""
+    if parts.port not in (None, 80, 443) or parts.username or parts.password:
+        return ""
+    if not _HOLIDAY_NOTICE_PATH_RE.match(parts.path or ""):
+        return ""
+    return "https://www.gov.cn" + parts.path
+
+
+def _holiday_fetch_allowed(url):
+    if holiday_notice_url(url):
+        return True
+    parts = urlparse(url)
+    return parts.scheme == "https" and (parts.hostname or "").lower() == "sousuo.www.gov.cn" and parts.path == "/search-gov/data"
+
+
+class _HolidayRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """只跟随仍在白名单里的跳转（例如 http → https）；跳去别处一律当失败。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _holiday_fetch_allowed(newurl):
+            raise urllib.error.HTTPError(newurl, code, "redirect outside whitelist", headers, fp)
+        return urllib.request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, headers, newurl)
+
+
+def _holiday_get(url):
+    """抓白名单里的一个地址，返回 bytes；失败抛 HolidaySyncError。
+
+    先直连（容器环境变量里的 HTTP(S)_PROXY 照常生效）；连不上且「系统设置」里配了 http 代理时再走代理试一次。"""
+    if not _holiday_fetch_allowed(url):
+        raise HolidaySyncError("只从中国政府网（www.gov.cn）取放假安排")
+    headers = {"User-Agent": FAVICON_UA, "Accept": "text/html,application/json;q=0.9,*/*;q=0.5",
+               "Accept-Language": "zh-CN,zh;q=0.9"}
+    try:
+        proxy = str(read_store().get("proxy_url") or "").strip()
+    except RuntimeError:
+        proxy = ""
+    routes = [None] + ([proxy] if proxy and not proxy.lower().startswith("socks") else [])
+    reason = ""
+    for route in routes:
+        handlers = [_HolidayRedirectHandler()]
+        if route:
+            handlers.append(urllib.request.ProxyHandler({"http": route, "https": route}))
+        try:
+            with urllib.request.build_opener(*handlers).open(urllib.request.Request(url, headers=headers),
+                                                              timeout=HOLIDAY_TIMEOUT) as resp:
+                data = resp.read(HOLIDAY_MAX_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            raise HolidaySyncError("中国政府网返回 HTTP {0}".format(exc.code))
+        except Exception as exc:  # noqa: BLE001 - DNS / 超时 / TLS：换条路再试
+            reason = exc.__class__.__name__
+            continue
+        if len(data) > HOLIDAY_MAX_BYTES:
+            raise HolidaySyncError("中国政府网返回的内容大得不正常，已放弃")
+        return data
+    raise HolidaySyncError("连不上中国政府网（{0}），稍后再试".format(reason or "网络错误"))
+
+
+def search_holiday_notices():
+    """在国务院政策文件库里按标题找历年「部分节假日安排的通知」：{年份: {url, title, doc_no, published}}。"""
+    raw = _holiday_get(HOLIDAY_SEARCH_URL + "?" + urlencode(HOLIDAY_SEARCH_PARAMS))
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        items = payload["searchVO"]["listVO"]
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError):
+        raise HolidaySyncError("中国政府网的检索接口返回了看不懂的内容，可以改为粘贴通知链接")
+    found = {}
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        title = re.sub(r"<[^>]*>", "", str(item.get("title") or "")).strip()
+        m = _HOLIDAY_TITLE_RE.match(title)
+        url = holiday_notice_url(item.get("url"))
+        if not m or not url or str(item.get("puborg") or "国务院办公厅") != "国务院办公厅":
+            continue
+        year = int(m.group(1))
+        found.setdefault(year, {"url": url, "title": title, "doc_no": str(item.get("pcode") or "")[:40]})
+    return found
+
+
+def _holiday_text(html_bytes):
+    """通知页 → 去掉标签、实体和一切空白的纯文本（正文的句式里本来就没有空格）。"""
+    text = html_bytes.decode("utf-8", "replace")
+    text = re.sub(r"(?is)<(script|style)\b.*?</\1\s*>", "", text)
+    text = html.unescape(re.sub(r"<[^>]*>", "", text))
+    return re.sub(r"\s+", "", text)
+
+
+def _holiday_date(m, year, month, label):
+    """把一处「[YYYY年][M月]D日（周X）」落成 date；月份省略时沿用前一个日期的。括号里写了星期几就必须对得上。"""
+    y = int(m.group(1)) if m.group(1) else year
+    mo = int(m.group(2)) if m.group(2) else month
+    if not mo:
+        raise HolidaySyncError("{0}：日期「{1}」缺少月份".format(label, m.group(0)))
+    try:
+        day = datetime.date(y, mo, int(m.group(3)))
+    except ValueError:
+        raise HolidaySyncError("{0}：日期「{1}」不存在".format(label, m.group(0)))
+    wk = _HOLIDAY_WEEKDAY_RE.search(m.group(4) or "")
+    if wk and day.weekday() != _HOLIDAY_WEEKDAYS.index(wk.group(1).replace("天", "日")):
+        raise HolidaySyncError("{0}：{1} 不是{2}，通知格式可能变了".format(label, day.isoformat(), wk.group(0)))
+    return day
+
+
+def _parse_holiday_item(names, body, year):
+    """一条「一、元旦：……」→ ((名字…), 起, 止, [调休上班日…])。"""
+    label = "、".join(names)
+    sentences = [s for s in body.split("。") if s]
+    offs = [s for s in sentences if "放假" in s]
+    if len(offs) != 1:
+        raise HolidaySyncError("{0}：没找到唯一的放假日期".format(label))
+    off = offs[0]
+    head = off[:off.index("放假")]
+    dates = list(_HOLIDAY_DATE_RE.finditer(head))
+    if len(dates) not in (1, 2) or (len(dates) == 2) != ("至" in head):
+        raise HolidaySyncError("{0}：放假日期的写法和预期不一致".format(label))
+    start = _holiday_date(dates[0], year, 0, label)
+    end = start
+    if len(dates) == 2:
+        end = _holiday_date(dates[1], start.year, start.month, label)
+        if end < start and not dates[1].group(1):          # 「12月31日至1月2日」：跨年
+            end = _holiday_date(dates[1], start.year + 1, start.month, label)
+    if end < start:
+        raise HolidaySyncError("{0}：假期的结束早于开始".format(label))
+    if "与周末连休" in off:                                  # 「1月1日放假，与周末连休」：连上挨着的周六周日
+        while (start - datetime.timedelta(days=1)).weekday() >= 5:
+            start -= datetime.timedelta(days=1)
+        while (end + datetime.timedelta(days=1)).weekday() >= 5:
+            end += datetime.timedelta(days=1)
+    count = re.search(r"(?:共|放假)(\d+)天", off)
+    if count and int(count.group(1)) != (end - start).days + 1:
+        raise HolidaySyncError("{0}：写的是共 {1} 天，日期算出来是 {2} 天".format(label, count.group(1), (end - start).days + 1))
+    work = []
+    for sentence in sentences:
+        if "上班" not in sentence or sentence is off:
+            continue
+        month = 0
+        for m in _HOLIDAY_DATE_RE.finditer(sentence[:sentence.rindex("上班")]):
+            day = _holiday_date(m, year, month, label)
+            month = day.month
+            work.append(day)
+    return tuple(names), start, end, work
+
+
+def _check_holiday_plan(year, spans, work):
+    """整份安排的自检：抛 HolidaySyncError。spans = [((名字…), 起, 止)]，work = [date]。"""
+    seen = [name for names, _, _ in spans for name in names]
+    if sorted(seen) != sorted(HOLIDAY_NAMES):
+        raise HolidaySyncError("七个法定节日不全或有重复：{0}".format("、".join(seen) or "无"))
+    lo, hi = datetime.date(year - 1, 12, 1), datetime.date(year, 12, 31)
+    days_off = set()
+    for names, start, end in spans:
+        if not (lo <= start <= end <= hi) or (end - start).days >= 12:
+            raise HolidaySyncError("{0}：假期 {1}–{2} 超出了合理范围".format("、".join(names), start, end))
+        span_days = {start + datetime.timedelta(days=k) for k in range((end - start).days + 1)}
+        if span_days & days_off:
+            raise HolidaySyncError("{0}：假期和别的假期重叠".format("、".join(names)))
+        days_off |= span_days
+        for name, fixed in (("元旦", (1, 1)), ("劳动节", (5, 1)), ("国庆节", (10, 1))):
+            if name in names and datetime.date(year, *fixed) not in span_days:
+                raise HolidaySyncError("{0}的假期没有包含 {1} 月 {2} 日".format(name, *fixed))
+    if len(set(work)) != len(work):
+        raise HolidaySyncError("调休上班日有重复")
+    for day in work:
+        if day.weekday() < 5 or day in days_off or not lo <= day <= hi:
+            raise HolidaySyncError("调休上班日 {0} 不合理（应当是假期之外的周末）".format(day))
+
+
+def parse_holiday_notice(html_bytes, year=None):
+    """通知页 → 一年的放假安排 {year, off, work, source}；year 给了就必须是那一年的通知。抛 HolidaySyncError。"""
+    text = _holiday_text(html_bytes)
+    title = re.search(r"国务院办公厅关于(\d{4})年部分节假日安排的通知", text)
+    if not title or (year is not None and int(title.group(1)) != year):
+        raise HolidaySyncError("这不是{0}年的「部分节假日安排的通知」".format(year or "某"))
+    year = int(title.group(1))
+    start = text.find("通知如下", title.end())
+    if start < 0:
+        raise HolidaySyncError("通知正文的格式和预期不一致")
+    stop = min(len(text), start + 4000)                      # 正文到「节假日期间……」或落款为止
+    tail = text.find("节假日期间", start)
+    signed = _HOLIDAY_SIGNED_RE.search(text, start)
+    for pos in (tail, signed.start() if signed else -1):
+        if pos > start:
+            stop = min(stop, pos)
+    body = text[start:stop]
+    heads = list(_HOLIDAY_ITEM_RE.finditer(body))
+    if not heads:
+        raise HolidaySyncError("通知里没找到「一、元旦：……」这样的条目")
+    spans, work = [], []
+    for pos, m in enumerate(heads):
+        chunk = body[m.end():heads[pos + 1].start() if pos + 1 < len(heads) else len(body)]
+        names, s, e, w = _parse_holiday_item(m.group(1).split("、"), chunk, year)
+        spans.append((names, s, e))
+        work.extend(w)
+    _check_holiday_plan(year, spans, work)
+    doc_no = _HOLIDAY_DOC_NO_RE.search(text)
+    published = ""
+    if signed:
+        try:
+            published = datetime.date(*(int(x) for x in signed.groups())).isoformat()
+        except ValueError:
+            published = ""
+    return {
+        "year": year,
+        "off": [["、".join(names), s.isoformat(), e.isoformat()] for names, s, e in sorted(spans, key=lambda x: x[1])],
+        "work": sorted(d.isoformat() for d in work),
+        "source": {"title": "国务院办公厅关于{0}年部分节假日安排的通知".format(year),
+                   "doc_no": doc_no.group(0) if doc_no else "", "published": published},
+    }
+
+
+def _coerce_holiday_plan(year, raw):
+    """读盘路径：按同一套规则重验一遍，文件被手改坏了的年份直接丢掉（回落到页面内置的数据）。"""
+    try:
+        spans = []
+        for name, start, end in raw["off"]:
+            names = tuple(str(name).split("、"))
+            spans.append((names, datetime.date.fromisoformat(start), datetime.date.fromisoformat(end)))
+        work = [datetime.date.fromisoformat(d) for d in raw["work"]]
+        _check_holiday_plan(year, spans, work)
+    except (HolidaySyncError, KeyError, TypeError, ValueError):
+        return None
+    source = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+    return {
+        "year": year,
+        "off": [["、".join(names), s.isoformat(), e.isoformat()] for names, s, e in spans],
+        "work": sorted(d.isoformat() for d in work),
+        "source": {"title": _squash_text(source.get("title"), 60), "url": holiday_notice_url(source.get("url")),
+                   "doc_no": _squash_text(source.get("doc_no"), 40), "published": _valid_deck_date(source.get("published"))},
+        "synced_at": _todo_stamp(raw.get("synced_at")),
+    }
+
+
+def read_holidays():
+    """{年份字符串: 安排}；文件不存在回 {}，读坏了抛 RuntimeError。"""
+    path = _holidays_path()
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise RuntimeError("读取放假安排失败：{0}".format(exc))
+    plans = {}
+    for key, value in ((raw.get("plans") if isinstance(raw, dict) else None) or {}).items():
+        if re.match(r"^\d{4}$", str(key)) and 2000 <= int(key) <= 2100 and isinstance(value, dict):
+            plan = _coerce_holiday_plan(int(key), value)
+            if plan:
+                plans[str(key)] = plan
+    return plans
+
+
+def _holiday_core(plan):
+    return {"off": plan["off"], "work": plan["work"]}
+
+
+def check_holiday_plans(url=""):
+    """去中国政府网查今年和明年（或 url 指向的那一篇）的安排，只预览不落盘。
+
+    返回 {years: [{year, status: found / unpublished / error, …}], token}；整体连不上时抛 HolidaySyncError。"""
+    this_year = _holiday_this_year()
+    if url:
+        notice = holiday_notice_url(url)
+        if not notice:
+            raise HolidaySyncError(HOLIDAY_BAD_LINK)
+        plan = parse_holiday_notice(_holiday_get(notice))
+        if not 2000 <= plan["year"] <= this_year + 1:
+            raise HolidaySyncError("{0} 年的安排不在可同步的范围里".format(plan["year"]))
+        found = {plan["year"]: {"url": notice, "plan": plan}}
+        wanted = [plan["year"]]
+    else:
+        notices = search_holiday_notices()
+        found, wanted = {}, [this_year, this_year + 1]
+        for year in wanted:
+            if year in notices:
+                found[year] = notices[year]
+    try:
+        stored = read_holidays()
+    except RuntimeError:
+        stored = {}
+    rows = []
+    for year in wanted:
+        hit = found.get(year)
+        if not hit:
+            rows.append({"year": year, "status": "unpublished"})
+            continue
+        try:
+            plan = hit.get("plan") or parse_holiday_notice(_holiday_get(hit["url"]), year)
+        except HolidaySyncError as exc:
+            rows.append({"year": year, "status": "error", "error": str(exc), "url": hit["url"]})
+            continue
+        plan["source"]["url"] = hit["url"]
+        plan["source"]["doc_no"] = plan["source"]["doc_no"] or hit.get("doc_no", "")
+        old = stored.get(str(year))
+        rows.append(dict(plan, status="found", stored=bool(old) and _holiday_core(old) == _holiday_core(plan)))
+    plans = [r for r in rows if r["status"] == "found"]
+    token = hashlib.sha256(json.dumps([[r["year"], _holiday_core(r)] for r in plans]).encode()).hexdigest()[:32] if plans else ""
+    return {"years": rows, "token": token, "checked_at": _now_str()}
+
+
+def save_holiday_plans(plans):
+    """把核对过的几年安排写进 holidays.json（锁内读改写、留 .bak）。返回 (整份, 实际有变化的年份)。"""
+    with _holiday_file_lock:
+        current = read_holidays()
+        changed = []
+        for plan in plans:
+            key = str(plan["year"])
+            old = current.get(key)
+            if old and _holiday_core(old) == _holiday_core(plan) and old["source"].get("url") == plan["source"].get("url"):
+                continue
+            current[key] = dict({k: plan[k] for k in ("year", "off", "work", "source")}, synced_at=_now_str())
+            changed.append(plan["year"])
+        if changed:
+            path = _holidays_path()
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if path.is_file():
+                    try:
+                        _write_text_atomic(path.with_name(path.name + ".bak"), path.read_text(encoding="utf-8"))
+                    except OSError:
+                        pass
+                _write_text_atomic(path, json.dumps({"plans": current}, ensure_ascii=False, indent=2))
+            except OSError as exc:
+                raise RuntimeError("放假安排写入失败（请检查数据目录是否可写）：{0}".format(exc))
+        return read_holidays(), changed
+
+
+HOLIDAY_BAD_LINK = "只接受中国政府网（https://www.gov.cn/zhengce/…）上的通知链接"
+
+
+def _holiday_request_url():
+    """(请求体, 管理员粘贴的通知链接)；链接不在白名单里时第二项是 None——调用方直接回 400，不发任何请求。"""
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    url = str(payload.get("url") or "").strip()[:300]
+    return payload, (url if not url or holiday_notice_url(url) else None)
+
+
+@app.post("/api/holidays/check")
+def api_holidays_check():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    _, url = _holiday_request_url()
+    if url is None:
+        return jsonify({"ok": False, "error": HOLIDAY_BAD_LINK}), 400
+    now = time.time()
+    cached = _holiday_cache["checks"].get(url)
+    if cached and now - cached[0] < HOLIDAY_CHECK_REUSE:
+        return jsonify(dict(cached[1], ok=True, reused=True))
+    if not _holiday_check_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "正在查询中国政府网，请稍候"}), 429
+    try:
+        result = check_holiday_plans(url)
+    except HolidaySyncError as exc:
+        return jsonify({"ok": False, "error": str(exc), "can_paste": not url}), 502
+    finally:
+        _holiday_check_lock.release()
+    _holiday_cache["checks"] = {url: (now, result)}
+    previews = {k: v for k, v in _holiday_cache["previews"].items() if now - v[0] < HOLIDAY_PREVIEW_TTL}
+    if result["token"]:
+        previews[result["token"]] = (now, result)
+    _holiday_cache["previews"] = dict(sorted(previews.items(), key=lambda kv: kv[1][0])[-8:])
+    return jsonify(dict(result, ok=True))
+
+
+@app.post("/api/holidays/apply")
+def api_holidays_apply():
+    """保存刚才预览过的那一份。预览已过期（或进程重启过）就按同样的条件重查一遍，指纹对上才保存。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload, url = _holiday_request_url()
+    if url is None:
+        return jsonify({"ok": False, "error": HOLIDAY_BAD_LINK}), 400
+    token = str(payload.get("token") or "")
+    hit = _holiday_cache["previews"].get(token) if token else None
+    if hit and time.time() - hit[0] < HOLIDAY_PREVIEW_TTL:
+        result = hit[1]
+    else:
+        if not token:
+            return jsonify({"ok": False, "error": "先检查一遍再保存"}), 400
+        if not _holiday_check_lock.acquire(blocking=False):
+            return jsonify({"ok": False, "error": "正在查询中国政府网，请稍候"}), 429
+        try:
+            result = check_holiday_plans(url)
+        except HolidaySyncError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 502
+        finally:
+            _holiday_check_lock.release()
+        if result["token"] != token:
+            return jsonify({"ok": False, "error": "中国政府网上的内容和刚才看到的不一致，请重新检查"}), 409
+    try:
+        plans, changed = save_holiday_plans([r for r in result["years"] if r["status"] == "found"])
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    _holiday_cache["checks"] = {}          # 缓存里的「和已保存的是否一致」已经过时
+    return jsonify({"ok": True, "holidays": {"plans": plans}, "changed": changed})
 
 
 @app.get("/api/configs/export")

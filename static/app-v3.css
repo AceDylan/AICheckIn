@@ -1651,6 +1651,27 @@ html.wall-on .sidebar { border-color: rgba(255, 255, 255, .12); }
 .cal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cal-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 11.5px; line-height: 1.5; }
 @media (forced-colors: active) { .cal-day.is-picked { outline: 2px solid Highlight; } .cal-day.is-today { outline: 1px solid CanvasText; } }
+.cal-plan { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 6px; color: var(--text-3); font-size: 11px; line-height: 1.5; }
+.cal-plan[hidden], .cal-sync[hidden] { display: none; }
+.cal-plan .deck-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
+.cal-sync { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-hover); font-size: 11.5px; line-height: 1.5; }
+.cal-sync-note { margin: 0; color: var(--text-2); font-size: 11.5px; }
+.cal-sync-note.is-err { color: var(--danger); }
+.cal-sync-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.cal-sync-year { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.cal-sync-year > p { flex-basis: 100%; margin: 0; }
+.cal-sync-year b { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.cal-sync-tag { padding: 0 7px; border-radius: 999px; background: var(--border); color: var(--text-2); font-size: 10.5px; font-weight: 650; line-height: 18px; }
+.cal-sync-tag.is-new, .cal-sync-tag.is-changed { background: var(--accent-soft); color: var(--accent); }
+.cal-sync-tag.is-same { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+.cal-sync-tag.is-err { background: var(--danger-soft); color: var(--danger); }
+.cal-sync-src { color: var(--text-2); }
+.cal-sync-src a { color: var(--accent); font-weight: 600; }
+.cal-sync-sum { color: var(--text); overflow-wrap: anywhere; }
+.cal-sync-paste { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.cal-sync-paste .btn { align-self: flex-start; }
+.cal-sync-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 8px; margin-top: 10px; }
+.cal-sync-actions .cal-sync-note { flex: 1; min-width: 0; }
 
 /* ---------- 倒数日 ---------- */
 .days-list { max-height: 264px; margin: 0 -6px; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; }
