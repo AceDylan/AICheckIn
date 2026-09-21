@@ -1925,7 +1925,10 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .chat-note > span { flex: 1; min-width: 0; padding-top: 3px; }
 .chat-note-close { flex-shrink: 0; }
 .chat-stage { position: relative; flex: 1; min-height: 0; background: var(--bg); }
-.chat-frame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: transparent; }
+/* 框里的 prefers-color-scheme 取的是这个元素自己的 color-scheme（Chrome 129+ / Firefox 105+），不是系统设置。
+   不声明就会继承外层：开了壁纸的工作区固定 dark，HaloWebUI「跟随系统」时就被带成深色。
+   light dark = 两种都行、由浏览器挑，框里看到的就是整个浏览器的深浅色，与本站主题、壁纸无关。 */
+.chat-frame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: light dark; }
 .chat-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); font-size: 13px; pointer-events: none; }
 .chat-loading[hidden] { display: none; }
 @media (max-width: 760px) {
