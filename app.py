@@ -1596,6 +1596,33 @@ def _parse_chat_url(raw):
 
 
 CHAT_URL = _parse_chat_url(os.environ.get("HUB_CHAT_URL", ""))
+
+# 从本站送过去的问题用哪个模型（可选）。只作用于「带着一个问题跳过去」这一条路径：
+# 地址里多一个 models=<模型>，HaloWebUI 的落地页认这个参数（Chat.svelte 读 ?models=，逗号分隔）。
+# 不带问题地打开「AI 聊天」标签页时不加，所以对面的默认模型、新建对话、别的入口一概不受影响。
+#
+# 默认 gpt-chat：从这里问的是一句话的问题，要的是马上回一段话；HaloWebUI 那边的默认模型
+# 可能是一个跑长任务的 agent（hermes-agent），并不适合这种一问一答。留空 = 不加这个参数，
+# 用对面的默认模型。写完整的连接限定 id（modelref::…::gpt-chat）最稳；写裸名字要求对面
+# 只有一个同名模型，否则它会判成「不知道是哪一个」，反而问不出去。
+CHAT_MODEL_MAX = 200
+
+
+def _parse_chat_model(raw):
+    """地址里 models= 的值。去掉空白与控制字符；洗完为空或超长 = 不加这个参数。
+
+    值到了地址里是整体百分号编码的，拆不散地址；这里只挡「明显不是一个模型名」的输入。
+    """
+    text = re.sub(r"[\x00-\x20\x7f]", "", str(raw or ""))
+    if len(text) > CHAT_MODEL_MAX:
+        sys.stderr.write("[gyqd-web] 警告：HUB_CHAT_MODEL 超过 {0} 个字符，已忽略；"
+                         "从本站问过去的问题将使用 HaloWebUI 的默认模型\n".format(CHAT_MODEL_MAX))
+        return ""
+    return text
+
+
+CHAT_MODEL = _parse_chat_model(os.environ.get("HUB_CHAT_MODEL", "gpt-chat"))
+
 # 本站对外的源，写进票据的「签发方」。通常不用配：直接取浏览器请求里的 Origin。
 # 反代改写了 Host / 协议、取出来不对时才需要显式写。
 PUBLIC_ORIGIN = _clean_origin(os.environ.get("HUB_PUBLIC_ORIGIN", ""))
@@ -1652,13 +1679,18 @@ def issue_chat_ticket(purpose, issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
 # HaloWebUI 的 /auth 认 ?redirect=（它那边只许站内路径），落地页的 Chat.svelte 认 ?q= 且
 # 拿到就自动发出去。所以「发送到 AI 聊天」不用对面改一行代码，地址长这样：
 #
-#     <CHAT_URL>/auth?redirect=<「/?q=<问题>」整体编码>#hub_ticket=<票据>
+#     <CHAT_URL>/auth?redirect=<「/?q=<问题>[&models=<模型>]」整体编码>#hub_ticket=<票据>
 #
 # 问题被编码两次（先当 q 的值，再当 redirect 的值），所以 & # % + 和中文都不会把地址拆散。
-# 代价是长度：一个汉字编码两次要 15 个字符。因此下面按「编码后整条地址的长度」限长，
+# 代价是长度：一个汉字编码两次要 15 个字符。因此下面按「编码后的长度」限长，
 # 而不是按字数——按字数算出来的上限对中文和英文会差一个数量级。
-CHAT_PROMPT_MAX = 4000   # 编码前先砍到这么多字；真正的闸门是下面那条
+CHAT_PROMPT_MAX = 4000   # 编码前先砍到这么多字；真正的闸门是下面两条
 CHAT_URL_MAX = 6000      # 整条地址的上限。nginx 默认只给请求行 8KB，这里留足余量
+# redirect 解码之后那一段（「/?q=…&models=…」）的上限。对面 safeRedirectPath() 的
+# MAX_REDIRECT_LENGTH 就是 2048，**超了不是截断而是整条丢掉、跳回首页**——问题一个字都到不了。
+# 两条闸门里先撞上哪条都要截断：中文问题撞的几乎总是这一条（一个汉字在这里只算 9 个字符，
+# 所以它比 CHAT_URL_MAX 先到）。
+CHAT_REDIRECT_MAX = 2048
 
 
 def clean_chat_prompt(value):
@@ -1670,33 +1702,44 @@ def clean_chat_prompt(value):
     return re.sub(r"\n{3,}", "\n\n", text).strip()[:CHAT_PROMPT_MAX]
 
 
-def chat_target_url(base, prompt="", ticket=""):
+def chat_target_url(base, prompt="", ticket="", model=""):
     """iframe / 新标签页要打开的地址。返回 (地址, 真正带过去的问题, 是否被截断)。
 
-    没有问题时保持老行为：有票据就 /auth#hub_ticket=…，没有就首页。
-    有问题而地址放不下时截断到放得下为止，并在末尾留一个省略号——
-    宁可少带几个字，也不发一个被反代截断成半截的地址。
+    没有问题时保持老行为：有票据就 /auth#hub_ticket=…，没有就首页——**也不带 models=**。
+    「打开聊天标签页」用的仍是 HaloWebUI 自己的默认模型，这边一个字都不改它。
+
+    有问题时才在落地地址后面挂 models=<model>（model 为空就不挂）：从这里问出去的是
+    一句话的问题，要的是马上回一段话，不该落到对面那个跑长任务的默认 agent 上。
+
+    放不下时截断到放得下为止，并在末尾留一个省略号——宁可少带几个字，
+    也不发一个会被对面整条丢掉、或被反代截成半截的地址。
     """
     fragment = ("#hub_ticket=" + ticket) if ticket else ""
     plain = (base + "/auth" + fragment) if ticket else (base + "/")
+    tail = ("&models=" + quote(model, safe="")) if model else ""
+
+    def landing(text):                    # redirect 解码之后对面看到的那一段
+        return "/?q=" + quote(text, safe="") + tail
 
     def build(text):
-        return base + "/auth?redirect=" + quote("/?q=" + quote(text, safe=""), safe="") + fragment
+        return base + "/auth?redirect=" + quote(landing(text), safe="") + fragment
+
+    def fits(text):                       # 两条闸门都要过
+        return len(build(text)) <= CHAT_URL_MAX and len(landing(text)) <= CHAT_REDIRECT_MAX
 
     if not prompt:
         return plain, "", False
-    url = build(prompt)
-    if len(url) <= CHAT_URL_MAX:
-        return url, prompt, False
+    if fits(prompt):
+        return build(prompt), prompt, False
     low, high = 0, len(prompt)
     while low < high:                     # 最长的、放得下的前缀
         mid = (low + high + 1) // 2
-        if len(build(prompt[:mid] + "\u2026")) <= CHAT_URL_MAX:
+        if fits(prompt[:mid] + "\u2026"):
             low = mid
         else:
             high = mid - 1
     if not low:
-        return plain, "", True            # 域名长到连一个字都放不下：宁可不带问题
+        return plain, "", True            # 域名 / 模型名长到连一个字都放不下：宁可不带问题
     text = prompt[:low] + "\u2026"
     return build(text), text, True
 
@@ -5200,7 +5243,8 @@ def api_chat_ticket():
     所以是 POST、不可缓存。签不了票时照样回 HaloWebUI 的普通地址和原因——标签页不能因此打不开。
 
     可选的 {"prompt": "..."} 会被编进地址，对面落地就自动发出去（见 chat_target_url）。
-    问题过长时后端自己截断并在回包里说明，前端据此提示，不会发出一条被反代截断的地址。
+    带问题的地址里还会挂上 HUB_CHAT_MODEL 指定的模型（默认 gpt-chat）；不带问题时不挂，
+    HaloWebUI 的默认模型不受影响。问题过长时后端自己截断并在回包里说明，前端据此提示。
     """
     guard = _guard_admin()
     if guard:
@@ -5218,12 +5262,13 @@ def api_chat_ticket():
     if isinstance(handshake["frame_ancestors"], list) and issuer:
         framed_ok = issuer in handshake["frame_ancestors"]
     ticket = "" if blocker else issue_chat_ticket(CHAT_PURPOSE_ENTER, issuer, CHAT_URL)
-    url, sent, truncated = chat_target_url(CHAT_URL, prompt, ticket)
+    url, sent, truncated = chat_target_url(CHAT_URL, prompt, ticket, CHAT_MODEL)
     resp = jsonify({
         "ok": True, "url": url, "sso": not blocker,
         "reason": blocker, "hint": _CHAT_SSO_HINTS.get(blocker, ""),
         "framed_ok": framed_ok,
         "prompt": sent, "prompt_truncated": truncated,
+        "model": CHAT_MODEL if sent else "",
     })
     resp.headers["Cache-Control"] = "no-store"
     return resp

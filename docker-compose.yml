@@ -32,6 +32,8 @@ services:
       HUB_CHAT_URL: "${HUB_CHAT_URL:-}"
       HUB_TRUSTED_EMBED_ADMIN_SECRET: "${HUB_TRUSTED_EMBED_ADMIN_SECRET:-}"
       HUB_PUBLIC_ORIGIN: "${HUB_PUBLIC_ORIGIN:-}"
+      # 「发送到 AI 聊天」带过去的问题用哪个模型；留空 = 用 HaloWebUI 的默认模型。
+      HUB_CHAT_MODEL: "${HUB_CHAT_MODEL:-gpt-chat}"
       # 笔记（WebObsidian，可选）：地址 + API key 放 .env。留空 = 没有这些功能。
       # key 只进请求头，绝不要写进本文件——它是要进 git 的。
       HUB_VAULT_URL: "${HUB_VAULT_URL:-}"

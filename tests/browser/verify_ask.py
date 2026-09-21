@@ -28,6 +28,8 @@ RESULTS = []
 SECRET = secrets.token_hex(32)
 VAULT_KEY = "wok_" + secrets.token_hex(16)     # 每次运行现生成，只活在本进程与子进程的环境变量里
 INBOX = "收件箱"
+# 从本站问出去的问题落到哪个模型上。故意用连接限定 id：`::` 和长度都要活着到对面。
+CHAT_MODEL = "modelref::openai::personal::id:13c104eb::gpt-chat"
 VAULT_CALLS = []      # 假 WebObsidian 收到的每一次请求：{method, path, body, key}
 
 
@@ -159,6 +161,12 @@ def prompt_in(url):
             redirect)
 
 
+def model_in(url):
+    """对面落地页会读到的 ?models=（Chat.svelte 拿它当这次对话选中的模型）。"""
+    redirect = parse_qs(urlparse(url).query).get("redirect", [""])[0]
+    return parse_qs(urlparse(redirect).query).get("models", [""])[0]
+
+
 def open_todo_deck(page):
     """待办组件在窄屏收在标签条里；宽屏直接就在。两种都保证它展开。"""
     tab = page.locator('#deckTabs [data-deck-tab="todo"]')
@@ -280,6 +288,8 @@ def send_to_chat(b, halo, vault):
     check("问题一字不差地到了对面（& ? % 和换行都活着）", sent == prompt, repr(sent))
     check("redirect 是站内路径，不是别人家的地址", redirect.startswith("/?q=") and not redirect.startswith("//"), redirect[:60])
     check("票据仍然只在 # 后面", ticket.startswith("v2.chat.") and "hub_ticket" not in src.split("#", 1)[0], src[:120])
+    check("地址里指定了模型，`::` 一个不少", model_in(src) == CHAT_MODEL, model_in(src))
+    check("redirect 那一段没超过对面的 2048", len(redirect) <= 2048, len(redirect))
 
     # 框里那页把自己的完整地址写出来了：确认浏览器真的带着这条地址去了对面。
     landed = None
@@ -301,8 +311,11 @@ def send_to_chat(b, halo, vault):
     page.click("#askSend")
     page.wait_for_timeout(1200)
     src = page.query_selector("#chatStage iframe").get_attribute("src")
-    sent, _, _ = prompt_in(src)
+    sent, _, redirect = prompt_in(src)
     check("超长的问题被截断，地址没被撑爆", 0 < len(src) <= 6000 and sent.endswith("…"), (len(src), sent[-6:]))
+    check("截断之后 redirect 仍在对面的 2048 以内（超了它是整条丢掉，不是截断）",
+          len(redirect) <= 2048, len(redirect))
+    check("截断之后模型还在", model_in(src) == CHAT_MODEL, model_in(src))
     toast = page.evaluate("() => [...document.querySelectorAll('#toasts .toast')].map(t => t.textContent).join('|')")
     check("页面说了一声「已截断」", "截断" in toast, toast[:120])
     page.close()
@@ -406,6 +419,11 @@ def chat_without_notes(b, halo, vault):
           page.evaluate("() => [document.getElementById('askSend').hidden, document.getElementById('askVault').hidden]") == [False, True])
     status = ctx.request.get(base + "/api/vault/search?q=x").status
     check("没配笔记：三个笔记接口 404", status == 404, status)
+    # 不带问题地打开标签页 = 用对面自己的默认模型，本站一个参数都不加。
+    page.evaluate("() => switchView('chat')")
+    page.wait_for_function("() => { const f = document.querySelector('#chatStage iframe'); return !!(f && f.src); }", timeout=8000)
+    plain = page.query_selector("#chatStage iframe").get_attribute("src")
+    check("光打开「AI 聊天」不指定模型", "models" not in plain, plain[:120])
     page.close()
     ctx.close()
 
@@ -417,6 +435,7 @@ def main():
     vault = _serve(_Vault)
     # start_server() 把当前进程的环境变量带给子进程：地址与密钥只活在这里，不落盘。
     os.environ["HUB_CHAT_URL"] = halo
+    os.environ["HUB_CHAT_MODEL"] = CHAT_MODEL
     os.environ["HUB_TRUSTED_EMBED_ADMIN_SECRET"] = SECRET
     os.environ["HUB_VAULT_URL"] = vault
     os.environ["HUB_VAULT_API_KEY"] = VAULT_KEY

@@ -27,6 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PASSWORD = "unit-test-pwd-ask-vault-91c4"     # ≥ 12 位，且不在「曾公开」名单里
 SECRET = "unit-test-chat-secret-" + "0123456789abcdef" * 2
 HALO = "https://halo.acedylan.us:3001"
+MODEL = "gpt-chat"                                            # 裸名字：对面只有一个同名模型时够用
+MODEL_FULL = "modelref::openai::personal::id:13c104eb::gpt-chat"   # 连接限定 id：永远不会认错
 VAULT = "https://notes.acedylan.us:3003"
 ORIGIN = "http://localhost"
 INBOX = "收件箱"
@@ -46,9 +48,24 @@ def _read(*parts):
         return fh.read()
 
 
-def _address_like_the_hub(base, text, ticket):
+def _landing_like_the_hub(text, model=""):
+    """redirect 解码之后、对面落地页看到的那一段。"""
+    return "/?q=" + quote(text, safe="") + (("&models=" + quote(model, safe="")) if model else "")
+
+
+def _address_like_the_hub(base, text, ticket, model=""):
     """本站生成地址的规则，在测试里独立写一遍：实现漂移时这里会先红。"""
-    return base + "/auth?redirect=" + quote("/?q=" + quote(text, safe=""), safe="") + "#hub_ticket=" + ticket
+    return (base + "/auth?redirect=" + quote(_landing_like_the_hub(text, model), safe="")
+            + "#hub_ticket=" + ticket)
+
+
+def _fits_like_the_hub(base, text, ticket, model=""):
+    """两条闸门都要过：整条地址 CHAT_URL_MAX，落地那一段 CHAT_REDIRECT_MAX。
+
+    后者是对面 safeRedirectPath() 的 MAX_REDIRECT_LENGTH：超了它不截断，是整条丢掉跳回首页。
+    """
+    return (len(_address_like_the_hub(base, text, ticket, model)) <= app_module.CHAT_URL_MAX
+            and len(_landing_like_the_hub(text, model)) <= app_module.CHAT_REDIRECT_MAX)
 
 
 def like_halowebui(url):
@@ -62,6 +79,12 @@ def like_halowebui(url):
     landing = urlparse(redirect)
     ticket = parse_qs(parsed.fragment).get("hub_ticket", [""])[0]
     return redirect, parse_qs(landing.query).get("q", [""])[0], ticket
+
+
+def models_like_halowebui(url):
+    """对面落地页读 ?models= 拿到的值（Chat.svelte 拿它 split(',') 当选中的模型）。"""
+    redirect = parse_qs(urlparse(url).query).get("redirect", [""])[0]
+    return parse_qs(urlparse(redirect).query).get("models", [""])[0]
 
 
 # ---------------------------------------------------------------------------
@@ -113,24 +136,87 @@ class PromptEncodingTest(unittest.TestCase):
         self.assertLessEqual(len(url), app_module.CHAT_URL_MAX)
         self.assertTrue(sent.endswith("…"))
         self.assertGreater(len(sent), 20)          # 别砍到只剩省略号
-        _, q, _ = like_halowebui(url)
+        redirect, q, _ = like_halowebui(url)
         self.assertEqual(q, sent)                  # 截断之后仍然是完整可解的一段
+        self.assertLessEqual(len(redirect), app_module.CHAT_REDIRECT_MAX)
 
     def test_the_cut_is_the_longest_prefix_that_fits(self):
         # 不是「砍一半了事」：留下的必须是还放得下的最长前缀，多一个字就超。
+        # 带不带模型都要成立——模型名占掉的字符要从问题的预算里扣。
         for prompt in ("a" * 20000, "中" * 4000, "混合 mixed 文本 " * 500):
-            url, sent, truncated = app_module.chat_target_url(HALO, prompt, "TKT")
-            self.assertTrue(truncated, prompt[:10])
-            self.assertLessEqual(len(url), app_module.CHAT_URL_MAX)
-            kept = len(sent) - 1                       # 末尾的省略号不是原文
-            self.assertEqual(sent, prompt[:kept] + "…")
-            one_more = _address_like_the_hub(HALO, prompt[:kept + 1] + "…", "TKT")
-            self.assertGreater(len(one_more), app_module.CHAT_URL_MAX, prompt[:10])
+            for model in ("", MODEL, MODEL_FULL):
+                url, sent, truncated = app_module.chat_target_url(HALO, prompt, "TKT", model)
+                self.assertTrue(truncated, prompt[:10])
+                self.assertTrue(_fits_like_the_hub(HALO, sent, "TKT", model), (prompt[:10], model))
+                kept = len(sent) - 1                       # 末尾的省略号不是原文
+                self.assertEqual(sent, prompt[:kept] + "…")
+                self.assertFalse(_fits_like_the_hub(HALO, prompt[:kept + 1] + "…", "TKT", model),
+                                 (prompt[:10], model))
 
     def test_an_absurdly_long_base_gives_up_on_the_prompt_rather_than_the_address(self):
         base = "https://" + "a" * (app_module.CHAT_URL_MAX + 100) + ".example"
         url, sent, truncated = app_module.chat_target_url(base, "问题", "TKT")
         self.assertEqual((url, sent, truncated), (base + "/auth#hub_ticket=TKT", "", True))
+
+    def test_the_redirect_segment_stays_inside_what_the_other_side_accepts(self):
+        # 对面 safeRedirectPath() 的上限是 2048，超了**整条丢掉跳回首页**，不是截断——
+        # 问题一个字都到不了。中文撞的几乎总是这一条（一个汉字在这里只算 9 个字符），
+        # 所以光守 CHAT_URL_MAX 是不够的。
+        for prompt in ("中" * 400, "a" * 3000, "混合 mixed 文本 " * 120):
+            for model in ("", MODEL, MODEL_FULL):
+                url, sent, _ = app_module.chat_target_url(HALO, prompt, "TKT", model)
+                redirect, q, _ = like_halowebui(url)
+                self.assertLessEqual(len(redirect), app_module.CHAT_REDIRECT_MAX, (prompt[:8], model))
+                self.assertEqual(q, sent)          # 截断之后仍然解得回来
+                # 对面还会拒收任何原样的控制字符 / 空格（safeRedirectPath 的第一道检查）
+                self.assertFalse(any(ch <= " " or ch == "\x7f" for ch in redirect), redirect[:40])
+
+    # ---- 从本站问出去的那条地址指定模型，别处一概不动 ----
+
+    def test_only_a_prompt_carrying_address_names_a_model(self):
+        # 光打开标签页 = 用对面自己的默认模型；这边不掺和。
+        self.assertEqual(app_module.chat_target_url(HALO, "", "TKT", MODEL),
+                         (HALO + "/auth#hub_ticket=TKT", "", False))
+        self.assertEqual(app_module.chat_target_url(HALO, "", "", MODEL), (HALO + "/", "", False))
+        for url in (app_module.chat_target_url(HALO, "", "TKT", MODEL)[0],
+                    app_module.chat_target_url(HALO, "", "", MODEL)[0]):
+            self.assertNotIn("models", url)
+        # 不配模型时带问题的地址也一个字不多：保持接上这个功能之前的样子。
+        url, _, _ = app_module.chat_target_url(HALO, "问题", "TKT", "")
+        self.assertEqual(url, _address_like_the_hub(HALO, "问题", "TKT"))
+        self.assertEqual(models_like_halowebui(url), "")
+
+    def test_the_model_arrives_as_one_intact_value(self):
+        # 模型 id 里有 ::，配的值也可能带 & = # 空格。它是被整体编码的，
+        # 拆不散地址，也不会把自己拆成两个查询参数。
+        for model in (MODEL, MODEL_FULL, "gpt-chat,claude-chat", "a b&c=d#e", "模型/中文"):
+            url, sent, truncated = app_module.chat_target_url(HALO, "一个问题", "TKT", model)
+            self.assertFalse(truncated, model)
+            redirect, q, ticket = like_halowebui(url)
+            self.assertEqual(q, "一个问题", model)          # 问题没被模型挤坏
+            self.assertEqual(models_like_halowebui(url), model)
+            self.assertEqual(ticket, "TKT")
+            self.assertTrue(redirect.startswith("/?q="), redirect)
+            self.assertNotIn("models", url.split("#", 1)[0].split("redirect=", 1)[0])
+            self.assertEqual(url, _address_like_the_hub(HALO, "一个问题", "TKT", model))
+
+    def test_the_ticket_still_never_leaves_the_fragment_with_a_model(self):
+        url, _, _ = app_module.chat_target_url(HALO, "问题", "TKT", MODEL_FULL)
+        self.assertNotIn("hub_ticket", url.split("#", 1)[0])
+        self.assertTrue(url.endswith("#hub_ticket=TKT"))
+
+    def test_the_configured_model_is_cleaned(self):
+        self.assertEqual(app_module._parse_chat_model("  gpt-chat  "), "gpt-chat")
+        self.assertEqual(app_module._parse_chat_model("gpt\nchat"), "gptchat")
+        self.assertEqual(app_module._parse_chat_model("gpt\x00chat\x7f"), "gptchat")
+        self.assertEqual(app_module._parse_chat_model(""), "")
+        self.assertEqual(app_module._parse_chat_model("   "), "")
+        self.assertEqual(app_module._parse_chat_model(None), "")
+        self.assertEqual(app_module._parse_chat_model("x" * (app_module.CHAT_MODEL_MAX + 1)), "")
+        self.assertEqual(app_module._parse_chat_model(MODEL_FULL), MODEL_FULL)
+        # 洗干净之后一定进得了地址：对面收下前先过一遍「不许有控制字符」
+        redirect = _landing_like_the_hub("问题", app_module._parse_chat_model(" a b\tc "))
+        self.assertFalse(any(ch <= " " for ch in redirect), redirect)
 
     def test_the_prompt_is_cleaned_before_it_goes_anywhere(self):
         self.assertEqual(app_module.clean_chat_prompt("  两边有空白  "), "两边有空白")
@@ -151,7 +237,8 @@ class PromptEncodingTest(unittest.TestCase):
 class HubCase(StoreIsolationMixin, unittest.TestCase):
     """默认：公开收藏库 + 管理密码合格 + 接了 HaloWebUI 和笔记服务。"""
 
-    _GLOBALS = ("ADMIN_PASSWORD", "PRIVATE_MODE", "CHAT_URL", "CHAT_SECRET", "PUBLIC_ORIGIN",
+    _GLOBALS = ("ADMIN_PASSWORD", "PRIVATE_MODE", "CHAT_URL", "CHAT_SECRET", "CHAT_MODEL",
+                "PUBLIC_ORIGIN",
                 "VAULT_URL", "VAULT_API_KEY", "VAULT_INBOX", "VAULT_TIMEOUT", "VAULT_TODO_MIRROR")
 
     @classmethod
@@ -169,6 +256,7 @@ class HubCase(StoreIsolationMixin, unittest.TestCase):
         app_module.PRIVATE_MODE = False
         app_module.CHAT_URL = HALO
         app_module.CHAT_SECRET = SECRET
+        app_module.CHAT_MODEL = MODEL
         app_module.PUBLIC_ORIGIN = ""
         app_module.VAULT_URL = VAULT
         app_module.VAULT_API_KEY = "wok_unit_test_key"
@@ -253,6 +341,52 @@ class ChatTicketWithPromptTest(HubCase):
     def test_the_response_is_never_cached(self):
         self.unlock()
         self.assertEqual(self.post({"prompt": "x"}).headers["Cache-Control"], "no-store")
+
+    def test_a_question_from_this_site_names_the_model(self):
+        self.unlock()
+        data = self.post({"prompt": "你能做什么"}).get_json()
+        self.assertEqual(models_like_halowebui(data["url"]), MODEL)
+        self.assertEqual(data["model"], MODEL)
+        self.assertEqual(like_halowebui(data["url"])[1], "你能做什么")
+
+    def test_just_opening_the_tab_leaves_the_model_alone(self):
+        # 没有问题 = 没有 models=：框里用的是 HaloWebUI 自己的默认模型，这边不碰。
+        self.unlock()
+        data = self.post({}).get_json()
+        self.assertNotIn("models", data["url"])
+        self.assertEqual(data["model"], "")
+
+    def test_a_deployment_that_wants_the_default_model_says_so_with_an_empty_value(self):
+        app_module.CHAT_MODEL = ""
+        self.unlock()
+        data = self.post({"prompt": "用你们的默认模型"}).get_json()
+        self.assertNotIn("models", data["url"])
+        self.assertEqual(data["model"], "")
+        self.assertEqual(like_halowebui(data["url"])[1], "用你们的默认模型")
+
+    def test_a_connection_qualified_id_survives_the_round_trip(self):
+        app_module.CHAT_MODEL = MODEL_FULL
+        self.unlock()
+        data = self.post({"prompt": "问题"}).get_json()
+        self.assertEqual(models_like_halowebui(data["url"]), MODEL_FULL)
+        self.assertEqual(data["model"], MODEL_FULL)
+
+    def test_a_visitor_is_told_nothing_about_the_model_either(self):
+        app_module.PRIVATE_MODE = True
+        resp = self.post({"prompt": "秘密问题"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertNotIn("models", resp.get_data(as_text=True))
+
+    def test_the_model_never_pushes_the_address_past_either_limit(self):
+        app_module.CHAT_MODEL = MODEL_FULL
+        self.unlock()
+        data = self.post({"prompt": "很长的中文" * 900}).get_json()
+        self.assertTrue(data["prompt_truncated"])
+        redirect, q, _ = like_halowebui(data["url"])
+        self.assertLessEqual(len(data["url"]), app_module.CHAT_URL_MAX)
+        self.assertLessEqual(len(redirect), app_module.CHAT_REDIRECT_MAX)
+        self.assertEqual(q, data["prompt"])
+        self.assertEqual(models_like_halowebui(data["url"]), MODEL_FULL)
 
 
 # ---------------------------------------------------------------------------
