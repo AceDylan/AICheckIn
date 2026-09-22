@@ -41,6 +41,8 @@ services:
       HUB_VAULT_INBOX: "${HUB_VAULT_INBOX:-收件箱}"
       HUB_VAULT_TIMEOUT: "${HUB_VAULT_TIMEOUT:-5}"
       HUB_VAULT_TODO_MIRROR: "${HUB_VAULT_TODO_MIRROR:-0}"
+      # 「笔记」标签页（可选）：与 WebObsidian 共享的免登录密钥，值放 .env；留空 = 没有这个标签页。
+      HUB_VAULT_EMBED_SECRET: "${HUB_VAULT_EMBED_SECRET:-}"
     volumes:
       # 挂载可写数据目录：存放 config.json 与 history.json，支持页面在线增删改。
       # 首次使用：mkdir -p data && cp config.example.json data/config.json

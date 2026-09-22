@@ -92,6 +92,7 @@
   页面据此只渲染解锁面板（侧栏只剩「系统设置」；地址栏手敲 `#bookmarks` 也一样只到解锁面板）；
 - 仍然开放的只有应用外壳（`/`、`/static/*`、`/sw.js`）、`/api/health`
   （容器 HEALTHCHECK 在调，堵掉会让容器被反复重启）与 `/api/auth`、`/api/logout`；
+  另有 `/vault/open`（「笔记」框的第一页），它自己把关：未解锁只回一张「请先解锁」的说明页，不签票；
 - 确实要把首页当公开导航页给路人看的，显式设 `HUB_PUBLIC_LIBRARY=1`。旧开关 `GYQD_PRIVATE=1` 仍然强制私密
   （压过 `HUB_PUBLIC_LIBRARY`）；`GYQD_PRIVATE=0` 不再有任何作用——部署里的 `.env` 多半原样留着这一行，
   继续认它就等于「默认公开」；
@@ -147,11 +148,47 @@
 - 地址有两条硬上限：整条 6000 字符，以及 `redirect` 解码后那一段 2048 字符（对面的
   `MAX_REDIRECT_LENGTH`，**超了是整条丢掉跳回首页，不是截断**）。模型名占掉的字符从问题的预算里扣。
 
+### 「笔记」标签页：嵌入自己的 WebObsidian（可选）
+
+与「AI 聊天」同一个方向（**本站是外层页面，WebObsidian 在 iframe 里**）、同一种票据，但票据的走法更严：
+**不经过页面脚本，也不进任何 URL**。配了 `HUB_VAULT_URL` + `HUB_VAULT_EMBED_SECRET` 才有这个标签页。
+
+- **密钥 `HUB_VAULT_EMBED_SECRET`**：部署时现场生成（`python3 -c "import secrets; print(secrets.token_hex(32))"`），
+  本站写这个变量，WebObsidian 写 `WEBOBSIDIAN_HUB_EMBED_SECRET`，**两边同一个值、只进各自的 `.env`**，绝不入库、
+  不下发浏览器、不出现在任何 URL / 日志 / 接口响应里；少于 32 个字符视同未配置。它与 HaloWebUI 那把
+  （`HUB_TRUSTED_EMBED_ADMIN_SECRET`）**不是同一把**，派生前缀也不同（`sha256("hub-vault-admin|" + 密钥)`）：
+  哪边泄露都不连累另一边，一边的票据在另一边验不过。
+- **票据怎么走**：框先打开本站自己的 `GET /vault/open`。已解锁、且管理密码与密钥都合格时，后端签一张
+  `v2.vault.<过期>.<nonce>.<本站源>.<WebObsidian 源>.<HMAC-SHA256>`（60 秒、一次性），渲染一个自动提交的表单，
+  把它放在**隐藏字段**里 `POST` 给 `<HUB_VAULT_URL>/auth/hub/sso`。WebObsidian 依次验：请求的 `Origin` 是本站
+  （只有本站的页面能提交这张表单——`Origin` 由浏览器填，页面改不了）、签名、用途、有效期（≤ 120 秒）、
+  签发方 = 它配置的 `WEBOBSIDIAN_HUB_URL`、接收方 = 它自己、nonce 没用过，全部通过才给它**自己的** httpOnly、
+  `SameSite=Lax` 会话 Cookie（默认 12 小时，`WEBOBSIDIAN_HUB_SESSION_TTL`），再 303 跳到 `?to=` 指的站内页面
+  （两边都只许站内路径，不是开放重定向）。本站的会话 Cookie 从不离开本站。
+- **`/vault/open` 自己的响应头**：`Cache-Control: no-store`；`Referrer-Policy: strict-origin`（全站的 `no-referrer`
+  会让浏览器把跨源表单 POST 的 `Origin` 写成 `null`，对面就认不出本站；`strict-origin` 只多带出本站的源，不带路径）；
+  `X-Frame-Options: SAMEORIGIN` +
+  `frame-ancestors 'self'`（只能待在本站自己的框里，全站其余响应仍是 `DENY` / `'none'`）；
+  `form-action` 只许 WebObsidian 的源；`script-src` 只许这一页带 nonce 的那一行；不做 gzip（页面里有票据、又回显 `to=`）。
+  浏览器标明是别的站发起的（`Sec-Fetch-Site: cross-site`）一律拒绝。
+- **绝不签票的情况**与「AI 聊天」相同：没设管理密码、管理密码短于 12 位、管理密码曾在本仓库公开历史里出现过、
+  密钥不合格——框里只显示原因。未解锁时只有「请先解锁」的说明。
+- **退出**：点「锁定」时页面顺带向 `<HUB_VAULT_URL>/auth/hub/logout` 发一次 no-cors 的 `POST`（`connect-src`
+  为此多放行这一个源），WebObsidian 只认本站的 `Origin`，只清**由本站登录的**那种会话（它自己的密码会话不动）。
+  会话过期（本站 Cookie 失效）时框被卸掉，同样顺带请对面退出。万一这一下没送到，那个会话也最多活 12 小时；
+  两边任一侧换掉密钥、改掉地址，或关掉这座桥，所有由本站登录的会话立即失效。
+- **WebObsidian 前面的 nginx**：原来整站只有 Basic Auth，而浏览器不会在跨源框里弹 Basic Auth 框。
+  部署时要让「持有由本站登录的会话」也能过 nginx（`satisfy any` + `auth_request` 到 WebObsidian 的
+  `/auth/hub/check`，它只认这种会话，不认受信代理头、不认密码会话），并给 `/auth/hub/sso`、`/auth/hub/logout`
+  单开两个不带 Basic Auth、**不带受信代理头**的 `location`。直接打开 WebObsidian 仍然要 Basic Auth，与以前一样。
+  完整配置见 WebObsidian 仓库的 `docs/HUB_EMBED.md`。
+- **持有这个密钥 + 本站管理密码的人就能进 Vault**。它的保管等级与 `GYQD_ADMIN_PASSWORD` 相同；怀疑泄露就两边同时换掉。
+
 ### 笔记（WebObsidian）：单向、只许写一个文件夹（可选）
 
 本站可以把「速记」和一篇待办镜像写进自己的 Obsidian Vault，并替已解锁的管理员搜笔记。
-走的是 WebObsidian 自带的 Agent API（`/api/v1`，API key + scope + 每 key 限流），**不是 iframe**——
-对面的 helmet 把 `frame-ancestors` 设成了 `'none'`，本来也嵌不进来。
+走的是 WebObsidian 自带的 Agent API（`/api/v1`，API key + scope + 每 key 限流），与上面的「笔记」标签页
+互不依赖：这三个接口是服务端之间的窄通道，标签页是整页嵌进来给人用的。
 
 - **只有三个接口，都要管理权限**：`POST /api/vault/capture`（速记进收件箱）、
   `GET /api/vault/search`（搜笔记，只读）、`POST /api/vault/todos/sync`（待办整篇镜像）。
@@ -235,7 +272,8 @@
 - 会话 Cookie 为 `HttpOnly` + `SameSite=Lax`，https 下加 `Secure`；令牌是服务端 HMAC 签名，
   浏览器端不保存任何明文密码。
 - 所有响应带 `X-Content-Type-Options` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer`
-  / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'none'`；`frame-src` 只为 `HUB_CHAT_URL` 开口），`/api/*` 默认 `no-store`。
+  / `Cross-Origin-Opener-Policy` / CSP（`frame-ancestors 'none'`；`frame-src` 只为 `HUB_CHAT_URL` 与「笔记」的 `HUB_VAULT_URL` 开口，
+  `connect-src` 另外只多放行「笔记」的源），`/api/*` 默认 `no-store`。唯一的例外是 `/vault/open`（`SAMEORIGIN` / `frame-ancestors 'self'`，见上）。
 - 传输压缩：文本类响应（HTML / CSS / JS / JSON，≥ 1 KB）在客户端声明支持时用 gzip 压缩。**会回真实凭据的接口不压缩**
   （`/api/configs/<idx>/secret`、`/api/bookmarks/<idx>/secret`、`/api/configs/export`；有测试保证新增的 `*_secret` 端点必须进这张名单）：
   「压缩 + 可观测的密文长度」是 BREACH 一类攻击的前提。其余接口的响应里没有请求方可控的回显，会话 Cookie 又是 `SameSite=Lax`
@@ -274,6 +312,7 @@
 | `HUB_VAULT_INBOX` | `收件箱` | 收件箱文件夹名。本站**只**往这个文件夹底下写；不合法的值会被忽略（= 功能关着） |
 | `HUB_VAULT_TIMEOUT` | `5` | 调用笔记服务的超时秒数，夹在 1..15 之间 |
 | `HUB_VAULT_TODO_MIRROR` | `0` | 设 `1` 时待办每次变动都在后台重写一遍镜像；默认只在点「同步到笔记」时写 |
+| `HUB_VAULT_EMBED_SECRET` | 空 | 「笔记」标签页：与 WebObsidian（`WEBOBSIDIAN_HUB_EMBED_SECRET`）共享的密钥，≥ 32 字符，替已解锁的管理员登录笔记。部署时现场生成，**绝不入库**。空 = 没有这个标签页 |
 
 ---
 

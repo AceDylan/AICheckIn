@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- 「笔记」标签页框里的第一页（GET /vault/open）。state=ok 时把一次性票据放在隐藏字段里，
+     自动 POST 给 WebObsidian 的 /auth/hub/sso；票据不进任何地址。其余 state 只是一段说明。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="strict-origin">
+  <title>{% if state == "ok" %}正在打开笔记…{% else %}笔记{% endif %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color: #444; background: transparent; }
+    main { max-width: 30rem; padding: 24px; text-align: center; }
+    h1 { margin: 0 0 8px; font-size: 16px; }
+    p { margin: 0 0 8px; }
+    a, button { color: inherit; }
+    button { font: inherit; padding: 6px 14px; border-radius: 8px; border: 1px solid #8884; background: transparent; cursor: pointer; }
+    .muted { color: #888; font-size: 12px; }
+    @media (prefers-color-scheme: dark) { body { color: #ccc; } }
+  </style>
+</head>
+<body>
+  <main>
+  {% if state == "ok" %}
+    <form method="post" action="{{ action }}">
+      <input type="hidden" name="ticket" value="{{ ticket }}">
+      <input type="hidden" name="to" value="{{ to }}">
+      <p>正在打开笔记…</p>
+      <p class="muted">{{ vault_host }}</p>
+      <noscript><button type="submit">继续</button></noscript>
+    </form>
+    <script nonce="{{ nonce }}">document.forms[0].submit();</script>
+  {% else %}
+    <h1>{% if state == "locked" %}Bookmark Hub 未解锁{% else %}没法替你登录笔记{% endif %}</h1>
+    <p>{{ message }}</p>
+    {% if state == "locked" %}<p><a href="/#settings" target="_blank" rel="noopener">打开 Bookmark Hub 解锁</a></p>{% endif %}
+  {% endif %}
+  </main>
+</body>
+</html>

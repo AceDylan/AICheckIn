@@ -1642,19 +1642,24 @@ def chat_enabled():
     return bool(CHAT_URL)
 
 
+def _admin_password_blocker():
+    """本站的管理密码配不配替别的站开门（AI 聊天、笔记两座桥共用）。配 → 空串；不配 → 一个词的原因。"""
+    if not ADMIN_PASSWORD:
+        return "no_password"          # 没有管理密码 = 任何访客都算「管理员」，绝不能替他们开别人的门
+    if hashlib.sha256(ADMIN_PASSWORD.encode("utf-8")).hexdigest() in _PUBLICLY_KNOWN_PASSWORD_SHA256:
+        return "password_public"
+    if len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
+        return "password_short"
+    return ""
+
+
 def chat_sso_blocker():
     """现在能不能替管理员签 HaloWebUI 的票。能 → 空串；不能 → 一个词的原因（页面据此给出提示）。"""
     if not chat_enabled():
         return "chat_off"
     if len(CHAT_SECRET) < CHAT_SECRET_MIN_LEN:
         return "secret_unset"
-    if not ADMIN_PASSWORD:
-        return "no_password"          # 没有管理密码 = 任何访客都算「管理员」，绝不能替他们开 HaloWebUI 的门
-    if hashlib.sha256(ADMIN_PASSWORD.encode("utf-8")).hexdigest() in _PUBLICLY_KNOWN_PASSWORD_SHA256:
-        return "password_public"
-    if len(ADMIN_PASSWORD) < MIN_ADMIN_PASSWORD_LEN:
-        return "password_short"
-    return ""
+    return _admin_password_blocker()
 
 
 def _chat_key():
@@ -1667,12 +1672,16 @@ def _b64_origin(origin):
     return base64.urlsafe_b64encode(origin.encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def issue_chat_ticket(purpose, issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
-    """签一张票据。调用方负责确认「现在可以签」（chat_sso_blocker）。"""
+def _sign_ticket(key, purpose, issuer, audience, ttl, now):
     exp = str(int(now if now is not None else time.time()) + int(ttl))
     message = ".".join((CHAT_TICKET_VERSION, purpose, exp, secrets.token_urlsafe(18),
                         _b64_origin(issuer), _b64_origin(audience)))
-    return message + "." + hmac.new(_chat_key(), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    return message + "." + hmac.new(key, message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def issue_chat_ticket(purpose, issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
+    """签一张票据。调用方负责确认「现在可以签」（chat_sso_blocker）。"""
+    return _sign_ticket(_chat_key(), purpose, issuer, audience, ttl, now)
 
 
 # ---- 带着一个问题进聊天 ----
@@ -1914,6 +1923,67 @@ VAULT_TODO_MIRROR = os.environ.get("HUB_VAULT_TODO_MIRROR", "").strip().lower() 
 
 def vault_enabled():
     return bool(VAULT_URL and VAULT_API_KEY and VAULT_INBOX)
+
+
+# ---- 「笔记」标签页：把 WebObsidian 整个嵌进来，并替已解锁的管理员登录（可选）----
+#
+# 与「AI 聊天」同一种票据（v2.<用途>.<过期>.<nonce>.<签发方源>.<接收方源>.<HMAC>，60 秒、一次性），三处不同：
+#   1. 票据不经过页面脚本，也不进任何地址：框先打开本站自己的 /vault/open，后端在这一页里渲染一个
+#      自动提交的表单，把票据放在隐藏字段里 POST 给 <HUB_VAULT_URL>/auth/hub/sso。对面验
+#      Origin = 本站、签名、用途、有效期、签发方 = 它配置的本站、接收方 = 它自己、nonce 没用过，
+#      全部通过才给它自己的 httpOnly 会话 Cookie（默认 12 小时），再 303 跳到要去的页面。
+#   2. 另起一把密钥：HUB_VAULT_EMBED_SECRET（对面 WEBOBSIDIAN_HUB_EMBED_SECRET 填同一个值），
+#      派生前缀 hub-vault-admin|。与 HaloWebUI 那把互不通用：哪边泄露都不连累另一边。
+#   3. 锁定本站时，页面顺手请对面结束「由本站登录的」会话（POST <HUB_VAULT_URL>/auth/hub/logout）。
+#
+# 没配密钥 = 没有这个标签页：WebObsidian 前面的 nginx 还有 Basic Auth，浏览器不会在跨源框里弹那个框，
+# 不能替你登录的话框里只会是一片空白。管理密码不合格（没设 / 太短 / 曾公开）时同样绝不签票。
+VAULT_EMBED_SECRET = os.environ.get("HUB_VAULT_EMBED_SECRET", "").strip()
+VAULT_TICKET_PURPOSE = "vault"
+VAULT_RETURN_MAX = 1024
+
+if VAULT_EMBED_SECRET and len(VAULT_EMBED_SECRET) < CHAT_SECRET_MIN_LEN:
+    sys.stderr.write("[gyqd-web] 警告：HUB_VAULT_EMBED_SECRET 少于 {0} 个字符，已忽略；"
+                     "请用 python3 -c \"import secrets; print(secrets.token_hex(32))\" 重新生成\n"
+                     .format(CHAT_SECRET_MIN_LEN))
+
+
+def vault_embed_enabled():
+    """有没有「笔记」标签页。配了地址和密钥就有；密钥不合格时标签页照样在，框里说明原因。"""
+    return bool(VAULT_URL and VAULT_EMBED_SECRET)
+
+
+def vault_sso_blocker():
+    """现在能不能替管理员登录 WebObsidian。能 → 空串；不能 → 一个词的原因。"""
+    if not vault_embed_enabled():
+        return "vault_off"
+    if len(VAULT_EMBED_SECRET) < CHAT_SECRET_MIN_LEN:
+        return "secret_unset"
+    return _admin_password_blocker()
+
+
+def _vault_key():
+    return hashlib.sha256(("hub-vault-admin|" + VAULT_EMBED_SECRET).encode("utf-8")).digest()
+
+
+def issue_vault_ticket(issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
+    """签一张登录 WebObsidian 的票。调用方负责确认「现在可以签」（vault_sso_blocker）。"""
+    return _sign_ticket(_vault_key(), VAULT_TICKET_PURPOSE, issuer, audience, ttl, now)
+
+
+def public_vault_embed():
+    """/api/configs 里「笔记」标签页那一段：地址 + 能不能免登录 + 不能时的原因。没有任何凭据。"""
+    blocker = vault_sso_blocker()
+    return {"url": VAULT_URL, "sso": not blocker, "reason": blocker, "hint": _VAULT_SSO_HINTS.get(blocker, "")}
+
+
+def clean_vault_return(value):
+    """登录后落在 WebObsidian 的哪一页：只许它站内的路径（如 /note/…），别的一律回首页。对面还会再验一遍。"""
+    text = str(value or "").strip()
+    if (not text.startswith("/") or text.startswith("//") or "\\" in text
+            or len(text) > VAULT_RETURN_MAX or re.search(r"[\x00-\x1f\x7f]", text)):
+        return "/"
+    return text
 
 
 def clean_vault_path(value):
@@ -2210,13 +2280,12 @@ def _guard_admin():
 # =========================
 #
 # 页面内联了全部脚本与样式（单文件模板），因此 script-src / style-src 必须放行
-# 'unsafe-inline'；其余方向一律收紧到同源。frame-src / frame-ancestors 由 content_security_policy() 按配置拼。
+# 'unsafe-inline'；其余方向一律收紧到同源。connect-src / frame-src / frame-ancestors 由 content_security_policy() 按配置拼。
 CONTENT_SECURITY_POLICY_BASE = (
     "default-src 'self'; "
     "img-src 'self' data:; "
     "style-src 'self' 'unsafe-inline'; "
     "script-src 'self' 'unsafe-inline'; "
-    "connect-src 'self'; "
     "font-src 'self' data:; "
     "form-action 'self'; "
     "base-uri 'none'; "
@@ -2225,10 +2294,15 @@ CONTENT_SECURITY_POLICY_BASE = (
 
 def content_security_policy():
     """本站是外层页面：
-    - frame-src：default-src 'self' 下外站一律嵌不进来，只为「AI 聊天」配置的那一个源（HUB_CHAT_URL）开口；
-    - frame-ancestors 'none'：本站自己不被任何人嵌（外壳、解锁面板、票据签发都不该出现在别人的框里）。"""
-    frame_src = "frame-src 'self'{0}; ".format(" " + CHAT_URL if CHAT_URL else "")
-    return CONTENT_SECURITY_POLICY_BASE + frame_src + "frame-ancestors 'none'"
+    - frame-src：default-src 'self' 下外站一律嵌不进来，只为「AI 聊天」（HUB_CHAT_URL）与「笔记」
+      （HUB_VAULT_URL，配了 HUB_VAULT_EMBED_SECRET 才算）这两个配置的源开口；
+    - connect-src：同源，外加「笔记」的源——锁定时页面要请它结束由本站登录的会话（一次 no-cors 的 POST）；
+    - frame-ancestors 'none'：本站自己不被任何人嵌（外壳、解锁面板、票据签发都不该出现在别人的框里）。
+      唯一的例外是 /vault/open 自己的响应头：它就是要待在本站自己的框里。"""
+    vault = VAULT_URL if vault_embed_enabled() else ""
+    connect_src = "connect-src 'self'{0}; ".format(" " + vault if vault else "")
+    frame_src = "frame-src 'self'{0}; ".format("".join(" " + o for o in (CHAT_URL, vault) if o))
+    return CONTENT_SECURITY_POLICY_BASE + connect_src + frame_src + "frame-ancestors 'none'"
 
 
 # HSTS 会把整个域名（含其它端口的服务）锁到 https，默认不开，由部署方按需打开。
@@ -2240,8 +2314,11 @@ HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 #  - health：容器 HEALTHCHECK 在调，堵掉会让容器被判定为不健康；
 #  - api_auth / api_logout：解锁与锁定的入口，堵掉就没法解锁了；
 #  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截。
+#  - vault_open：「笔记」框的第一页，自己会在未解锁时只回一张「请先解锁」的说明页（不签票），
+#    比这里统一回的 JSON 403 更适合出现在框里。
 _PRIVATE_OPEN_ENDPOINTS = frozenset({
     "index", "static", "service_worker", "health", "api_auth", "api_logout", "api_configs",
+    "vault_open",
 })
 
 
@@ -2332,7 +2409,8 @@ _GZIP_MIMETYPES = frozenset({
 })
 # 会回真实凭据的接口不压缩：「压缩 + 密文长度可观测」是 BREACH 一类攻击的前提。这些响应里没有
 # 攻击者可控的回显、会话 Cookie 也是 SameSite=Lax，本就构不成条件；不压只是把这条路彻底关死。
-_GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "api_export"})
+# /vault/open 的页面里有一张登录 WebObsidian 的票据，旁边还回显着请求里的 to=，同理不压。
+_GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "api_export", "vault_open"})
 # 带 ETag 的响应（首页外壳、静态文件）内容不变、压缩结果也不变：按 (路径, ETag) 记下来，
 # 不必每个请求重压一遍。条目只有外壳那几个文件，设个上限防意外膨胀。
 _GZIP_CACHE_MAX = 32
@@ -2760,7 +2838,7 @@ def api_configs():
             "deck": _coerce_deck({}), "deck_locked": True, "deck_error": "",
             "holidays": {"plans": {}},
             # 未解锁：连「有没有 AI 聊天 / 笔记服务、它们在哪」都不说。
-            "chat": None, "vault": None,
+            "chat": None, "vault": None, "vault_embed": None,
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -2837,6 +2915,8 @@ def api_configs():
         "chat": {"url": CHAT_URL} if chat_enabled() and unlocked else None,
         # 笔记服务：地址和收件箱名只给已解锁的人；API key 永远不下发。
         "vault": {"url": VAULT_URL, "inbox": VAULT_INBOX} if vault_enabled() and unlocked else None,
+        # 「笔记」标签页：同样只给已解锁的人。框里放的是本站的 /vault/open，票据不经过这里。
+        "vault_embed": public_vault_embed() if vault_embed_enabled() and unlocked else None,
     })
 
 
@@ -5742,6 +5822,68 @@ def api_chat_ticket():
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
+
+
+# ---- 「笔记」标签页：框里的第一页，替已解锁的管理员把票据交给 WebObsidian ----
+
+_VAULT_SSO_HINTS = {
+    "secret_unset": "HUB_VAULT_EMBED_SECRET 少于 32 个字符，已被忽略：不能替你登录笔记。"
+                    "请用 python3 -c \"import secrets; print(secrets.token_hex(32))\" 重新生成，两边填同一个值。",
+    "no_password": "本站没有设管理密码，不会替任何人登录笔记。",
+    "password_public": "本站的管理密码曾以明文出现在公开的代码仓库历史里，换掉之前不会用它替你登录笔记。"
+                       "更换 GYQD_ADMIN_PASSWORD 后自动恢复。",
+    "password_short": "本站的管理密码少于 {0} 位，不会用它替你登录笔记。".format(MIN_ADMIN_PASSWORD_LEN),
+    "issuer_unknown": "认不出本站对外的地址，票据没法写签发方。请在 .env 里设置 HUB_PUBLIC_ORIGIN。",
+}
+
+
+def _vault_open_page(state, status, message="", ticket="", to="/"):
+    """/vault/open 的响应：自己一套收得很紧的响应头。
+
+    - frame-ancestors 'self' + SAMEORIGIN：只能待在本站自己的框里（全站其余响应仍是 'none' / DENY）；
+    - form-action 只许 WebObsidian 的源，script-src 只许这一页带 nonce 的那一行；
+    - no-store：票据一次性、60 秒，不许任何一层缓存留着它；
+    - Referrer-Policy: strict-origin（全站是 no-referrer）：no-referrer 会让浏览器在跨源表单 POST 上
+      把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。"""
+    nonce = secrets.token_urlsafe(16)
+    body = render_template("vault_open.html", state=state, message=message, ticket=ticket, to=to,
+                           action=VAULT_URL + "/auth/hub/sso", vault_host=VAULT_URL.split("://", 1)[-1],
+                           nonce=nonce)
+    resp = app.response_class(body, status=status, mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    resp.headers["Referrer-Policy"] = "strict-origin"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{0}'; "
+        "form-action {1}; base-uri 'none'; frame-ancestors 'self'".format(nonce, VAULT_URL))
+    return resp
+
+
+@app.get("/vault/open")
+def vault_open():
+    """「笔记」标签页的框先打开这一页（本站自己的源），「新标签页打开」也是它。
+
+    已解锁、且管理密码与密钥都合格：签一张 60 秒的一次性票据，渲染一个自动提交的表单，
+    把票据 POST 给 <HUB_VAULT_URL>/auth/hub/sso——票据只在这一页的响应体里，不进任何地址，
+    页面脚本也不经手。?to= 是登录后落在笔记的哪一页（只许对面站内的路径）。
+
+    GET 也不怕别的站拿它作文章：浏览器标明是别的站发起的（Sec-Fetch-Site: cross-site）直接拒绝；
+    别的站就算把人引到这里，票据也只会被 POST 到配置好的 WebObsidian，登录的还是这个人自己，
+    跨源的页面既读不到这一页，也嵌不了它。"""
+    if not vault_embed_enabled():
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    to = clean_vault_return(request.args.get("to"))
+    if request.headers.get("Sec-Fetch-Site", "").strip().lower() == "cross-site":
+        return _vault_open_page("refused", 403, "只能从本站打开笔记。")
+    if ADMIN_PASSWORD and not admin_ok():
+        return _vault_open_page("locked", 401, "请先在 Bookmark Hub 里解锁，笔记会跟着登录。")
+    blocker = vault_sso_blocker()
+    issuer = request_public_origin()
+    if not blocker and not issuer:
+        blocker = "issuer_unknown"
+    if blocker:
+        return _vault_open_page("blocked", 403, _VAULT_SSO_HINTS.get(blocker, blocker))
+    return _vault_open_page("ok", 200, ticket=issue_vault_ticket(issuer, VAULT_URL), to=to)
 
 
 # =========================

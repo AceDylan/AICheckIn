@@ -63,6 +63,11 @@
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.2a7.6 7.6 0 0 1-11.2 6.7L4 20.4l1.5-4.6A7.6 7.6 0 1 1 20 12.2z"/><path d="M9 10.8h6M9 13.9h3.6"/></svg>
           <span class="tab-text">AI 聊天</span>
         </button>
+        <!-- 笔记：框里是自己的 WebObsidian。解锁后、且部署配置了 HUB_VAULT_URL + HUB_VAULT_EMBED_SECRET 才出现（见 syncAdminViews）。 -->
+        <button class="tab" data-view="vault" title="笔记" aria-label="笔记" hidden>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 5A2 2 0 0 1 7.5 3H19v15H7.5a2 2 0 0 0-2 2z"/><path d="M5.5 20a2 2 0 0 0 2 2H19v-4"/><path d="M9.5 7.5h5.5M9.5 11h3.5"/></svg>
+          <span class="tab-text">笔记</span>
+        </button>
         <button class="tab" data-view="checkin" title="签到中心" aria-label="签到中心">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg>
           <span class="tab-text">签到中心</span>
@@ -324,6 +329,23 @@
           </div>
           <div class="chat-stage" id="chatStage">
             <div class="chat-loading" id="chatLoading">正在打开 HaloWebUI…</div>
+          </div>
+        </section>
+
+        <!-- ===== 笔记：WebObsidian 嵌在这里（样式与「AI 聊天」共用） ===== -->
+        <section class="view" id="view-vault" aria-label="笔记">
+          <div class="chat-bar">
+            <div class="chat-bar-title">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 5A2 2 0 0 1 7.5 3H19v15H7.5a2 2 0 0 0-2 2z"/><path d="M5.5 20a2 2 0 0 0 2 2H19v-4"/><path d="M9.5 7.5h5.5M9.5 11h3.5"/></svg>
+              <span>笔记</span><span class="chat-host" id="vaultHost"></span>
+            </div>
+            <div class="chat-bar-actions">
+              <button class="btn sm ghost" id="vaultReload" type="button" title="重新载入笔记，并顺带重新登录">重新载入</button>
+              <a class="btn sm ghost" id="vaultPopout" href="/vault/open" target="_blank" rel="noopener noreferrer" title="在新标签页里打开笔记（同样免登录）">新标签页打开</a>
+            </div>
+          </div>
+          <div class="chat-stage" id="vaultStage">
+            <div class="chat-loading" id="vaultLoading">正在打开笔记…</div>
           </div>
         </section>
 
@@ -1169,7 +1191,7 @@
     const LIB = { page: '@home' };  // @ 不允许出现在分组 id 中，避免与用户分组重名。
     const CHECKIN = { page: 'overview' };
     const CHECKIN_PAGES = ['overview', 'configs', 'history'];
-    const MAIN_VIEWS = ['bookmarks', 'chat', 'checkin', 'settings'];
+    const MAIN_VIEWS = ['bookmarks', 'chat', 'checkin', 'settings', 'vault'];
     function libHash() { return LIB.page === '@home' ? '#bookmarks' : '#links/' + LIB.page; }
     function switchView(name, updateHash = true) {
       // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
@@ -1184,6 +1206,7 @@
       if (STATE_LOADED && libraryLocked() && mainName !== 'settings') { switchView('settings', updateHash); return; }
       if (mainName === 'checkin' && STATE_LOADED && !canEdit()) { switchView('bookmarks'); return; }
       if (mainName === 'chat' && STATE_LOADED && !chatAvailable()) { switchView('bookmarks'); return; }
+      if (mainName === 'vault' && STATE_LOADED && !vaultEmbedAvailable()) { switchView('bookmarks'); return; }
       const tab = document.querySelector(`.tab[data-view="${mainName}"]`);
       const view = $('view-' + mainName);
       if (!tab || !view) return;
@@ -1193,8 +1216,8 @@
         t.setAttribute('aria-current', active ? 'page' : 'false');
       });
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
-      // 聊天页要整块铺满（去掉内容区的留白与最大宽度），由 <html> 上的类统一切换。
-      document.documentElement.classList.toggle('chat-on', mainName === 'chat');
+      // 聊天页、笔记页要整块铺满（去掉内容区的留白与最大宽度），由 <html> 上的类统一切换。
+      document.documentElement.classList.toggle('chat-on', mainName === 'chat' || mainName === 'vault');
       $('libSubnav').hidden = mainName !== 'bookmarks';
       if (section) {
         CHECKIN.page = section;
@@ -1230,6 +1253,7 @@
       if (name === 'history') loadHistory();
       else if (name === 'settings') loadDiagnostics();
       else if (name === 'chat') openChat();
+      else if (name === 'vault') openVault();
     }
     function currentViewName() {
       const view = document.querySelector('.view.active');
@@ -1547,11 +1571,15 @@
       $('todoVaultSync').hidden = !vaultAvailable();
       $('memoAsk').hidden = !askAvailable();
       if (!chatAvailable()) closeChat();   // 锁定 / 会话过期：框里的页面一并卸掉
+      const vaultTab = document.querySelector('.tab[data-view="vault"]');
+      if (vaultTab) vaultTab.hidden = !vaultEmbedAvailable();
+      if (!vaultEmbedAvailable()) closeVault(true);   // 同上，并请 WebObsidian 结束由本站登录的会话
       // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库；连收藏库也收起来了就去解锁面板。
       const here = currentViewName();
       if (locked && here !== 'settings') switchView('settings');
       else if (!show && ADMIN_VIEWS.includes(here)) switchView('bookmarks');
       else if (here === 'chat' && !chatAvailable()) switchView('bookmarks');
+      else if (here === 'vault' && !vaultEmbedAvailable()) switchView('bookmarks');
     }
 
     // ===== AI 聊天 =====
@@ -1622,6 +1650,50 @@
       if (CHAT_NOTE_SEEN.includes(key)) writePref('bh_chat_note', key);
       $('chatNote').hidden = true;
     });
+
+    // ===== 笔记 =====
+    // 框里是自己的 WebObsidian（地址来自部署的 HUB_VAULT_URL，随 /api/configs 只发给已解锁的人）。
+    // 框先打开本站自己的 /vault/open：后端在那一页里把一次性票据用表单 POST 给 WebObsidian，
+    // 对面换成它自己的会话再跳到笔记首页。票据不经过这里的脚本，也不进任何地址。
+    // 第一次点开才加载，之后切到别的标签页也不卸载——写到一半去翻个收藏再回来，光标还在。
+    const VAULT_EMBED = { url: '' };   // 框里登录的是哪个 WebObsidian；锁定时凭它请对面结束会话
+    function vaultEmbedAvailable() { return !!(STATE.vault_embed && STATE.vault_embed.url) && canEdit(); }
+    function vaultFrame() { return $('vaultStage') ? $('vaultStage').querySelector('iframe') : null; }
+    // 请 WebObsidian 结束「由本站登录的」会话（它的密码会话不受影响）。no-cors：回包看不见也不用看；
+    // 对面只认本站的 Origin。全站的 no-referrer 会让 no-cors 的 POST 带 Origin: null，所以这一个请求单独用
+    // strict-origin（只带出本站的源）。万一没送到，那个会话也会在 12 小时内自己过期。
+    function signOutVault(url) {
+      if (!url) return;
+      try { fetch(url + '/auth/hub/logout', { method: 'POST', mode: 'no-cors', credentials: 'include', keepalive: true, referrerPolicy: 'strict-origin' }).catch(() => {}); }
+      catch (_) { /* 同上：只是少了一次提前结束 */ }
+    }
+    // signOut：锁定 / 会话过期时顺带让对面也退出；换一个新框（重新载入）时不用。
+    function closeVault(signOut) {
+      const frame = vaultFrame();
+      if (frame) frame.remove();
+      const url = VAULT_EMBED.url || (signOut && STATE.vault_embed && STATE.vault_embed.url) || '';
+      VAULT_EMBED.url = '';
+      if (signOut) signOutVault(url);
+    }
+    function openVault(force) {
+      if (!vaultEmbedAvailable() || (VAULT_EMBED.url && !force)) return;
+      const base = STATE.vault_embed.url;
+      $('vaultHost').textContent = base.replace(/^https?:\/\//, '');
+      $('vaultLoading').hidden = false;
+      closeVault();   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
+      const frame = document.createElement('iframe');
+      frame.className = 'chat-frame';
+      frame.title = '笔记（WebObsidian）';
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      // 与「AI 聊天」同样不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
+      frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
+      frame.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
+      frame.addEventListener('load', () => { $('vaultLoading').hidden = true; });
+      frame.src = '/vault/open?to=%2F';   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
+      $('vaultStage').appendChild(frame);
+      VAULT_EMBED.url = base;
+    }
+    $('vaultReload').addEventListener('click', () => openVault(true));
 
 
     // ===== 发送到 AI 聊天 / 存入笔记 =====
@@ -5691,6 +5763,7 @@
     $('lockBtn').addEventListener('click', async () => {
       try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin', headers: adminHeaders() }); }
       catch (e) { toast('网络错误：' + e.message, 'err'); return; }
+      closeVault(true);   // 锁定本站 = 笔记里由本站登录的会话也一并结束（哪怕这次没打开过笔记页）
       toast('已锁定', 'ok');
       loadConfigs();
     });

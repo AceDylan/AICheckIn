@@ -323,7 +323,7 @@ class FrontendWiringTest(ExposureTestBase):
     def test_leaving_a_hidden_tab_falls_back_to_the_library(self):
         # 会话过期时用户可能正停在被收起的页面上。
         start = self.html.index("function syncAdminViews")
-        self.assertIn("switchView('bookmarks')", self.html[start:start + 1400])
+        self.assertIn("switchView('bookmarks')", self.html[start:start + 1800])
 
 
 if __name__ == "__main__":

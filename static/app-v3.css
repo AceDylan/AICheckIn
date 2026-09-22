@@ -1904,11 +1904,11 @@ html.wall-on .home-todo { --todo-drag-bg: #232c3f; }
   .home-body.has-deck .todo-list { max-height: min(36vh, 420px); }
   .home-body.has-deck .todo-done .todo-list { max-height: min(22vh, 220px); }
 }
-/* ===== AI 聊天：HaloWebUI 嵌在「AI 聊天」标签页的 iframe 里 =====
-   整块铺满内容区：<html class="chat-on"> 由 switchView 切换，去掉内容区的留白与最大宽度，
-   工具条 + 提示条 + 框三段纵向排开，框吃掉剩下的全部高度。 */
+/* ===== AI 聊天 / 笔记：HaloWebUI、WebObsidian 各嵌在自己标签页的 iframe 里 =====
+   整块铺满内容区：<html class="chat-on"> 由 switchView 切换（两个页面都用它），去掉内容区的留白与最大宽度，
+   工具条 + 提示条 + 框三段纵向排开，框吃掉剩下的全部高度。笔记页直接复用下面这套 .chat-* 样式。 */
 html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
-#view-chat.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
+#view-chat.active, #view-vault.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
 .chat-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
   padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
@@ -1934,7 +1934,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 @media (max-width: 760px) {
   /* 底部固定标签栏约 66px + 安全区：框到它上沿为止，别让最后一行输入框藏在标签栏后面。 */
   html.chat-on .content { padding: 0; }
-  #view-chat.active { height: calc(100vh - 66px - env(safe-area-inset-bottom)); }
+  #view-chat.active, #view-vault.active { height: calc(100vh - 66px - env(safe-area-inset-bottom)); }
   .chat-bar { padding: 8px 12px; }
   .chat-host { display: none; }
 }

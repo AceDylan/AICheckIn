@@ -343,6 +343,27 @@ WebObsidian 那边要做的三件事：
 
 Service Worker 的缓存版本随这两次改动升到 v18。
 
+### 「笔记」标签页：把 WebObsidian 整个嵌进来（可选）
+
+左侧标签栏再多一个「笔记」，点进去就是自己的 WebObsidian；**本站解锁 = 笔记已登录**，
+锁定本站笔记也跟着退出。入口只给已解锁的人。本站这边只要一个变量（再加上上面的 `HUB_VAULT_URL`）：
+
+```bash
+# 与 WebObsidian 共享的密钥：现场生成，WebObsidian 的 WEBOBSIDIAN_HUB_EMBED_SECRET 填同一个值。
+# 别和 HUB_TRUSTED_EMBED_ADMIN_SECRET 共用。留空 = 没有这个标签页。
+#     python3 -c "import secrets; print(secrets.token_hex(32))"
+HUB_VAULT_EMBED_SECRET=<现场生成的随机值>
+```
+
+WebObsidian 那边：`.env` 写 `WEBOBSIDIAN_HUB_URL=<本站地址>` 和同一个 `WEBOBSIDIAN_HUB_EMBED_SECRET`，
+拉新镜像重建容器；它前面的 nginx 要让「由本站登录的会话」也能过 Basic Auth，并给登录桥单开两个 `location`——
+完整步骤、nginx 配置和验证命令在 WebObsidian 仓库的 `docs/HUB_EMBED.md`。
+
+工作方式：框先打开本站自己的 `/vault/open`，后端在这一页里签一张 60 秒、只能用一次的票据，放在**隐藏表单字段**里
+`POST` 给 WebObsidian 的 `/auth/hub/sso`（票据不经过页面脚本，也不进任何地址）；WebObsidian 验过来源、签名、
+有效期和 nonce 后给它自己的 12 小时会话。锁定本站时页面顺带请它结束这个会话。细节见 [SECURITY.md](SECURITY.md)。
+Service Worker 的缓存版本随之升到 v20。
+
 ---
 
 ## 安全

@@ -39,14 +39,15 @@ class EnvVarDocsTest(unittest.TestCase):
     def test_env_example_covers_the_deployment_critical_ones(self):
         example = _read(".env.example")
         for name in ("GYQD_ADMIN_PASSWORD", "HUB_PUBLIC_LIBRARY", "GYQD_HSTS",
-                     "HUB_CHAT_URL", "HUB_TRUSTED_EMBED_ADMIN_SECRET"):
+                     "HUB_CHAT_URL", "HUB_TRUSTED_EMBED_ADMIN_SECRET", "HUB_VAULT_EMBED_SECRET"):
             self.assertIn(name, example, "%s 应当在 .env.example 里有位置" % name)
 
     def test_compose_passes_through_what_env_example_offers(self):
         # .env 里填了却没被 compose 透传进容器 = 静默失效。
         compose = _read("docker-compose.yml")
         for name in ("GYQD_ADMIN_PASSWORD", "HUB_PUBLIC_LIBRARY", "GYQD_HSTS",
-                     "HUB_CHAT_URL", "HUB_TRUSTED_EMBED_ADMIN_SECRET", "HUB_PUBLIC_ORIGIN"):
+                     "HUB_CHAT_URL", "HUB_TRUSTED_EMBED_ADMIN_SECRET", "HUB_PUBLIC_ORIGIN",
+                     "HUB_VAULT_EMBED_SECRET"):
             self.assertIn(name, compose, "%s 没有在 docker-compose.yml 里透传" % name)
 
 

@@ -16,7 +16,7 @@ os.environ.pop("HUB_CHAT_URL", None)                    # 宿主机的 .env 不�
 os.environ.pop("HUB_TRUSTED_EMBED_ADMIN_SECRET", None)
 os.environ.pop("HUB_PUBLIC_ORIGIN", None)
 for _name in ("HUB_VAULT_URL", "HUB_VAULT_API_KEY", "HUB_VAULT_INBOX",
-              "HUB_VAULT_TIMEOUT", "HUB_VAULT_TODO_MIRROR"):
+              "HUB_VAULT_TIMEOUT", "HUB_VAULT_TODO_MIRROR", "HUB_VAULT_EMBED_SECRET"):
     os.environ.pop(_name, None)                         # 同理：笔记服务默认「没配」，要用的用例自己设模块全局
 os.environ.setdefault("GYQD_CONFIG_FILE", os.path.join(tempfile.mkdtemp(), "config.json"))
 
