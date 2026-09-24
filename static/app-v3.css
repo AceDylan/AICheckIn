@@ -2179,10 +2179,10 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 
 /* 弹窗底部的操作条贴住弹窗底边：内容再长，「保存 / 取消」也一直看得见；浅一档的底 + 一条细线，和正文分开。 */
 .modal > .modal-actions:last-child {
-  position: sticky; bottom: 0; z-index: 2;
+  position: sticky; bottom: -24px; z-index: 2;   /* 粘性定位按弹窗内边距以内算：往下抵掉 24px，才贴到弹窗的真实底边 */
   margin: 22px -24px -24px; padding: 14px 24px;
   border-top: 1px solid var(--border); background: var(--surface-2);
 }
 @media (width <= 760px) {
-  .modal > .modal-actions:last-child { margin-bottom: calc(-20px - env(safe-area-inset-bottom)); padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .modal > .modal-actions:last-child { bottom: calc(-20px - env(safe-area-inset-bottom)); margin-bottom: calc(-20px - env(safe-area-inset-bottom)); padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
 }
