@@ -3331,6 +3331,55 @@ def api_bookmark_create():
     return jsonify({"ok": True, "index": len(store["bookmarks"]) - 1})
 
 
+def bookmark_from_config(config):
+    """由签到账户生成看板站点：一个「余额」字段，请求与签到时查钱包的那次一样（/api/user/self）。
+
+    签到账户里已经有地址和令牌，不必再去浏览器里抓 cURL 手工粘贴一遍。
+    """
+    base = gyqd.normalize_base_url(config.get("base_url") or "")
+    token = str(config.get("access_token") or "").strip()
+    auth = token if token.lower().startswith("bearer ") else "Bearer {0}".format(token)
+    return clean_bookmark({
+        "name": config.get("name") or base,
+        "url": base,
+        "fields": [{
+            "label": "余额", "type": "amount", "enabled": True,
+            "method": "GET", "url": base + "/api/user/self",
+            "headers": {"Accept": "application/json", "Authorization": auth,
+                        "New-Api-User": str(config.get("user_id") or "").strip()},
+            "body": None, "json_path": "data.quota",
+            "divisor": gyqd.QUOTA_PER_UNIT, "unit": "USD",
+        }],
+    })
+
+
+@app.post("/api/bookmarks/from_config/<int:idx>")
+def api_bookmark_from_config(idx):
+    guard = _guard_admin()
+    if guard:
+        return guard
+    store, err = _load_store_or_error()
+    if err:
+        return err
+    configs = store["configs"]
+    if idx < 0 or idx >= len(configs):
+        return jsonify({"ok": False, "error": "配置不存在"}), 404
+    stale = _stale_target(configs[idx], metrics_key, "这个账户")
+    if stale:
+        return stale
+    try:
+        bookmark = bookmark_from_config(configs[idx])
+    except (ValueError, gyqd.CheckinError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    if any(link_dedupe_key(b.get("url")) == link_dedupe_key(bookmark["url"]) for b in store["bookmarks"]):
+        return jsonify({"ok": False, "error": "站点看板里已经有这个站点了"}), 409
+    store["bookmarks"].append(bookmark)
+    err = _save_store_or_error(store)
+    if err:
+        return err
+    return jsonify({"ok": True, "index": len(store["bookmarks"]) - 1})
+
+
 @app.put("/api/bookmarks/<int:idx>")
 def api_bookmark_update(idx):
     guard = _guard_admin()

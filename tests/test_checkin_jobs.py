@@ -275,3 +275,20 @@ class DailyBalanceTest(_Base):
         # 失败不产生点
         app_module.record_outcomes([CFG_A], [{"name": "A", "status": "failed", "message": "x"}])
         self.assertEqual(read_metrics()[key]["daily"], daily)
+
+
+class BookmarkFromConfigTest(_Base):
+    def test_creates_balance_field_once(self):
+        self.write_config({"configs": [dict(CFG_A)], "bookmarks": [], "link_groups": []})
+        resp = self.client.post("/api/bookmarks/from_config/0?expect=https://a.example|1")
+        self.assertEqual(resp.get_json(), {"ok": True, "index": 0})
+        bm = self.read_config()["bookmarks"][0]
+        self.assertEqual((bm["name"], bm["url"]), ("A", "https://a.example"))
+        field = bm["fields"][0]
+        self.assertEqual((field["url"], field["json_path"], field["divisor"]), ("https://a.example/api/user/self", "data.quota", 500000))
+        self.assertEqual(field["headers"]["Authorization"], "Bearer tok-a")
+        self.assertEqual(field["headers"]["New-Api-User"], "1")
+        # 公开视图里没有令牌
+        self.assertNotIn("tok-a", self.client.get("/api/configs").get_data(as_text=True).replace('"access_token"', ""))
+        self.assertEqual(self.client.post("/api/bookmarks/from_config/0").status_code, 409)       # 已经在看板里
+        self.assertEqual(self.client.post("/api/bookmarks/from_config/0?expect=x").status_code, 409)

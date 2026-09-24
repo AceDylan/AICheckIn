@@ -400,7 +400,10 @@
                 <label class="set-row"><span class="set-text"><b>后台自动刷新</b><span>让站点看板的余额 / 到期时间不必手点也保持新鲜；只刷新配置了接口字段的站点</span></span><span class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></span></label>
                 <div class="set-row"><label class="set-text" for="refreshInterval"><b>刷新间隔</b><span>两次后台取数之间隔多久</span></label><div class="set-ctrl"><select class="input" id="refreshInterval"></select></div></div>
               </div><div class="note" id="refreshStatus"></div></div>
-            <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
+            <div class="panel"><div class="panel-title">全局代理</div>
+              <div class="set-rows">
+                <div class="set-row"><label class="set-text" for="proxyUrl"><b>代理地址</b><span>留空直连，支持 http / https / socks5；签到和看板取数都走它</span></label><div class="set-ctrl set-ctrl-wide"><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"><button class="btn sm" id="saveProxy">保存</button></div></div>
+              </div></div>
             <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus" style="margin-top:0"></div>
               <!-- 密码框放进自己的 <form>，并带一个（隐藏的）用户名字段：密码管理器据此把凭据只关联到这个表单，
                    不会再去页面别处找「用户名」。密码框本身只在「停在系统设置且尚未解锁」时才挂进文档（见 syncAdminPwd）。 -->
@@ -412,11 +415,11 @@
                 </form>
                 <button type="button" class="btn sm ghost" id="lockBtn" style="display:none">锁定</button>
               </div></div>
-            <div class="panel"><div class="panel-title">部署自检 <button class="btn sm ghost" id="runDiag" style="float:right;margin-top:-4px">重新检查</button></div><div class="note" style="margin-top:0">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
-            <div class="panel"><div class="panel-title">配置恢复 <button class="btn sm ghost" id="loadBackups" style="float:right;margin-top:-4px">查看备份</button></div><div class="note" style="margin-top:0">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
-            <div class="panel"><div class="panel-title">快速收藏</div><div class="note" style="margin-top:0">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
+            <div class="panel"><div class="panel-title">部署自检<span class="spacer"></span><button class="btn sm ghost" id="runDiag">重新检查</button></div><div class="note panel-lead">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
+            <div class="panel"><div class="panel-title">配置恢复<span class="spacer"></span><button class="btn sm ghost" id="loadBackups">查看备份</button></div><div class="note panel-lead">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
+            <div class="panel"><div class="panel-title">快速收藏</div><div class="note panel-lead">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
             <div class="panel"><div class="panel-title">首页与起始页</div>
-              <div class="note" style="margin-top:0">把本页设为浏览器的「主页 / 启动时打开的网页」，打开浏览器就是你的收藏首页：光标自动落在搜索框，直接打字即可找收藏或搜索网页。</div>
+              <div class="note panel-lead">把本页设为浏览器的「主页 / 启动时打开的网页」，打开浏览器就是你的收藏首页：光标自动落在搜索框，直接打字即可找收藏或搜索网页。</div>
               <div class="controls" style="margin-top:10px"><code class="start-url" id="startUrl"></code><button type="button" class="btn sm ghost" id="copyStartUrl">复制地址</button></div>
               <div class="hint start-steps">Chrome / Edge：设置 → 启动时 → 打开特定网页，再到「外观 → 显示主页按钮」填同一地址。Firefox：设置 → 主页 → 自定义网址。Safari：设置 → 通用 → 主页。手机：浏览器菜单「添加到主屏幕」或上方「安装为应用」。</div>
               <div class="row-2" style="margin-top:14px">
@@ -424,9 +427,12 @@
                 <div class="field"><label for="engineSelect">网页搜索引擎</label><select class="input" id="engineSelect"></select></div>
               </div>
               <div class="note">这两项记在本浏览器的 Cookie 里，各设备可以各设各的。</div>
-              <div class="controls" style="margin-top:12px"><button type="button" class="btn sm ghost" id="openHomeLook">壁纸 / 遮罩 / 导航…</button></div>
             </div>
-            <div class="panel"><div class="panel-title">外观</div><div class="field"><label>主题</label><div class="segmented" id="themeSeg" role="radiogroup" aria-label="主题"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div><div class="hint">默认深色；选择会记在本浏览器的 Cookie 里，一年内有效。启用壁纸时，整个界面（含弹窗）固定为深色场景。</div></div></div>
+            <div class="panel"><div class="panel-title">外观</div>
+              <div class="set-rows">
+                <div class="set-row"><span class="set-text"><b id="themeSegLabel">主题</b><span>默认深色；记在本浏览器的 Cookie 里，一年内有效</span></span><div class="set-ctrl"><div class="segmented" id="themeSeg" role="radiogroup" aria-labelledby="themeSegLabel"><button type="button" data-theme-opt="dark">深色</button><button type="button" data-theme-opt="light">浅色</button><button type="button" data-theme-opt="system">跟随系统</button></div></div></div>
+                <div class="set-row"><span class="set-text"><b>壁纸 · 遮罩 · 导航</b><span>默认不开壁纸。内置壁纸都是深色：启用壁纸时，整个界面（含弹窗）固定为深色场景</span></span><div class="set-ctrl"><button type="button" class="btn sm ghost" id="openHomeLook">调整…</button></div></div>
+              </div></div>
           </div>
         </section>
       </div>
@@ -523,7 +529,12 @@
           <div class="field"><label>标签</label><input class="input" id="lk_tags" placeholder="逗号分隔，最多 8 个"></div>
           <div class="field"><label>备用文字图标（可选 emoji）</label><input class="input" id="lk_icon" placeholder="如 🚀，留空使用首字母" maxlength="8"></div>
         </div>
-        <div class="field"><label for="lk_icon_file">上传备用图标</label><input class="input" id="lk_icon_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico">
+        <div class="field"><span class="field-label-text" id="lk_icon_label">上传备用图标</span>
+          <label class="drop-zone" id="lk_icon_drop" for="lk_icon_file">
+            <input class="sr-only" id="lk_icon_file" type="file" aria-labelledby="lk_icon_label" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            <span class="drop-text"><b>选择图片</b>，或拖到这里</span>
+          </label>
           <div class="icon-upload-preview" id="lk_icon_preview" hidden><img id="lk_icon_image" alt="上传图标预览"><button type="button" class="btn ghost sm" id="lk_icon_remove">移除上传图标</button></div>
           <div class="hint">自动图标优先；获取失败时使用上传图片，否则使用文字头像。支持 PNG、JPEG、WebP、GIF、ICO（最大 2 MB），自动缩为 128 像素；上传图片会保留作为备用。</div>
         </div>
@@ -1501,11 +1512,11 @@
       const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
       const [lx, ly] = xy[xy.length - 1];
       const label = `余额走势：${pts[0][0]} ${fmtNum(pts[0][1])} → ${last[0]} ${fmtNum(last[1])}，共 ${pts.length} 天的记录`;
-      return `<div class="trend">
+      return `<div class="trend"><div class="trend-plot">
           <svg class="trend-line" viewBox="-2 0 104 26" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title>
             <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
           </svg>
-          <span class="trend-dot" style="left:${lx.toFixed(1)}%;top:${((ly / 26) * 100).toFixed(1)}%"></span>
+          <span class="trend-dot" style="left:${((lx + 2) / 104 * 100).toFixed(1)}%;top:${((ly / 26) * 100).toFixed(1)}%"></span></div>
           ${note ? `<div class="trend-note">${escapeHtml(note)}</div>` : ''}
         </div>`;
     }
@@ -1563,7 +1574,7 @@
         <div class="dcard-main">
           <div class="card-name">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}${escapeHtml(c.name)} <span class="badge gray">禁用</span></div>
           ${urlLink(c.base_url)}
-          <div class="dmetrics">余额 ${escapeHtml(m.wallet_balance)} · 已用 ${escapeHtml(m.used_quota)} · 请求 ${escapeHtml(m.request_count)}${stamp}</div>
+          <div class="dmetrics">${[['余额', m.wallet_balance], ['已用', m.used_quota], ['请求', m.request_count]].filter(([, v]) => v && v !== '-').map(([k, v]) => `${k} ${escapeHtml(v)}`).join(' · ') || '还没有数据'}${stamp}</div>
         </div>
         <div class="card-actions">
           ${goBtn}
@@ -2092,6 +2103,7 @@
           </div>
           <div class="cfg-actions">
             <button class="btn sm ghost" onclick="revealToken(${i})" title="临时显示 token" aria-label="临时显示 ${escapeHtml(c.name)} 的 token">${icon('eye')}</button>
+            ${onBoard(c) ? '' : `<button class="btn sm ghost" onclick="cfgToBoard(${i})" title="在站点看板新建这个站点，余额字段按这个账户自动配好">加到看板</button>`}
             <button class="btn sm ghost" onclick="editCfg(${i})">编辑</button>
             <button class="btn sm danger" onclick="deleteCfg(${i})">删除</button>
           </div>
@@ -2107,6 +2119,25 @@
       toast(data.error || '数据已在别处变更，已重新加载', 'err');
       loadConfigs();
       return true;
+    }
+
+    // 签到账户和看板是两份配置：已经有地址和令牌的账户，一键生成带「余额」字段的看板站点。
+    function onBoard(c) {
+      const origin = siteOrigin(c.base_url);
+      return !!origin && (STATE.bookmarks || []).some(b => siteOrigin(b.url) === origin);
+    }
+    async function cfgToBoard(i) {
+      if (!guardAdmin()) return;
+      const c = STATE.configs[i];
+      try {
+        const resp = await fetch(`/api/bookmarks/from_config/${i}` + expectQ(c), { method: 'POST', headers: adminHeaders() });
+        const data = await resp.json();
+        if (staleReload(resp, data)) return;
+        if (!data.ok) { toast(data.error || '添加失败', 'err'); return; }
+        toast(`已加到站点看板：${c.name}`, 'ok');
+        await loadConfigs();
+        refreshBmBalance(data.index, true);   // 顺手取一次数，看板上马上有余额
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
     }
 
     function guardAdmin() {
@@ -5601,8 +5632,17 @@
       if (data.length > 87382) throw new Error('图标压缩后仍过大，请换一张更简单的图片');
       return data;
     }
-    $('lk_icon_file').addEventListener('change', async () => {
-      const file = $('lk_icon_file').files[0];
+    // 上传区：点它等于点文件框；也可以把图片直接拖进来。
+    const dropZone = $('lk_icon_drop');
+    ['dragenter', 'dragover'].forEach(t => dropZone.addEventListener(t, (e) => { e.preventDefault(); dropZone.classList.add('is-over'); }));
+    ['dragleave', 'drop'].forEach(t => dropZone.addEventListener(t, () => dropZone.classList.remove('is-over')));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) takeIconFile(file);
+    });
+    $('lk_icon_file').addEventListener('change', () => takeIconFile($('lk_icon_file').files[0]));
+    async function takeIconFile(file) {
       if (!file) return;
       const version = ++iconUploadVersion;
       $('linkSave').disabled = true;
@@ -5617,7 +5657,7 @@
       } finally {
         if (version === iconUploadVersion) { $('linkSave').disabled = false; $('lk_icon_file').value = ''; }
       }
-    });
+    }
     $('lk_icon_remove').addEventListener('click', () => {
       iconUploadVersion++;
       linkEdit.customIcon = '';

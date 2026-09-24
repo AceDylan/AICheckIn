@@ -165,7 +165,7 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 }
 .brand-name { font-size: 14.5px; font-weight: 620; letter-spacing: -.015em; }
 .brand-sub { margin-top: 1px; color: var(--text-3); font-size: 12px; font-weight: 450; }
-.nav-label { padding: 14px 10px 6px; color: var(--text-3); font-size: 11px; font-weight: 520; letter-spacing: .02em; }
+.nav-label { padding: 14px 10px 6px; color: var(--text-3); font-size: 12px; font-weight: 520; letter-spacing: .02em; }
 .tabs { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .tab {
   position: relative;
@@ -364,7 +364,7 @@ html[data-theme="light"] .theme-toggle .ic-sun { display: block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { color: var(--text-2); font-size: 12px; font-weight: 520; }
-.field .hint { color: var(--text-3); font-size: 11px; line-height: 1.5; }
+.field .hint { color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .input, select.input {
   width: 100%; min-height: 40px; padding: 9px 13px;
   border: 1px solid var(--border-strong); border-radius: 10px;
@@ -548,7 +548,7 @@ details > summary::-webkit-details-marker { display: none; }
 .fields-empty-text { padding: 10px 6px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .field-item { min-width: 0; padding: 0; border: 0; background: none; }
 .field-item.is-primary { grid-column: 1 / -1; padding: 0; }
-.field-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--text-3); font-size: 11px; font-weight: 520; letter-spacing: .01em; }
+.field-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--text-3); font-size: 12px; font-weight: 520; letter-spacing: .01em; }
 .field-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .field-time { flex: 0 0 auto; font-weight: 520; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
 .field-val { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 620; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
@@ -562,10 +562,10 @@ details > summary::-webkit-details-marker { display: none; }
 .field-badge.is-past { background: var(--danger-soft); color: var(--danger); }
 .field-badge.is-soon { background: var(--warning-soft); color: var(--warning); }
 .field-error { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--danger); font-size: 12px; font-weight: 520; }
-.field-last { display: block; margin-top: 2px; color: var(--text-3); font-size: 11px; font-weight: 500; }
+.field-last { display: block; margin-top: 2px; color: var(--text-3); font-size: 12px; font-weight: 500; }
 .field-pending { color: var(--text-3); font-size: 13px; font-weight: 500; }
 .fields-more { grid-column: 1 / -1; }
-.fields-more > summary { cursor: pointer; padding: 4px 2px; color: var(--accent); font-size: 11px; font-weight: 580; }
+.fields-more > summary { cursor: pointer; padding: 4px 2px; color: var(--accent); font-size: 12px; font-weight: 580; }
 .fields-more-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
 .bookmark-card.is-busy .bm-fields-block { opacity: .55; transition: opacity .15s ease; }
 
@@ -658,7 +658,7 @@ details > summary::-webkit-details-marker { display: none; }
 
 /* ===== 死链检查的角标 ===== */
 .check-badge { flex: 0 0 auto; font-size: 11px; line-height: 1; cursor: help; }
-.check-muted { margin-left: 5px; color: var(--text-3); font-size: 11px; }
+.check-muted { margin-left: 5px; color: var(--text-3); font-size: 12px; }
 .link-card.check-missing, .link-card.check-error { background: var(--danger-soft); }
 .link-card.check-unreachable { background: var(--warning-soft); }
 
@@ -705,11 +705,13 @@ details > summary::-webkit-details-marker { display: none; }
 #runAllCheckin.busy { opacity: .85; cursor: progress; }
 .kvs-empty { margin-top: 12px; color: var(--text-3); font-size: 12.5px; }
 /* 余额走势：一条细线 + 末点，高 26px，不画坐标轴；具体数字在下面那行字和悬停提示里。 */
-.trend { position: relative; margin-top: 12px; }
+.trend { margin-top: 12px; }
+.trend-plot { position: relative; }
 .trend-line { display: block; width: 100%; height: 26px; overflow: visible; color: var(--text-3); }
 .trend-dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--text-2); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
 .trend-note { margin-top: 6px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
 .run-meta { min-height: 18px; margin: 0 2px 14px; }
+.run-meta:has(#meta:empty) { display: none; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 16px; }
 .card {
   padding: 20px; border-radius: var(--radius-lg); background: var(--surface);
@@ -726,7 +728,7 @@ details > summary::-webkit-details-marker { display: none; }
 .kv:last-child { border-bottom: 0; }
 .kv .k { color: var(--text-2); }
 .kv .v { font-weight: 580; font-variant-numeric: tabular-nums; }
-.card-msg, .stamp { margin-top: 8px; color: var(--text-3); font-size: 11px; word-break: break-word; }
+.card-msg, .stamp { margin-top: 8px; color: var(--text-3); font-size: 12px; word-break: break-word; }
 .card-actions { display: flex; gap: 8px; margin-top: 14px; }
 /* 卡片里的「签到 / 去签到」是这张卡的主操作，不是整页的：用浅一档的中性实底，墨色实心只留给页头的「运行全部签到」。 */
 .card-actions .btn:not(.ghost):not(.danger) { background: var(--surface-hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
@@ -913,9 +915,9 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .backup-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
 .backup-when { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 520; }
 .backup-label { flex: 0 0 auto; color: var(--text-2); }
-.backup-sum { flex: 1; min-width: 140px; color: var(--text-3); font-size: 11px; }
+.backup-sum { flex: 1; min-width: 140px; color: var(--text-3); font-size: 12px; }
 .backup-row.is-bad .backup-sum { color: var(--danger); }
-.backup-bad { color: var(--danger); font-size: 11px; font-weight: 520; }
+.backup-bad { color: var(--danger); font-size: 12px; font-weight: 520; }
 
 /* 部署自检列表 */
 .diag-list { margin-top: 10px; display: grid; gap: 6px; }
@@ -941,7 +943,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .keys-hint {
   display: block; width: 100%; margin: 0 0 4px; padding: 4px 10px 8px;
   border: 0; background: none; color: var(--text-3);
-  font: inherit; font-size: 11px; text-align: left; cursor: pointer;
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
   transition: color .15s ease;
 }
 .keys-hint:hover { color: var(--text-2); }
@@ -991,7 +993,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .omni-text { flex: 1; min-width: 0; }
 .omni-title { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 520; }
 .omni-title > span:first-child, .omni-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.omni-sub { display: block; margin-top: 1px; color: var(--text-3); font-size: 11px; }
+.omni-sub { display: block; margin-top: 1px; color: var(--text-3); font-size: 12px; }
 .omni-tags { display: flex; flex: 0 0 auto; gap: 4px; }
 .omni-kind {
   flex: 0 0 auto; padding: 2px 7px; border-radius: 999px;
@@ -1001,7 +1003,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .omni-foot {
   display: flex; align-items: center; gap: 14px; padding: 10px 18px;
   border-top: 1px solid var(--border); background: var(--surface-2);
-  color: var(--text-3); font-size: 11px;
+  color: var(--text-3); font-size: 12px;
 }
 .omni-foot kbd {
   padding: 2px 5px; border: 1px solid var(--border); border-radius: 5px;
@@ -1674,6 +1676,20 @@ label.set-row { cursor: pointer; }
 .set-text span { color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .set-ctrl { display: flex; align-items: center; gap: 8px; }
 .set-ctrl .input { width: auto; min-width: 132px; }
+.set-ctrl-wide { flex: 1 1 320px; }
+.set-ctrl-wide .input { flex: 1 1 auto; }
+.note.panel-lead { margin-top: 0; }
+.field-label-text { display: block; margin-bottom: 6px; color: var(--text-2); font-size: 12px; font-weight: 560; }
+/* 上传区：替代浏览器自带的「选择文件」按钮；点它等于点文件框，也接受拖放。 */
+.drop-zone {
+  display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 14px; cursor: pointer;
+  border: 1px dashed var(--border-strong); border-radius: 10px; background: var(--surface-input); color: var(--text-2); font-size: 13px;
+  transition: border-color .15s var(--ease), background-color .15s var(--ease);
+}
+.drop-zone:hover, .drop-zone.is-over { border-color: var(--accent); background: var(--surface-hover); }
+.drop-zone:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.drop-zone .ic { width: 18px; height: 18px; flex: none; color: var(--text-3); }
+.drop-zone b { color: var(--text); font-weight: 600; }
 .set-rows + .note { margin-top: 2px; }
 /* 和输入框并排的按钮与输入框等高（40px），不再矮一截、看着像没对齐。 */
 .settings-grid .set-ctrl .btn.sm, .settings-grid .controls > .btn.sm, .settings-grid .admin-form .btn.sm { min-height: 40px; }
@@ -1829,7 +1845,7 @@ label.set-row { cursor: pointer; }
 .cal-next-main { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; border-radius: 14px; background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px var(--border); transition: background-color .14s var(--ease); }
 .cal-next-main:hover { background: var(--surface-hover); }
 .cal-next-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
-.cal-next-label { color: var(--text-2); font-size: 11px; font-weight: 520; letter-spacing: .02em; }
+.cal-next-label { color: var(--text-2); font-size: 12px; font-weight: 520; letter-spacing: .02em; }
 .cal-next-name { font-size: 17px; font-weight: 620; line-height: 1.25; letter-spacing: .01em; }
 .cal-next-sub { color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
 .cal-next-count { display: flex; flex: 0 0 auto; align-items: baseline; gap: 3px; color: var(--text-2); font-size: 12px; font-weight: 520; }
@@ -1866,7 +1882,7 @@ label.set-row { cursor: pointer; }
 .cal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cal-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; line-height: 1.5; }
 @media (forced-colors: active) { .cal-day.is-picked { outline: 2px solid Highlight; } .cal-day.is-today { outline: 1px solid CanvasText; } }
-.cal-plan { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 6px; color: var(--text-3); font-size: 11px; line-height: 1.5; }
+.cal-plan { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 6px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
 .cal-plan[hidden], .cal-sync[hidden] { display: none; }
 .cal-plan .deck-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
 .cal-sync { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-hover); font-size: 12px; line-height: 1.5; }
@@ -1894,7 +1910,7 @@ label.set-row { cursor: pointer; }
 .days-item:hover, .days-item:focus-within { background: var(--surface-hover); }
 .days-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
 .days-name { overflow: hidden; font-size: 13px; font-weight: 520; text-overflow: ellipsis; white-space: nowrap; }
-.days-when { overflow: hidden; color: var(--text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.days-when { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .days-count { display: flex; flex: 0 0 auto; align-items: baseline; gap: 3px; color: var(--text-3); font-size: 11px; font-weight: 520; }
 .days-count b { color: var(--text); font-size: 18px; font-weight: 620; line-height: 1; font-variant-numeric: tabular-nums; }
 .days-item.is-soon .days-count b { color: var(--warning); }
@@ -2223,3 +2239,6 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 @media (width <= 760px) {
   .modal > .modal-actions:last-child { bottom: calc(-20px - env(safe-area-inset-bottom)); margin-bottom: calc(-20px - env(safe-area-inset-bottom)); padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
 }
+/* 设置行里的分段控件（主题）：按钮文字不折行，控件按内容宽。 */
+.set-ctrl .segmented { flex: none; }
+.set-ctrl .segmented button { white-space: nowrap; }

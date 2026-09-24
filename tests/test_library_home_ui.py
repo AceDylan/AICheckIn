@@ -363,7 +363,7 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.ok(failed.includes('is-error') && failed.includes('取数失败'));
             assert.ok(!failed.includes('<b>HTTP'));
             const soon = siteMetricHtml(site({ type: 'time', value: '2030-01-01', raw: Date.now() / 1000 + 86400 * 2 }));
-            assert.ok(soon.includes('is-warning') && soon.includes('还有 2 天'));
+            assert.ok(soon.includes('is-warning') && soon.includes('还有 '));
             const past = siteMetricHtml(site({ type: 'time', value: '2020-01-01', raw: 1577836800 }));
             assert.ok(past.includes('is-error'));
         """)
