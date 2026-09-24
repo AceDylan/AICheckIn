@@ -158,6 +158,24 @@ def locked_settings(b):
     ctx.close()
 
 
+def move_menu(b):
+    reset()
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    gid = page.evaluate("() => STATE.link_groups[0].id")
+    page.goto(BASE + "/#links/" + gid); page.wait_for_timeout(500)
+    page.locator("#linkList .action-menu > summary").first.click(); page.wait_for_timeout(250)
+    st = page.evaluate("""() => { const pop = document.querySelector('#linkList details.action-menu[open] .menu-popover');
+        return { flat: [...pop.querySelectorAll(':scope > button')].filter(b => b.textContent.startsWith('移到')).length,
+                 sub: !!pop.querySelector('details.menu-sub'), groups: STATE.link_groups.length }; }""")
+    check("分组多时「移到」收成一项「移到分组」，不再平铺", st["groups"] > 4 and st["flat"] == 0 and st["sub"], st)
+    page.locator("#linkList details.action-menu[open] .menu-sub > summary").click(); page.wait_for_timeout(200)
+    target = page.evaluate("() => STATE.link_groups[1].name")
+    shot(page, "U3-move-submenu")
+    page.locator("#linkList details.action-menu[open] .menu-sub-list button", has_text=target).first.click(); page.wait_for_timeout(600)
+    check("点开后选分组即移动", page.locator(".toast", has_text="已移到「%s」" % target).count() == 1)
+    ctx.close()
+
+
 def home_toolbar(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -184,4 +202,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, home_toolbar, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, home_toolbar, home_widgets))

@@ -5496,7 +5496,7 @@
               <button onclick="toggleSkipCheck('${gid}','${lid}')">${l.skip_check ? '恢复死链检查' : '忽略死链检查'}</button>
               <button onclick="moveLink('${gid}','${lid}','up')" ${idx === 0 || searching ? 'disabled' : ''}>上移</button>
               <button onclick="moveLink('${gid}','${lid}','down')" ${idx === total - 1 || searching ? 'disabled' : ''}>下移</button>
-              ${others.length ? '<div class="sep"></div>' + others.map(o => `<button onclick="moveLinkTo('${gid}','${lid}','${escapeHtml(o.id)}')">移到「${escapeHtml(o.name)}」</button>`).join('') : ''}
+              ${others.length ? '<div class="sep"></div>' + moveToMenuHtml(gid, lid, others) : ''}
               <div class="sep"></div>
               <button class="danger-text" onclick="deleteLink('${gid}','${lid}')">删除</button>
             </div>
@@ -5654,6 +5654,14 @@
       const data = await linkApi(`/api/link_groups/${gid}/links/reorder`, 'POST', { order: ids });
       if (!data.ok) { toast(data.error || '排序失败', 'err'); return; }
       renderLibrary();
+    }
+    // 「移到其他分组」：三个以内平铺；分组再多就收成一项「移到分组 ›」，点开在菜单里就地展开——
+    // 十几个分组平铺会把「···」菜单拉到二十来项，「删除」要滚到底才找得到。
+    function moveToMenuHtml(gid, lid, others) {
+      const btn = (o, label) => `<button onclick="moveLinkTo('${gid}','${lid}','${escapeHtml(o.id)}')">${label}</button>`;
+      if (others.length <= 3) return others.map(o => btn(o, `移到「${escapeHtml(o.name)}」`)).join('');
+      return `<details class="menu-sub"><summary>移到分组<span class="menu-sub-count">${others.length}</span></summary>
+        <div class="menu-sub-list">${others.map(o => btn(o, escapeHtml(o.name))).join('')}</div></details>`;
     }
     async function moveLinkTo(gid, lid, target) {
       if (!guardAdmin()) return;
