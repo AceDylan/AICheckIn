@@ -141,6 +141,20 @@ def settings_and_toast(b):
     ctx.close()
 
 
+def home_toolbar(b):
+    reset()
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
+    page.locator("#homeEditBtn").click(); page.wait_for_timeout(300)
+    st = page.evaluate("() => { const b = document.getElementById('homeEditBtn'), cs = getComputedStyle(b); return [b.getAttribute('aria-pressed'), cs.backgroundColor, cs.color, getComputedStyle(b.closest('.home-toolbar')).opacity]; }")
+    check("编辑中：「编辑」按钮是墨色实心、工具条不再半透明（不像被禁用）", st[0] == "true" and st[1] != "rgba(0, 0, 0, 0)" and st[1] != st[2] and st[3] == "1", st)
+    ctx.close()
+    ctx, page = open_page(b, 390, 844, mobile=True, cookies={"bh_theme": "light"})
+    page.locator("#homeToolsToggle").click(); page.wait_for_timeout(300)
+    tops = page.evaluate("() => [...document.querySelectorAll('#homeTools > *')].map(el => Math.round(el.getBoundingClientRect().top))")
+    check("手机：「⋯」展开的工具条排成一行", max(tops) - min(tops) <= 6, tops)
+    ctx.close()
+
+
 def home_widgets(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -153,4 +167,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, home_toolbar, home_widgets))

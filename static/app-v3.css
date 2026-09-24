@@ -1617,8 +1617,13 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .home-search-kbd { display: none; }
   .home-engine-option { min-height: 46px; font-size: 14.5px; }
   .home-notice { justify-content: flex-start; margin-top: 12px; }
-  .home-toolbar { gap: 6px; }
-  .home-toolbar .btn.sm { padding: 0 10px; }
+  /* 手机上「⋯」展开的工具条排成一行：放不下就横向滑（第一个按钮的 margin-left: auto 让宽裕时仍靠右），
+     不再把「编辑」单独挤到第二行。 */
+  .home-toolbar { flex-wrap: nowrap; justify-content: flex-start; gap: 4px; padding: 3px 1px; overflow-x: auto; scrollbar-width: none; }
+  .home-toolbar::-webkit-scrollbar { display: none; }
+  .home-toolbar > :first-child { margin-left: auto; }
+  .home-toolbar > * { flex: none; }
+  .home-toolbar .btn.sm { padding: 0 9px; }
   .home-foot { margin-top: 28px; }
   .home-view-toggle button span { display: none; }
   .home-view-toggle button { padding: 0 9px; min-height: 30px; }
@@ -1705,7 +1710,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 @container (min-width: 1240px) { .home-view-toggle button span { display: none; } }
 @media (hover: hover) {
   .home-toolbar { opacity: .66; transition: opacity .18s ease; }
-  .home-top:hover .home-toolbar, .home-toolbar:focus-within { opacity: 1; }
+  .home-top:hover .home-toolbar, .home-toolbar:focus-within, .home-toolbar:has([aria-pressed="true"]) { opacity: 1; }
 }
 
 /* 设置页：带开关的卡片是一行一项——左边标题 + 一句说明，右边开关或输入框；整行都能点开关。
@@ -1821,6 +1826,8 @@ label.set-row { cursor: pointer; }
   .home-toolbar, .home-top.tools-open .home-toolbar { gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); }
   .home-toolbar .btn.ghost, .home-toolbar .home-view-toggle { min-height: 30px; border-color: transparent; background: transparent; box-shadow: none; }
   .home-toolbar .btn.ghost:hover { background: var(--surface-hover); }
+  /* 编辑中的「编辑」按钮：上一条把 ghost 按钮的底去掉了，按下态得在这里再给回墨色实心——否则白字落在浅底上，像被禁用。 */
+  .home-toolbar .btn.ghost[aria-pressed="true"], .home-toolbar .btn.ghost[aria-pressed="true"]:hover { background: var(--primary); color: var(--primary-ink); }
   .home-toolbar .home-view-toggle { margin-right: 4px; padding: 0 4px 0 0; border-radius: 0; box-shadow: 1px 0 0 var(--border); }
   html.wall-on .home-toolbar { background: rgba(18, 16, 13, .58); border-color: rgba(255, 255, 255, .14); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); }
   html.wall-on .home-toolbar .btn.ghost, html.wall-on .home-toolbar .home-view-toggle { background: transparent; border-color: transparent; }

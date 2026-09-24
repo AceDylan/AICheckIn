@@ -6261,6 +6261,8 @@
     $('schedEnabled').addEventListener('change', saveSchedNow);
     // 时间框逐段输入时每段都会触发 change：停手半秒再存，免得连弹几条提示。
     $('schedTime').addEventListener('change', () => { clearTimeout(schedSaveTimer); schedSaveTimer = setTimeout(saveSchedNow, 600); });
+    // 代理地址是这一页唯一要手动保存的输入框：回车也算「保存」，和其他即时生效的设置一样顺手。
+    $('proxyUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('saveProxy').click(); } });
     $('saveProxy').addEventListener('click', async () => {
       if (!guardAdmin()) return;
       await saveSettings({ proxy_url: $('proxyUrl').value.trim() }, '代理已保存');
@@ -6302,7 +6304,7 @@
     // ===== 快捷键速查 =====
     // 全局搜索、页内搜索、排序、跳分组都有快捷键，但没人猜得到。
     const SHORTCUTS = [
-      { keys: ['⌘/Ctrl', 'K'], desc: '全局搜索：跨全部分组找网址、看板站点与签到配置' },
+      { keys: ['⌘/Ctrl', 'K'], desc: '全局搜索与命令：找网址、看板站点、签到配置；输页面名或「深色」「运行全部签到」这类命令，回车直接执行' },
       { keys: ['/'], desc: '聚焦当前页面的搜索框；在收藏首页直接打字也会开始搜索' },
       { keys: ['Tab'], desc: '首页搜索框有内容时，切换网页搜索引擎' },
       { keys: ['#'], desc: '在全局搜索里输入 # 开头按标签筛选' },
