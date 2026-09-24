@@ -25,7 +25,8 @@
 // v27：设置页分节（左标题右内容）、弹窗操作条贴底、按压 / 弹出动效。
 // v28：首页工具条收进一条胶囊、搜索下拉选中行改中性色。
 // v29：键盘选中行的回车提示、标题 / 说明文字的换行均衡。
-const CACHE_VERSION = 'bh-shell-v29';
+// v30：分组 / 看板页头左侧的分组图标块。
+const CACHE_VERSION = 'bh-shell-v30';
 const SHELL = [
   '/',
   '/static/app-v3.css',
