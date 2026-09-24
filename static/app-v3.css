@@ -1053,7 +1053,9 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-engine-option .ic { width: 15px; height: 15px; stroke-width: 2.4; }
 .home-search-input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: 0; outline: none; background: transparent; color: var(--text); font-size: 16px; }
 .home-search-input::placeholder { color: var(--text-3); }
-.home-search-input::-webkit-search-cancel-button { cursor: pointer; }
+/* Chrome 自带的清除「×」是蓝色的，和黑白界面不搭：去色、调淡，悬停再实一点。 */
+input[type="search"]::-webkit-search-cancel-button { cursor: pointer; filter: grayscale(1); opacity: .55; }
+input[type="search"]::-webkit-search-cancel-button:hover { opacity: .9; }
 .home-search-kbd { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; padding-right: 8px; color: var(--text-3); font-size: 11px; white-space: nowrap; }
 .home-search-kbd kbd { padding: 1px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-2); font-family: var(--mono); font-size: 11px; }
 .home-search-kbd kbd:not(:first-child) { margin-left: 5px; }
@@ -1071,7 +1073,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
 .home-search-row:hover { background: var(--surface-hover); }
-.home-search-row.is-active { background: var(--tone-soft, var(--accent-soft)); }
+.home-search-row.is-active { background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--border); }
 .home-search-row .omni-ic { color: var(--text-2); background: var(--surface-2); }
 .home-search-row b { color: var(--text); font-weight: 580; }
 .home-search-row .omni-title { font-weight: 520; color: var(--text-2); }
@@ -1723,6 +1725,18 @@ label.set-row { cursor: pointer; }
   .home-hero { padding-right: 54px; }   /* 给放大后的「⋯」让出位置，日期过长时照常省略号截断 */
 }
 @media (width <= 760px) and (forced-colors: active) { .tab.active svg.ic { outline: 2px solid CanvasText; } }
+
+/* 首页右上角的工具条（主区够宽、常驻时）：五个按钮收进同一条胶囊（iOS 26 / macOS 的分组工具栏），不再是五颗各自描边的药丸。
+   按钮本身去掉底和边，悬停才出浅底；按下态（编辑中）仍是墨色实心。窄的时候它在「⋯」后面换行展开，保持原样。 */
+@container (min-width: 880px) {
+  .home-toolbar, .home-top.tools-open .home-toolbar { gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1); }
+  .home-toolbar .btn.ghost, .home-toolbar .home-view-toggle { min-height: 30px; border-color: transparent; background: transparent; box-shadow: none; }
+  .home-toolbar .btn.ghost:hover { background: var(--surface-hover); }
+  .home-toolbar .home-view-toggle { margin-right: 4px; padding: 0 4px 0 0; border-radius: 0; box-shadow: 1px 0 0 var(--border); }
+  html.wall-on .home-toolbar { background: rgba(18, 16, 13, .58); border-color: rgba(255, 255, 255, .14); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); }
+  html.wall-on .home-toolbar .btn.ghost, html.wall-on .home-toolbar .home-view-toggle { background: transparent; border-color: transparent; }
+  html.wall-on .home-toolbar .home-view-toggle { box-shadow: 1px 0 0 rgba(255, 255, 255, .14); }
+}
 
 /* ==========================================================================
    首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）

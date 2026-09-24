@@ -23,7 +23,8 @@
 // v25：「纸与墨」配色（黑白界面 + 信号蓝、暖中性色）、网址面板化、手机浮动底栏。
 // v26：图标（favicon / PWA / 主屏）换成墨色方块 + 纸色书签，和侧栏品牌标一致。
 // v27：设置页分节（左标题右内容）、弹窗操作条贴底、按压 / 弹出动效。
-const CACHE_VERSION = 'bh-shell-v27';
+// v28：首页工具条收进一条胶囊、搜索下拉选中行改中性色。
+const CACHE_VERSION = 'bh-shell-v28';
 const SHELL = [
   '/',
   '/static/app-v3.css',
