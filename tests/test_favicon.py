@@ -487,13 +487,13 @@ class FaviconUiTest(unittest.TestCase):
         cls.css = client.get("/static/app-v3.css").get_data(as_text=True)
 
     def test_all_site_slots_use_the_shared_avatar_helper(self):
-        # 站点看板 / 收藏库网址 / 签到卡片 / 禁用行 / 服务配置行。
+        # 站点看板 / 收藏库网址 / 签到卡片 / 签到列表行 / 禁用行 / 服务配置行。
         for cls_name in ("'site-avatar'", "'link-avatar'", "'mini-avatar'"):
             self.assertIn("siteAvatarHtml(", self.html)
             self.assertIn(cls_name, self.html)
         self.assertEqual(self.html.count("siteAvatarHtml(b.name, b.url, 'site-avatar')"), 1)
         self.assertEqual(self.html.count("siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, l.custom_icon)"), 1)
-        self.assertEqual(self.html.count("siteAvatarHtml(c.name, c.base_url, 'mini-avatar')"), 3)
+        self.assertEqual(self.html.count("siteAvatarHtml(c.name, c.base_url, 'mini-avatar')"), 4)
         # 旧的「只有首字母」写法不应残留。
         self.assertNotIn('<div class="site-avatar" aria-hidden="true">', self.html)
         self.assertNotIn('<div class="link-avatar is-emoji"', self.html)

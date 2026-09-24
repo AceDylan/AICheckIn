@@ -61,3 +61,15 @@ class UxPolishJsTest(unittest.TestCase):
             w = siteWidgetParts(site([{ label: '到期', type: 'time', value: 'x', raw: now + 70 * 86400 }]));
             assert.deepEqual([w.value, w.unit, w.valueCls], ['2', '个月后到期', '']);
         """)
+
+    def test_checkin_accounts_switch_to_list_when_many_or_when_chosen(self):
+        self.run_js("""
+            assert.equal(ckView(3), 'cards');
+            assert.equal(ckView(7), 'list');
+            setCookie('bh_ck_view=cards; path=/');
+            assert.equal(ckView(12), 'cards');
+            setCookie('bh_ck_view=bogus; path=/');
+            assert.equal(ckView(2), 'cards');
+            const row = enabledRowHtml({ name: '<b>x</b>', base_url: 'https://a.example', user_id: '1', enabled: true, metrics: {} }, 0);
+            assert.ok(row.includes('checkinOne(0)') && row.includes('testOne(0)') && !row.includes('<b>x</b>'));
+        """)

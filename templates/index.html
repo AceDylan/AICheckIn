@@ -369,7 +369,8 @@
             <div class="run-meta"><span class="meta" id="meta"></span></div>
             <div id="error" class="error" style="display:none"></div>
             <div id="disabledWrap" style="display:none"><div class="section-label">需手动签到 <span class="count" id="disabledCount"></span></div><div class="disabled-group"><div id="disabledCards" class="dlist"></div></div></div>
-            <div class="section-label" id="enabledLabel" style="display:none">启用配置 <span class="count" id="enabledCount"></span></div>
+            <div class="section-label" id="enabledLabel" style="display:none">启用配置 <span class="count" id="enabledCount"></span>
+              <span class="segmented ck-view" id="ckView" role="radiogroup" aria-label="账户显示方式"><button type="button" role="radio" data-ck-view="cards">卡片</button><button type="button" role="radio" data-ck-view="list">列表</button></span></div>
             <div id="cards" class="cards"></div>
             <div id="empty" class="empty-state" style="display:none"></div>
           </section>
@@ -1396,9 +1397,21 @@
       // const（TDZ ReferenceError），或者用错误的解锁状态发出请求。
       // 首次加载由 loadConfigs() 结束时的 refreshActiveView() 统一补上。
       if (STATE_LOADED) refreshActiveView(currentViewName());
+      syncDocTitle();
       if (STATE_LOADED && ARRANGE.on && mainName !== 'bookmarks') leaveArrange();   // 先判 STATE_LOADED：脚本顶部的首次调用发生在 ARRANGE 声明之前
       applyLook();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // 标签页标题跟着当前页走：多开几个标签、翻浏览器历史时能认出哪个是哪个（「服务配置 · 签到中心 · Bookmark Hub」）。
+    const DOC_TITLES = { checkin: '签到中心', configs: '服务配置 · 签到中心', history: '运行记录 · 签到中心', settings: '系统设置', chat: 'AI 聊天', vault: '笔记' };
+    function syncDocTitle() {
+      const view = currentViewName();
+      let name = DOC_TITLES[view] || '';
+      if (view === 'bookmarks') {
+        const g = typeof findGroup === 'function' && LIB.page !== '@home' && LIB.page !== 'monitor' ? findGroup(LIB.page) : null;
+        name = LIB.page === 'monitor' ? '站点看板' : g ? g.name : '';
+      }
+      document.title = name ? `${name} · Bookmark Hub` : 'Bookmark Hub · AI 服务工作台';
     }
     // 切到某个页面时它自己要拉的数据。集中在这里，免得 switchView 直接引用
     // 声明在文件更下方的函数与常量。
@@ -1546,6 +1559,37 @@
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
 
+    // 启用的账户可以摆成卡片或列表：账户多了卡片要翻好几屏，列表一行一个、一眼扫完。
+    // 没选过时按数量定（超过 6 个用列表）；选过就记在本机 Cookie bh_ck_view 里。
+    const CK_VIEWS = ['cards', 'list'];
+    function ckView(count) { return readPref('bh_ck_view', CK_VIEWS, count > 6 ? 'list' : 'cards'); }
+    $('ckView').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-ck-view]');
+      if (!b) return;
+      writePref('bh_ck_view', b.dataset.ckView);
+      renderCheckinCards();
+    });
+    function enabledRowHtml(c, i) {
+      const r = RESULTS[i], m = displayMetrics(i), last = lastOutcome(c, i);
+      const badge = r ? { label: r.status_label, color: r.color }
+        : c.checked_in_today ? { label: '今日已签', color: 'green' }
+        : last.failedToday ? { label: '失败', color: 'red' }
+        : { label: '未签到', color: 'gray' };
+      const msg = r ? r.message : (last.failedToday ? last.message : '');
+      const lastLabel = { signed: '成功', skipped: '已签', failed: '失败' }[last.status] || '';
+      const note = msg || (last.at ? `最近签到 ${shortStamp(last.at)} · ${lastLabel}` : m.updated_at ? `上次获取 ${shortStamp(m.updated_at)}` : '');
+      const bal = m.wallet_balance != null && m.wallet_balance !== '' && m.wallet_balance !== '-' ? m.wallet_balance : '—';
+      return `<div class="ck-row ${badge.color}" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
+        <span class="ck-id">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}<span class="ck-text"><span class="card-name">${escapeHtml(c.name)}</span>${urlLink(c.base_url)}</span></span>
+        <span class="badge ${badge.color}">${escapeHtml(badge.label)}</span>
+        <span class="ck-bal" title="钱包余额"><b>${escapeHtml(bal)}</b><small>余额</small></span>
+        <span class="ck-note${msg && badge.color === 'red' ? ' is-err' : ''}" title="${escapeHtml(note)}">${escapeHtml(note)}</span>
+        <span class="card-actions">
+          <button class="btn sm" onclick="checkinOne(${i})">签到</button>
+          <button class="btn sm ghost" onclick="testOne(${i})">测试</button>
+        </span>
+      </div>`;
+    }
     function enabledCardHtml(c, i) {
       const r = RESULTS[i];
       const m = displayMetrics(i);
@@ -1629,7 +1673,10 @@
 
       $('enabledLabel').style.display = enabledIdx.length ? 'flex' : 'none';
       $('enabledCount').textContent = enabledIdx.length ? `${enabledIdx.length} 组` : '';
-      cardsEl.innerHTML = enabledIdx.map(i => enabledCardHtml(STATE.configs[i], i)).join('');
+      const view = ckView(enabledIdx.length);
+      document.querySelectorAll('#ckView [data-ck-view]').forEach(b => { const on = b.dataset.ckView === view; b.classList.toggle('active', on); b.setAttribute('aria-checked', String(on)); });
+      cardsEl.classList.toggle('is-list', view === 'list');
+      cardsEl.innerHTML = enabledIdx.map(i => (view === 'list' ? enabledRowHtml : enabledCardHtml)(STATE.configs[i], i)).join('');
 
       if (disabledIdx.length) {
         $('disabledWrap').style.display = 'block';
@@ -2573,6 +2620,7 @@
       if (ARRANGE.on && LIB.page !== '@home') leaveArrange();
       if (!['@home', 'monitor'].includes(LIB.page) && STATE_LOADED && !findGroup(LIB.page)) { LIB.page = '@home'; history.replaceState(null, '', libHash()); }
       renderLibNav();
+      syncDocTitle();
       const isHome = LIB.page === '@home';
       const isMonitor = LIB.page === 'monitor';
       const g = isMonitor ? null : findGroup(LIB.page);
