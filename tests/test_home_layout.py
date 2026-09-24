@@ -88,7 +88,7 @@ class HomeLayoutGuardsTest(unittest.TestCase):
             self.assertIn(needle, rule)
         self.assertIn(".subnav > * { flex-shrink: 0; }", self.css)
         self.assertRegex(self.css, r"\.subnav\.fade-bottom \{[^}]*mask-image: linear-gradient")
-        self.assertIn("syncSubnavScroll(true);", self.script)
+        self.assertIn("queueSubnavSync(true);", self.script)   # 重画侧栏后下一帧再量，不当场逼出排版
 
     # ---- 编辑首页 ----
 

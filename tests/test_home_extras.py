@@ -194,7 +194,7 @@ class HomeExtrasScriptTest(unittest.TestCase):
             assert.deepEqual(homeFolds(), []);                                                // 白名单之外的字符：整个值作废
             toggleHomeFold('nope');                                                           // 不存在的分组：不写
             assert.ok(!document.cookie.includes('bh_home_fold=nope'));
-            document.cookie = 'bh_home_fold=gone.big.also-gone';
+            setCookie('bh_home_fold=gone.big.also-gone');
             assert.ok(!html().includes('站点0') || (renderHome(), !html().includes('站点0')));
             toggleHomeFold('daily');                                                          // 写的时候顺手清掉已删除的分组
             assert.deepEqual(homeFolds(), ['big', 'daily']);
@@ -244,7 +244,7 @@ class HomeExtrasScriptTest(unittest.TestCase):
             setArrange(false); assert.ok(html().includes('is-frequent'));
             setHomeView('cards'); assert.ok(!html().includes('is-frequent'));                 // 卡片密度不放图标行
             setHomeView('tiles');
-            document.cookie = 'bh_home_freq=off'; renderHome();
+            setCookie('bh_home_freq=off'); renderHome();
             assert.ok(!html().includes('is-frequent'));
             const before = document.cookie;
             recordHit('https://s8.example');                                                   // 关掉之后不再记录
@@ -258,16 +258,16 @@ class HomeExtrasScriptTest(unittest.TestCase):
             assert.match(raw, /^bh_home_hits=[0-9]{1,6}\\.[a-z0-9]{1,8}-3$/);
             assert.ok(!/example|secret|token/.test(document.cookie));                          // Cookie 里没有网址本身
             // 被改坏的值整个作废，不会被拼进页面。
-            document.cookie = 'bh_home_hits=1.<script>-5';
+            setCookie('bh_home_hits=1.<script>-5');
             assert.equal(readHits().counts.size, 0);
-            document.cookie = 'bh_home_hits=' + today + '.abc-5.zzz-99999';
+            setCookie('bh_home_hits=' + today + '.abc-5.zzz-99999');
             assert.equal(readHits().counts.size, 0);
             // 14 天减半：28 天前的 8 次，现在算 2 次；减到 0 的直接丢。
-            document.cookie = 'bh_home_hits=' + (today - 28) + '.aaa-8.bbb-3.ccc-1';
+            setCookie('bh_home_hits=' + (today - 28) + '.aaa-8.bbb-3.ccc-1');
             const old = readHits();
             assert.deepEqual(Array.from(old.counts.entries()), [['aaa', 2]]);
             assert.equal(old.day, today);
-            document.cookie = 'bh_home_hits=' + (today + 400) + '.aaa-8';                      // 未来的日期（时钟改过）：按今天算
+            setCookie('bh_home_hits=' + (today + 400) + '.aaa-8');                      // 未来的日期（时钟改过）：按今天算
             assert.equal(readHits().counts.get('aaa'), 8);
             // 最多 24 条；满了让次数最少的让位，新网址挤得进来。
             clearHomeHits();

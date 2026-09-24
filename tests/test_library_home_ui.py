@@ -217,12 +217,12 @@ class LibraryHomeUiTest(unittest.TestCase):
             document.querySelector('.tab[data-view="bookmarks"]').click();
             assert.deepEqual(look(), [true, true]);
             // 关掉壁纸 / 换成完整侧栏：各自独立，同样对所有页面生效。
-            document.cookie = 'bh_wallpaper=off; bh_home_nav=full';
+            setCookie('bh_wallpaper=off; bh_home_nav=full');
             applyLook();
             assert.deepEqual(look(), [false, false]);
             switchView('settings');
             assert.deepEqual(look(), [false, false]);
-            document.cookie = 'bh_wallpaper=dusk; bh_home_nav=full';   // 替身里的 cookie 是整串覆盖，不是罐子
+            setCookie('bh_wallpaper=dusk; bh_home_nav=full');   // 替身里的 cookie 是整串覆盖，不是罐子
             openLibPage('monitor');
             assert.deepEqual(look(), [true, false]);
             assert.equal(layer.style['--wall-color'], '#573352');
@@ -240,11 +240,11 @@ class LibraryHomeUiTest(unittest.TestCase):
             applyLook();
             assert.deepEqual(look(), [true, false]);
             // Cookie 被改成别的值只会回落到默认，不会拿去拼地址。
-            document.cookie = 'bh_wallpaper=../../evil; bh_wp_dim=9; bh_home_nav=x';
+            setCookie('bh_wallpaper=../../evil; bh_wp_dim=9; bh_home_nav=x');
             assert.deepEqual([wallPref(), wallDimPref(), homeNavPref()], ['aurora', 'medium', 'rail']);
             assert.equal(currentWallpaper().url, '/static/wallpapers/aurora.webp');
             // 选了「自定义」但服务器上没有：回落到默认内置；有了才用，地址带内容哈希。
-            document.cookie = 'bh_wallpaper=custom';
+            setCookie('bh_wallpaper=custom');
             assert.equal(currentWallpaper().id, 'aurora');
             STATE.wallpaper = { custom: true, v: '0123456789abcdef', lum: 0.9 };
             assert.equal(currentWallpaper().url, '/api/wallpaper?v=0123456789abcdef');
@@ -272,14 +272,14 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.equal(wallMinDim(null), wallMinDim(1));
             assert.equal(wallMinDim('0.1'), wallMinDim(1));
             // 内置壁纸在「柔和」档也够暗；偏亮的自定义图会自动加深，用户档位只能更暗不能更亮。
-            document.cookie = 'bh_wp_dim=soft';
+            setCookie('bh_wp_dim=soft');
             for (const w of WALLPAPERS) assert.ok(after(w.lum, wallDimFor(w)) <= 0.183, w.id);
             assert.equal(wallDimFor({ lum: 0.1 }), WALL_DIMS.soft);
             assert.ok(wallDimFor({ lum: 0.95 }) > WALL_DIMS.soft);
             // 写进样式变量的值向上取整到两位小数，不会因为取整把余量舍掉。
             assert.ok(wallDimFor({ lum: 0.92 }) >= wallMinDim(0.92));
             assert.equal(String(wallDimFor({ lum: 0.92 })).length <= 4, true);
-            document.cookie = 'bh_wp_dim=strong';
+            setCookie('bh_wp_dim=strong');
             assert.equal(wallDimFor({ lum: 0.3 }), WALL_DIMS.strong);
         """)
 
@@ -405,15 +405,15 @@ class LibraryHomeUiTest(unittest.TestCase):
     def test_preferences_fall_back_when_the_cookie_is_tampered(self):
         self.run_js("""
             assert.ok(linkTargetAttrs().includes('target="_blank"'));
-            document.cookie = 'bh_open=same';
+            setCookie('bh_open=same');
             assert.equal(openMode(), 'same');
             assert.ok(!linkTargetAttrs().includes('target='));
             assert.ok(linkTargetAttrs().includes('noopener'));
-            document.cookie = 'bh_open=evil; bh_engine=nope; bh_home_view=grid';
+            setCookie('bh_open=evil; bh_engine=nope; bh_home_view=grid');
             assert.equal(openMode(), 'new');
             assert.equal(currentEngine().id, 'google');
             assert.equal(homeView(), 'tiles');
-            document.cookie = 'bh_home_view=minimal';
+            setCookie('bh_home_view=minimal');
             assert.equal(homeView(), 'minimal');
         """)
 

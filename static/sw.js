@@ -18,7 +18,8 @@
 // stale-while-revalidate，不换号也会在下一次访问更新；换掉只是让部署后第一次打开就是新的。
 // v19：「AI 聊天」的框声明 color-scheme: light dark，HaloWebUI 的深浅色改为跟随浏览器（不再被壁纸带成深色）。
 // v20：外壳新增「笔记」标签页（WebObsidian 的 iframe），响应头的 frame-src / connect-src 多了笔记的源。
-const CACHE_VERSION = 'bh-shell-v22';
+// v23：设置页改成设置行、状态图标换成线条图标；外壳走 stale-while-revalidate，换号只是让部署后第一次打开就是新的。
+const CACHE_VERSION = 'bh-shell-v23';
 const SHELL = [
   '/',
   '/static/app-v3.css',

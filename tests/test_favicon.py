@@ -538,7 +538,15 @@ class FaviconUiTest(unittest.TestCase):
         # 于是这些永远不会 load/error 的元素把限流队列占死，可见页面的图标也发不出去。
         self.assertNotIn('class="avatar-img" data-favicon="${escapeHtml(origin)}" alt="" loading="lazy"', self.html)
         self.assertIn('data-favicon="${escapeHtml(origin)}" alt="" decoding="async"', self.html)
-        self.assertIn("else if (img.offsetParent) FAVICON_QUEUE.push(img);", self.html)
+        self.assertIn("else if (faviconShown(img)) FAVICON_QUEUE.push(img);", self.html)
+
+    def test_queue_priority_does_not_force_a_layout(self):
+        # 启动时每次重绘后都要排一次队：读 offsetParent 会逼浏览器当场把整页排一遍版（4 倍降速的手机上约 100 ms）。
+        # 可见与否按结构判断：未激活的视图、没打开的弹窗、hidden 的容器。
+        body = self.html[self.html.index("function pumpFavicons()"):]
+        body = body[:body.index("drainFavicons();")]
+        self.assertNotIn("offsetParent", body)
+        self.assertIn("const FAVICON_HIDDEN_BY = '.view:not(.active), .modal-mask:not(.show), [hidden]';", self.html)
 
     def test_auto_icon_is_tried_even_with_a_text_fallback(self):
         self.assertIn("const origin = siteOrigin(url);", self.html)

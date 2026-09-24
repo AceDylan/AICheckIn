@@ -255,16 +255,16 @@ class TodoRenderTest(unittest.TestCase):
             assert.deepEqual(deckOrder(), ['calendar']);
             assert.equal($('homeTodo').hidden, true);
             assert.equal($('deckCalendar').hidden, false);
-            document.cookie = 'bh_home_todo=closed'; renderDeck();
+            setCookie('bh_home_todo=closed'); renderDeck();
             assert.equal($('homeTodo').hidden, false);
             assert.ok($('homeTodo').classList.contains('is-folded'));
             assert.ok(!$('deckCalendar').classList.contains('is-folded'));
-            document.cookie = 'bh_home_todo=<script>'; renderDeck();      // 白名单之外的值一律当没设
+            setCookie('bh_home_todo=<script>'); renderDeck();      // 白名单之外的值一律当没设
             assert.equal(legacyTodoPref(), '');
             assert.deepEqual(deckOrder(), ['calendar', 'todo']);
             assert.ok(!$('homeTodo').classList.contains('is-folded'));
             // 新 Cookie 写过之后，旧 Cookie 不再作数。
-            document.cookie = 'bh_home_todo=off; bh_home_deck=todo; bh_home_deck_fold=none'; renderDeck();
+            setCookie('bh_home_todo=off; bh_home_deck=todo; bh_home_deck_fold=none'); renderDeck();
             assert.deepEqual(deckOrder(), ['todo']);
             assert.equal($('homeTodo').hidden, false);
             assert.equal($('deckCalendar').hidden, true);

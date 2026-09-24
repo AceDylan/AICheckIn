@@ -390,8 +390,16 @@
         <section class="view" id="view-settings">
           <div class="view-header"><div><div class="eyebrow">偏好</div><h1>系统设置</h1><p>自动签到、全局代理、管理权限与外观。</p></div></div>
           <div class="settings-grid">
-            <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote">定时基于服务器本地时间。容器应设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。</div><div class="controls" style="align-items:flex-end"><label class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></label><div class="field" style="max-width:140px"><label>每天执行时间</label><input class="input" type="time" id="schedTime" value="08:30"></div><button class="btn sm" id="saveSched">保存定时</button></div><div class="note" id="schedStatus"></div></div>
-            <div class="panel"><div class="panel-title">站点数据自动刷新</div><div class="note" style="margin-top:0">让站点看板的余额 / 到期时间不必手点也保持新鲜。仅刷新配置了接口字段的收藏。</div><div class="controls" style="margin-top:10px;align-items:flex-end"><label class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></label><div class="field" style="max-width:160px"><label>刷新间隔</label><select class="input" id="refreshInterval"></select></div><button class="btn sm" id="saveRefresh">保存刷新</button></div><div class="note" id="refreshStatus"></div></div>
+            <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote">定时基于服务器本地时间。容器应设置 <b>TZ=Asia/Shanghai</b> 以匹配北京时间。</div>
+              <div class="set-rows">
+                <label class="set-row"><span class="set-text"><b>每天自动签到</b><span>到点把启用的账户全部签一遍，没签成的会自动补签</span></span><span class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></span></label>
+                <div class="set-row"><label class="set-text" for="schedTime"><b>执行时间</b><span>每天这个时刻（服务器时间）</span></label><div class="set-ctrl"><input class="input" type="time" id="schedTime" value="08:30"><button class="btn sm" id="saveSched">保存定时</button></div></div>
+              </div><div class="note" id="schedStatus"></div></div>
+            <div class="panel"><div class="panel-title">站点数据自动刷新</div>
+              <div class="set-rows">
+                <label class="set-row"><span class="set-text"><b>后台自动刷新</b><span>让站点看板的余额 / 到期时间不必手点也保持新鲜；只刷新配置了接口字段的站点</span></span><span class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></span></label>
+                <div class="set-row"><label class="set-text" for="refreshInterval"><b>刷新间隔</b><span>两次后台取数之间隔多久</span></label><div class="set-ctrl"><select class="input" id="refreshInterval"></select><button class="btn sm" id="saveRefresh">保存刷新</button></div></div>
+              </div><div class="note" id="refreshStatus"></div></div>
             <div class="panel"><div class="panel-title">全局代理</div><div class="controls" style="align-items:flex-end"><div class="field" style="flex:1;min-width:200px"><label>代理地址（留空直连，支持 http/https/socks5）</label><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"></div><button class="btn sm" id="saveProxy">保存代理</button></div></div>
             <div class="panel" id="adminPanel" style="display:none"><div class="panel-title">管理密码</div><div class="note" id="adminStatus" style="margin-top:0"></div>
               <!-- 密码框放进自己的 <form>，并带一个（隐藏的）用户名字段：密码管理器据此把凭据只关联到这个表单，
@@ -456,7 +464,7 @@
     <div class="modal">
       <div class="modal-head"><div><h3>导入配置</h3><div class="modal-sub">粘贴 JSON（数组或 {proxy_url, configs, schedule, bookmarks, link_groups} 对象）。导入将<b>覆盖</b>提供的部分。</div></div></div>
       <div class="controls" style="margin-bottom:10px">
-        <label class="btn sm ghost" for="importFile" title="选择之前导出的 JSON 文件">📄 选择文件…</label>
+        <label class="btn sm ghost" for="importFile" title="选择之前导出的 JSON 文件"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>选择文件…</label>
         <input type="file" id="importFile" accept="application/json,.json" hidden>
         <span class="note" id="importFileName" style="margin:0"></span>
       </div>
@@ -926,6 +934,11 @@
         startFavicon(img);
       }
     }
+    // 图标在不在当前看得见的地方：只看它是否在未激活的视图、没打开的弹窗或 hidden 的容器里。
+    // 不读 offsetParent——重绘刚写完 DOM，那一读会逼浏览器当场把整页排一遍版（手机上启动时最贵的一步），
+    // 而这里只是决定「先取谁」，按结构判断就够了。
+    const FAVICON_HIDDEN_BY = '.view:not(.active), .modal-mask:not(.show), [hidden]';
+    function faviconShown(img) { return !img.closest(FAVICON_HIDDEN_BY); }
     // 每次重绘后调用：已知可用的直接取（走浏览器缓存，无闪烁），未知的排队限流请求。
     function pumpFavicons() {
       const hidden = [];
@@ -933,14 +946,16 @@
         img.dataset.faviconQueued = '1';
         // 已知可用的直接发（命中浏览器缓存，不占限流额度，也就不会有可见的闪烁）。
         if (FAVICON_MEMO.get(img.dataset.favicon) === 'ok') startFavicon(img);
-        else if (img.offsetParent) FAVICON_QUEUE.push(img);   // 当前可见的视图优先
+        else if (faviconShown(img)) FAVICON_QUEUE.push(img);   // 当前可见的视图优先
         else hidden.push(img);
       });
       FAVICON_QUEUE.push(...hidden);
       drainFavicons();
     }
     function parseNum(s) { const n = parseFloat(String(s == null ? '' : s).replace(/,/g, '')); return isFinite(n) ? n : 0; }
-    function fmtNum(n) { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+    // toLocaleString 带选项时每调一次都要现建一个格式化器；建一个反复用，结果完全一样。
+    const NUM_FMT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+    function fmtNum(n) { return NUM_FMT.format(Number(n)); }
 
     // ===== 图标 =====
     const ICONS = {
@@ -968,6 +983,9 @@
       grip: '<circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/>',
       wallet: '<rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M17 12h4v4h-4a2 2 0 0 1 0-4z"/>',
       check: '<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+      alert: '<path d="M10.3 4.3 2.6 17.6a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/>',
+      ban: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+      offline: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 3.4 6M12 3a14 14 0 0 0 0 18M4 4l16 16"/>',
       tick: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
       clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
       calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/>',
@@ -993,7 +1011,7 @@
       document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('active', b.dataset.themeOpt === pref));
     }
     function setTheme(pref) {
-      document.cookie = `bh_theme=${pref}; max-age=31536000; path=/; SameSite=Lax`;
+      setCookie(`bh_theme=${pref}; max-age=31536000; path=/; SameSite=Lax`);
       applyTheme(pref);
     }
     $('themeToggle').addEventListener('click', () => setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'));
@@ -1004,11 +1022,25 @@
     // ===== 本机偏好（Cookie）=====
     // 打开方式、搜索引擎、首页密度都是「这台设备怎么用」的事：手机和桌面可以各设各的，
     // 所以不进 config.json。值域写死成白名单，Cookie 被改成别的也只会回落到默认值。
+    // 一次重绘里每个图标都要问一遍「新标签页还是当前页」：document.cookie 每读一次都是整串重新取，
+    // 同一轮任务里它不会变，就只读一次（本页写 Cookie 都走 setCookie，写完即作废）。
+    let COOKIE_MEMO = null;
+    const PREF_RE = new Map();
+    function cookieText() {
+      if (COOKIE_MEMO === null) {
+        COOKIE_MEMO = document.cookie;
+        queueMicrotask(() => { COOKIE_MEMO = null; });
+      }
+      return COOKIE_MEMO;
+    }
+    function setCookie(text) { document.cookie = text; COOKIE_MEMO = null; }
     function readPref(name, allowed, fallback) {
-      const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([a-z0-9_-]+)'));
+      let re = PREF_RE.get(name);
+      if (!re) PREF_RE.set(name, re = new RegExp('(?:^|; )' + name + '=([a-z0-9_-]+)'));
+      const m = cookieText().match(re);
       return m && allowed.includes(m[1]) ? m[1] : fallback;
     }
-    function writePref(name, value) { document.cookie = `${name}=${value}; max-age=31536000; path=/; SameSite=Lax`; }
+    function writePref(name, value) { setCookie(`${name}=${value}; max-age=31536000; path=/; SameSite=Lax`); }
     const OPEN_MODES = ['new', 'same'];
     function openMode() { return readPref('bh_open', OPEN_MODES, 'new'); }
     // 收藏链接统一走这里取 target / rel：当作起始页用时，很多人更习惯在当前页直接打开。
@@ -2007,7 +2039,15 @@
       $('libChips').innerHTML = pages.map(p =>
         `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
-      syncSubnavScroll(true);
+      queueSubnavSync(true);
+    }
+    // 量侧栏要读 clientHeight / scrollHeight，会逼浏览器当场排版；重画侧栏时首页、看板、签到卡片紧跟着还要重画，
+    // 当场量完下一帧还得再排一次。挪到下一帧开头统一量：那时 DOM 已经写完，量的就是这一帧本来就要做的那次排版。
+    let SUBNAV_SYNC = null;
+    function queueSubnavSync(reveal) {
+      if (SUBNAV_SYNC) { SUBNAV_SYNC.reveal = SUBNAV_SYNC.reveal || reveal; return; }
+      SUBNAV_SYNC = { reveal };
+      requestAnimationFrame(() => { const r = SUBNAV_SYNC.reveal; SUBNAV_SYNC = null; syncSubnavScroll(r); });
     }
     // 分组多到侧栏放不下时，只有分组这一段滚动（「签到中心 / 系统设置」始终留在原位）。滚动条藏起来了，
     // 上下还有内容就在那一端淡出作提示；换页后把当前分组带进视野。
@@ -2413,7 +2453,7 @@
       } else value = compactFieldValue(primary);
       let sub;
       if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
-      else sub = primary.updated_at ? `${primary.label} · 更新于 ${shortStamp(primary.updated_at)}` : primary.label;
+      else sub = primary.updated_at ? `${primary.label} · 更新于 ${dayStamp(primary.updated_at)}` : primary.label;
       return { state, value, unit, sub, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : '' };
     }
     function homeSiteWidgetHtml(b, i) {
@@ -2448,11 +2488,12 @@
     const HOME_PHONE_QUERY = '(max-width: 760px)';
     function measureHomeGrid() {
       const body = $('homeBody'), list = $('homeList');
-      if (!body.clientWidth || typeof getComputedStyle !== 'function') return false;   // 首页没显示 / 没有样式系统：沿用上次的结果
+      // 手机固定 4 列，用不着量宽度：先看媒体查询，免得为此当场排一次版。
       if (window.matchMedia && window.matchMedia(HOME_PHONE_QUERY).matches) {
         setCssVar(body, '--grid-w', '');
         return setHomeCols(4);
       }
+      if (!body.clientWidth || typeof getComputedStyle !== 'function') return false;   // 首页没显示 / 没有样式系统：沿用上次的结果
       const css = getComputedStyle(list);
       const tile = parseFloat(css.getPropertyValue('--tile-w')) || 96, gap = parseFloat(css.getPropertyValue('--tile-gap')) || 10;
       // 组件占右侧一列时（#homeBody 此时是两列网格），主区 = 总宽 − 组件列 − 列距。
@@ -2550,7 +2591,7 @@
       writeHits(day, counts);
       renderHome();
     }
-    function clearHomeHits() { document.cookie = 'bh_home_hits=; max-age=0; path=/; SameSite=Lax'; }
+    function clearHomeHits() { setCookie('bh_home_hits=; max-age=0; path=/; SameSite=Lax'); }
     // 点开网址的几条路：首页图标 / 小组件 / 分组卡片（含中键新标签页打开），以及搜索结果（见 omniOpen）。
     // 只记数、不重画：这一行在下次打开首页时才更新，免得图标在手底下换位置。
     function onHitClick(e) {
@@ -2606,7 +2647,7 @@
       for (const b of STATE.bookmarks || []) { const k = bookmarkAlert(b); if (k) counts[k]++; }
       const kinds = Object.keys(counts).filter(k => counts[k]);
       strip.hidden = !kinds.length;
-      strip.innerHTML = kinds.map(k => `<button type="button" class="alert-chip ${ALERT_META[k].cls}" data-home-alert="${k}" title="到站点看板查看">${ALERT_META[k].icon} ${counts[k]} 个${ALERT_META[k].label}</button>`).join('');
+      strip.innerHTML = kinds.map(k => `<button type="button" class="alert-chip ${ALERT_META[k].cls}" data-home-alert="${k}" title="到站点看板查看">${icon(ALERT_META[k].icon)}${counts[k]} 个${ALERT_META[k].label}</button>`).join('');
     }
     $('homeNotice').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-home-alert]');
@@ -4535,6 +4576,8 @@
       const sameDay = Number(m[1]) === now.getFullYear() && Number(m[2]) === now.getMonth() + 1 && Number(m[3]) === now.getDate();
       return sameDay ? `${m[4]}:${m[5]}` : `${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
     }
+    // 首页小组件只有窄窄一行：不是今天的只写日期（「09-19」），免得「更新于 09-19 21:…」被截断；完整时间在看板卡片上。
+    function dayStamp(s) { const t = shortStamp(s); return /^\d{2}-\d{2} \d{2}:\d{2}$/.test(t) ? t.slice(0, 5) : t; }
     // 相对时间（raw 为 epoch 秒）：已过去标红，3 天内标黄。
     function relativeTime(raw) {
       const t = Number(raw);
@@ -4606,9 +4649,9 @@
     }
 
     const ALERT_META = {
-      error: { icon: '⚠️', label: '取数失败', cls: 'is-error' },
-      expired: { icon: '⛔', label: '已过期', cls: 'is-expired' },
-      soon: { icon: '⏳', label: `${SOON_DAYS} 天内到期`, cls: 'is-soon' },
+      error: { icon: 'alert', label: '取数失败', cls: 'is-error' },
+      expired: { icon: 'ban', label: '已过期', cls: 'is-expired' },
+      soon: { icon: 'hourglass', label: `${SOON_DAYS} 天内到期`, cls: 'is-soon' },
     };
     function renderBmAlerts(counts) {
       const strip = $('bmAlerts');
@@ -4619,7 +4662,7 @@
         const m = ALERT_META[k];
         const on = bmAlertFilter === k;
         return `<button type="button" class="alert-chip ${m.cls}${on ? ' active' : ''}" data-alert="${k}"
-          aria-pressed="${on}" title="${on ? '点击取消筛选' : '只看这些站点'}">${m.icon} ${counts[k]} 个${m.label}</button>`;
+          aria-pressed="${on}" title="${on ? '点击取消筛选' : '只看这些站点'}">${icon(m.icon)}${counts[k]} 个${m.label}</button>`;
       }).join('');
     }
     $('bmAlerts').addEventListener('click', (e) => {
@@ -5043,7 +5086,7 @@
         <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(l.url)}">
           ${avatar}
           <div class="link-body">
-            <div class="link-name"><span>${escapeHtml(l.name)}</span>${l.pinned ? icon('pin', 'pin') : ''}${alert ? `<span class="check-badge ${escapeHtml(LINK_CHECK_META[alert].cls)}" title="${escapeHtml(linkCheckTitle(l))}">${LINK_CHECK_META[alert].icon}</span>` : ''}</div>
+            <div class="link-name"><span>${escapeHtml(l.name)}</span>${l.pinned ? icon('pin', 'pin') : ''}${alert ? `<span class="check-badge ${escapeHtml(LINK_CHECK_META[alert].cls)}" title="${escapeHtml(linkCheckTitle(l))}">${icon(LINK_CHECK_META[alert].icon)}</span>` : ''}</div>
             <div class="link-host">${escapeHtml(host)}${l.skip_check ? '<span class="check-muted" title="已设为忽略死链检查">· 不检查</span>' : ''}</div>
             ${l.desc ? `<div class="link-desc">${escapeHtml(l.desc)}</div>` : ''}
             ${(l.tags || []).length ? `<div class="link-tags">${l.tags.map(t => `<button type="button" class="tag tag-btn" title="按标签「${escapeHtml(t)}」搜索全部分组" onclick="filterByTag(event, '${escapeHtml(t).replace(/'/g, "\\'")}')">${escapeHtml(t)}</button>`).join('')}</div>` : ''}
@@ -5076,9 +5119,9 @@
     // 「blocked」（401/403/429…）不算问题：服务器答了话就说明它还在，
     // 报成死链只会淹没真正坏掉的那几条。
     const LINK_CHECK_META = {
-      missing: { icon: '⛔', label: '打不开', cls: 'is-error' },
-      error: { icon: '⚠️', label: '待确认', cls: 'is-expired' },
-      unreachable: { icon: '🌐', label: '连不上', cls: 'is-soon' },
+      missing: { icon: 'ban', label: '打不开', cls: 'is-error' },
+      error: { icon: 'alert', label: '待确认', cls: 'is-expired' },
+      unreachable: { icon: 'offline', label: '连不上', cls: 'is-soon' },
     };
     let linkAlertFilter = '';
 
@@ -5105,7 +5148,7 @@
         const m = LINK_CHECK_META[k];
         const on = linkAlertFilter === k;
         return `<button type="button" class="alert-chip ${m.cls}${on ? ' active' : ''}" data-link-alert="${k}"
-          aria-pressed="${on}" title="${on ? '点击取消筛选' : '只看这些网址'}">${m.icon} ${counts[k]} 个${m.label}</button>`;
+          aria-pressed="${on}" title="${on ? '点击取消筛选' : '只看这些网址'}">${icon(m.icon)}${counts[k]} 个${m.label}</button>`;
       }).join('');
     }
     $('linkAlerts').addEventListener('click', (e) => {
@@ -5672,9 +5715,9 @@
       $('adminPanel').style.display = STATE.admin_required ? 'block' : 'none';
       if (STATE.admin_required) {
         const unlocked = STATE.admin_unlocked;
-        $('adminStatus').textContent = unlocked
-          ? (STATE.private ? '✅ 已解锁（私密模式：仅解锁后可见）' : '✅ 已解锁，可编辑配置')
-          : (STATE.private ? '🔒 私密模式已开启：解锁后才能看到收藏、看板与配置' : '🔒 未解锁，配置为只读');
+        $('adminStatus').innerHTML = unlocked
+          ? `<span class="status-pill is-ok">${icon('unlock')}已解锁</span><span>${STATE.private ? '私密模式：收藏、看板与配置仅解锁后可见' : '可编辑配置'}</span>`
+          : `<span class="status-pill is-locked">${icon('lock')}未解锁</span><span>${STATE.private ? '私密模式已开启：解锁后才能看到收藏、看板与配置' : '配置为只读'}</span>`;
         $('adminForm').style.display = unlocked ? 'none' : 'flex';
         $('lockBtn').style.display = unlocked ? 'inline-flex' : 'none';
       }
@@ -5725,7 +5768,7 @@
     });
 
     // ===== 部署自检 =====
-    const DIAG_ICON = { ok: '✅', warn: '⚠️', error: '⛔' };
+    const DIAG_ICON = { ok: 'check', warn: 'alert', error: 'ban' };
     async function loadDiagnostics() {
       const box = $('diagList');
       if (!canEdit()) { box.innerHTML = '<div class="note">解锁后可查看部署自检。</div>'; return; }
@@ -5735,9 +5778,9 @@
         const data = await resp.json();
         if (!Array.isArray(data.checks)) { box.innerHTML = `<div class="note">${escapeHtml(data.error || '检查失败')}</div>`; return; }
         const bad = data.checks.filter(c => c.status !== 'ok').length;
-        box.innerHTML = `<div class="diag-head ${data.ok ? 'is-ok' : 'is-bad'}">${data.ok ? '✅ 未发现阻断性问题' : '⛔ 存在需要处理的问题'}${bad ? ` · ${bad} 项待关注` : ''}<span class="diag-time">${escapeHtml(data.generated_at || '')}</span></div>`
+        box.innerHTML = `<div class="diag-head ${data.ok ? 'is-ok' : 'is-bad'}">${icon(data.ok ? 'check' : 'ban')}${data.ok ? '未发现阻断性问题' : '存在需要处理的问题'}${bad ? ` · ${bad} 项待关注` : ''}<span class="diag-time">${escapeHtml(data.generated_at || '')}</span></div>`
           + data.checks.map(c => `<div class="diag-row is-${escapeHtml(c.status)}">
-              <span class="diag-mark">${DIAG_ICON[c.status] || '•'}</span>
+              <span class="diag-mark">${icon(DIAG_ICON[c.status] || 'alert')}</span>
               <span class="diag-label">${escapeHtml(c.label)}</span>
               <span class="diag-detail">${escapeHtml(c.detail)}</span>
             </div>`).join('');
@@ -5935,7 +5978,7 @@
         ${avatar}
         <span class="omni-text">
           <span class="omni-title">${escapeHtml(item.title)}${item.pinned ? icon('pin', 'pin') : ''}${
-            item.alert ? `<span class="check-badge" title="${escapeHtml(LINK_CHECK_META[item.alert].label)}">${LINK_CHECK_META[item.alert].icon}</span>` : ''}</span>
+            item.alert ? `<span class="check-badge ${LINK_CHECK_META[item.alert].cls}" title="${escapeHtml(LINK_CHECK_META[item.alert].label)}">${icon(LINK_CHECK_META[item.alert].icon)}</span>` : ''}</span>
           <span class="omni-sub">${escapeHtml(item.sub)}${item.host ? ` · ${escapeHtml(item.host)}` : ''}</span>
         </span>
         ${tags ? `<span class="omni-tags">${tags}</span>` : ''}
@@ -6503,7 +6546,7 @@
       if (!canEdit()) {
         list.innerHTML = '';
         empty.style.display = 'block';
-        empty.textContent = '🔒 运行历史需要先在「系统设置」中解锁后查看。';
+        empty.innerHTML = `${icon('lock', 'ic note-ic')}运行历史需要先在「系统设置」中解锁后查看。`;
         return;
       }
       empty.textContent = HIST_EMPTY_TEXT;
@@ -6535,7 +6578,7 @@
     // 安装提示：浏览器判定可安装时才出现，点过或装过就不再打扰（记在 Cookie 里）。
     let deferredInstall = null;
     function installDismissed() { return /(?:^|; )bh_install_done=1/.test(document.cookie); }
-    function markInstallDone() { document.cookie = 'bh_install_done=1; path=/; max-age=' + 60 * 60 * 24 * 365 + '; samesite=lax'; }
+    function markInstallDone() { setCookie('bh_install_done=1; path=/; max-age=' + 60 * 60 * 24 * 365 + '; samesite=lax'); }
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       if (installDismissed()) return;
