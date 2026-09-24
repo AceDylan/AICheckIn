@@ -731,6 +731,9 @@ details > summary::-webkit-details-marker { display: none; }
 .cfg-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cfg-token { color: var(--accent); font-family: var(--mono); font-size: 11px; }
 .cfg-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* 列表里每行都有的「删除」是次要操作：平时只是红字细边，指上去才铺淡红底；确认弹窗里的删除仍是实的。 */
+.cfg-actions .btn.danger, .card-actions .btn.danger { background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.cfg-actions .btn.danger:hover, .card-actions .btn.danger:hover { background: var(--danger-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
 .hist-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
 .hist-item:last-child { border-bottom: 0; }
 .hist-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
