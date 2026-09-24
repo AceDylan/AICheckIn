@@ -63,6 +63,10 @@ def palette(b):
     v = page.evaluate(VIEW)
     check("回车执行：面板关掉、到了运行记录", v["hash"][1:] == "checkin/history" and not page.locator("#omniModal.show").count(), v)
     page.keyboard.press("Control+k"); page.wait_for_timeout(250)
+    page.keyboard.type("代理"); page.wait_for_timeout(250); page.keyboard.press("Enter"); page.wait_for_timeout(500)
+    st = page.evaluate("() => [document.querySelector('.view.active').id, document.activeElement && document.activeElement.id, Math.round(document.getElementById('proxyUrl').getBoundingClientRect().top)]")
+    check("搜「代理」直达系统设置的那一节：聚焦输入框、在首屏", st[0] == "view-settings" and st[1] == "proxyUrl" and 0 < st[2] < 600, st)
+    page.keyboard.press("Control+k"); page.wait_for_timeout(250)
     page.keyboard.type("深色"); page.wait_for_timeout(250); page.keyboard.press("Enter"); page.wait_for_timeout(300)
     check("切到深色后，浏览器顶栏颜色（theme-color）也跟着变深", page.evaluate("() => [...document.querySelectorAll('meta[name=theme-color]')].map(m => m.content.slice(1))") == ["0e0c09", "0e0c09"])
     check("「切换到深色」立即生效并记进 Cookie", page.evaluate("() => document.documentElement.dataset.theme") == "dark"

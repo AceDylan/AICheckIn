@@ -6464,7 +6464,17 @@
       add(edit && !locked, '签到中心', '前往页面', 'check', 'checkin qiandao 概览', () => switchView('checkin'));
       add(edit && !locked, '服务配置', '签到中心 · 管理签到账户', 'wrench', 'configs 账户 配置 token peizhi', () => switchView('checkin/configs'));
       add(edit && !locked, '运行记录', '签到中心 · 最近 50 次', 'clock', 'history 历史 日志 jilu', () => switchView('checkin/history'));
-      add(true, '系统设置', '前往页面 · 定时、代理、密码、备份', 'gear', 'settings shezhi 定时 代理 密码 备份 恢复 自检', () => switchView('settings'));
+      add(true, '系统设置', '前往页面', 'gear', 'settings shezhi', () => switchView('settings'));
+      // 设置页的每一节也能直接搜到：落在那一节、轻闪一下，而不是只把人扔到设置页顶上自己找。
+      const sec = (ok, title, anchor, words) => add(ok, title, '系统设置', 'gear', words, () => goSettingsSection(anchor));
+      sec(edit, '定时自动签到', 'schedEnabled', 'schedule cron 定时 自动签到 执行时间 dingshi');
+      sec(edit, '站点数据自动刷新', 'refreshEnabled', 'refresh interval 自动刷新 刷新间隔');
+      sec(edit, '全局代理', 'proxyUrl', 'proxy socks5 http 代理 daili');
+      sec(true, edit ? '管理密码 · 锁定' : '管理密码 · 解锁', 'adminPanel', 'password lock unlock 密码 锁定 解锁 mima');
+      sec(edit, '部署自检', 'runDiag', 'diagnostics health 自检 诊断 检查');
+      sec(edit, '配置恢复（备份）', 'loadBackups', 'backup restore 备份 恢复 回滚 beifen');
+      sec(true, '快速收藏（书签小工具）', 'bookmarkletLink', 'bookmarklet share 书签小工具 分享 快速收藏');
+      sec(true, '首页与起始页', 'startUrl', 'start page homepage 起始页 主页 新标签 搜索引擎 打开方式');
       add(edit && !locked, '运行全部签到', '签到中心 · 在后台执行', 'play', 'run checkin 一键签到 全部 yunxing', () => { switchView('checkin'); runCheckin(); });
       add(edit && !locked && libGroups().length > 0, '添加网址', '收藏到当前分组', 'plus', 'add link new 新增 收藏 tianjia', () => openLinkModal(LIB.page, null, 'single'));
       add(edit && !locked, '新建分组', '收藏库', 'folder', 'new group 分组 fenzu', () => openGroupModal());
@@ -6474,6 +6484,17 @@
       add(!locked, '首页组件…', '日历、待办、倒数日、便签', 'widgets', 'widgets deck 日历 待办 倒数日 便签 zujian', openDeckModal);
       add(true, '键盘快捷键', '帮助', 'book', 'keyboard shortcuts keys 快捷键 帮助 help', openKeysModal);
       return cmds;
+    }
+    function goSettingsSection(anchorId) {
+      switchView('settings');
+      requestAnimationFrame(() => {
+        const el = $(anchorId), panel = el && el.closest('.panel');
+        if (!panel) return;
+        panel.scrollIntoView({ block: 'start' });
+        panel.classList.remove('is-flash'); void panel.offsetWidth; panel.classList.add('is-flash');
+        const target = el.matches('input, select, button, a') ? el : panel.querySelector('input:not([type=hidden]), select, button');
+        if (target) target.focus({ preventScroll: true });
+      });
     }
     function omniRowHtml(item, i) {
       const avatar = item.kind === 'group' || item.kind === 'command'

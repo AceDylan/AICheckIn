@@ -809,6 +809,11 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .settings-grid .panel { margin: 0; }
 .settings-grid .panel.span-2 { grid-column: 1 / -1; }
 .settings-grid.is-locked #adminPanel { order: -1; grid-column: 1 / -1; }
+/* 从命令面板跳到设置的某一节：那一节轻闪一下，告诉你「是这里」。 */
+.settings-grid .panel { scroll-margin-top: 24px; }
+.settings-grid .panel.is-flash { animation: panel-flash 1.2s var(--ease); }
+@keyframes panel-flash { 0%, 35% { background-color: var(--accent-soft); } }   /* 不写 100%：淡回各自原本的底色（手机卡片是实底） */
+@media (prefers-reduced-motion: reduce) { .settings-grid .panel.is-flash { animation: none; } }
 
 /* ---------- 弹窗 ---------- */
 .modal-mask {

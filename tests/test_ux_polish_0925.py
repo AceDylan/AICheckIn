@@ -50,6 +50,8 @@ class UxPolishJsTest(unittest.TestCase):
             assert.ok(titles('签到').includes('签到中心') && titles('签到').includes('运行全部签到'));
             assert.equal(omniSearch('设置')[0].title, '系统设置');
             assert.ok(titles('theme').length === 1 && /^切换到/.test(titles('theme')[0]));
+            // 设置页的各节也能搜到。
+            assert.ok(titles('代理').includes('全局代理') && titles('备份').includes('配置恢复（备份）'));
             // 跑一条命令：关掉面板、切到对应页面。
             omniOpen(omniSearch('运行记录').find(i => i.kind === 'command'));
             assert.equal(currentViewName(), 'history');
@@ -58,6 +60,8 @@ class UxPolishJsTest(unittest.TestCase):
             assert.deepEqual(titles('签到'), []);
             assert.deepEqual(titles('添加网址'), []);
             assert.ok(titles('设置').includes('系统设置'));
+            assert.deepEqual(titles('代理'), []);   // 改不了的设置节也不列
+            assert.ok(titles('密码').includes('管理密码 · 解锁'));
         """)
 
     def test_widget_time_value_splits_number_from_words(self):
