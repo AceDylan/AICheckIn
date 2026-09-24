@@ -1579,6 +1579,12 @@
       writePref('bh_ck_view', b.dataset.ckView);
       renderCheckinCards();
     });
+    // 列表行里只放主机名（完整地址在悬停提示里）：一行的宽度留给状态和结果，长域名也能正常省略号截断。
+    function ckHostLink(u) {
+      const safe = safeUrl(u), host = siteHost(u) || String(u || '');
+      return safe ? `<a class="ck-host" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(safe)}">${escapeHtml(host)}</a>`
+        : `<span class="ck-host">${escapeHtml(host)}</span>`;
+    }
     function enabledRowHtml(c, i) {
       const r = RESULTS[i], m = displayMetrics(i), last = lastOutcome(c, i);
       const badge = r ? { label: r.status_label, color: r.color }
@@ -1590,7 +1596,7 @@
       const note = msg || (last.at ? `最近签到 ${shortStamp(last.at)} · ${lastLabel}` : m.updated_at ? `上次获取 ${shortStamp(m.updated_at)}` : '');
       const bal = m.wallet_balance != null && m.wallet_balance !== '' && m.wallet_balance !== '-' ? m.wallet_balance : '—';
       return `<div class="ck-row ${badge.color}" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
-        <span class="ck-id">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}<span class="ck-text"><span class="card-name">${escapeHtml(c.name)}</span>${urlLink(c.base_url)}</span></span>
+        <span class="ck-id">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}<span class="ck-text"><span class="card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>${ckHostLink(c.base_url)}</span></span>
         <span class="badge ${badge.color}">${escapeHtml(badge.label)}</span>
         <span class="ck-bal" title="钱包余额"><b>${escapeHtml(bal)}</b><small>余额</small></span>
         <span class="ck-note${msg && badge.color === 'red' ? ' is-err' : ''}" title="${escapeHtml(note)}">${escapeHtml(note)}</span>
