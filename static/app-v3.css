@@ -1592,7 +1592,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 .link-card { min-height: 0; align-items: center; border-color: transparent; border-radius: 12px; background: transparent; box-shadow: none; }
 .link-card:hover { transform: none; border-color: transparent; background: var(--surface-hover); box-shadow: none; }
 .link-card.is-pinned { border-color: transparent; }
-.link-main { align-items: center; gap: 12px; padding: 12px 6px 12px 14px; border-radius: 14px 0 0 14px; }
+.link-main { align-items: center; gap: 12px; padding: 12px 6px 12px 14px; border-radius: 12px 0 0 12px; }
 .link-card:has(.link-desc, .link-tags) .link-main { align-items: flex-start; }
 .link-avatar { width: 40px; height: 40px; flex-basis: 40px; border-radius: 11px; }
 .link-tools, .link-tools-top { flex-direction: row; align-items: center; gap: 2px; }
@@ -1766,16 +1766,16 @@ label.set-row { cursor: pointer; }
 .deck-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---------- 日历 ---------- */
-.cal-next-main { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; border-radius: 14px; background: var(--surface-hover); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px var(--border); transition: filter .14s ease; }
-.cal-next-main:hover { filter: brightness(1.08); }
+.cal-next-main { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; border-radius: 14px; background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px var(--border); transition: background-color .14s var(--ease); }
+.cal-next-main:hover { background: var(--surface-hover); }
 .cal-next-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
 .cal-next-label { color: var(--text-2); font-size: 11px; font-weight: 520; letter-spacing: .02em; }
 .cal-next-name { font-size: 17px; font-weight: 620; line-height: 1.25; letter-spacing: .01em; }
 .cal-next-sub { color: var(--text-2); font-size: 12px; overflow-wrap: anywhere; }
 .cal-next-count { display: flex; flex: 0 0 auto; align-items: baseline; gap: 3px; color: var(--text-2); font-size: 12px; font-weight: 520; }
 .cal-next-count b { font-size: 30px; font-weight: 620; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.cal-next-more { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.cal-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; font-weight: 520; cursor: pointer; transition: background .14s ease, color .14s ease; }
+.cal-next-more { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.cal-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 8px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--text-2); font: inherit; font-size: 11.5px; font-weight: 520; cursor: pointer; transition: background .14s ease, color .14s ease; }
 .cal-chip:hover { background: var(--surface-hover); color: var(--text); }
 .cal-chip b { color: var(--text); font-weight: 580; font-variant-numeric: tabular-nums; }
 .cal-chip.is-off::before { content: "休"; color: var(--success); font-size: 11px; font-weight: 620; }
