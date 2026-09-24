@@ -20,6 +20,13 @@ docs/
 .venv/
 venv/
 
+# 开发期文件：测试（含浏览器回归与合成数据，约 3.7 MB）、图标 / 壁纸生成工具、测试与 lint 缓存。
+# 运行时一个都用不上；排掉之后镜像更小，只改测试也不会让 `COPY . .` 这一层失效、白白重建。
+tests/
+tools/
+.pytest_cache/
+.ruff_cache/
+
 # Python 缓存
 __pycache__/
 **/__pycache__/

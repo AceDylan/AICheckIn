@@ -101,8 +101,8 @@ gyqd.py             签到核心逻辑（被 app.py 复用，也可单独命令�
 templates/index.html  单文件前端（HTML + CSS 变量 + 原生 JS，无构建步骤）
 static/app-v3.css   界面样式
 static/wallpapers/  内置首页壁纸（WebP：横版 / 竖版 / 缩略图）+ manifest.json（主色与亮度）
-tools/              开发期工具：make_icons.py（PWA 图标）、make_wallpapers.py（内置壁纸）
-tests/              unittest 测试套件
+tools/              开发期工具：make_icons.py（PWA 图标）、make_wallpapers.py（内置壁纸）；不进镜像
+tests/              unittest 测试套件；不进镜像（见 .dockerignore）
 tests/browser/      真实浏览器回归（Playwright + Chromium，自起隔离实例、合成数据；不随 unittest 跑，见「开发」）
 data/               运行数据（config.json / todos.json / deck.json / holidays.json / history.json / metrics.json / favicons/ / wallpaper/），不入库
 ```

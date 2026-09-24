@@ -31,5 +31,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # 单 worker + 多线程：签到是短时阻塞 IO，无需多进程。
 # 线程数从 4 提到 8：/api/favicon 首次抓取站点图标时会阻塞若干秒（有磁盘缓存，只在冷启动出现），
 # 一屏卡片最多并发 3 个，留足余量给页面自身的接口调用。
+# --worker-tmp-dir /dev/shm：worker 每隔几秒要改一次心跳文件，默认放在 /tmp（容器里是 overlay 磁盘层），
+# 磁盘忙时这一下可能卡住，只有一个 worker 时整个服务跟着停顿、严重时被判超时重启。放进内存盘就没有这个问题
+# （gunicorn 官方文档对 Docker 部署的建议）。
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "-b", "0.0.0.0:5525", "--workers", "1", "--threads", "8", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:5525", "--workers", "1", "--threads", "8", "--timeout", "120", "--worker-tmp-dir", "/dev/shm", "app:app"]

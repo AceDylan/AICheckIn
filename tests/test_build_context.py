@@ -91,5 +91,18 @@ class RuntimeFilesAreKeptTest(unittest.TestCase):
             self.assertIsNone(ignored(rel), rel)
 
 
+class DevOnlyFilesAndWorkerTest(unittest.TestCase):
+    """测试、工具、缓存不进镜像（运行时用不上，只改测试也不该让 COPY 层失效）；gunicorn 心跳文件放内存盘。"""
+
+    def test_dev_only_trees_stay_out_of_the_image(self):
+        for path in ("tests/test_todos.py", "tests/browser/seed/config.json", "tools/make_icons.py", ".pytest_cache/v/x"):
+            self.assertIsNotNone(ignored(path), path)
+
+    def test_gunicorn_heartbeat_lives_in_memory(self):
+        with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as fh:
+            dockerfile = fh.read()
+        self.assertIn('"--worker-tmp-dir", "/dev/shm"', dockerfile)
+
+
 if __name__ == "__main__":
     unittest.main()
