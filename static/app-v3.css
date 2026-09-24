@@ -704,6 +704,11 @@ details > summary::-webkit-details-marker { display: none; }
 .ov-item.bad .ov-num, .ov-item.bad .ov-label { color: var(--danger); }
 #runAllCheckin.busy { opacity: .85; cursor: progress; }
 .kvs-empty { margin-top: 12px; color: var(--text-3); font-size: 12.5px; }
+/* 余额走势：一条细线 + 末点，高 26px，不画坐标轴；具体数字在下面那行字和悬停提示里。 */
+.trend { position: relative; margin-top: 12px; }
+.trend-line { display: block; width: 100%; height: 26px; overflow: visible; color: var(--text-3); }
+.trend-dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--text-2); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
+.trend-note { margin-top: 6px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
 .run-meta { min-height: 18px; margin: 0 2px 14px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 16px; }
 .card {
@@ -877,6 +882,14 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .toast::before { content: ""; width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--text-3); }
 .toast.ok::before { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent); }
 .toast.err::before { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.toast.has-action { padding-right: 8px; }
+.toast .toast-text { flex: 1; min-width: 0; }
+.toast-action {
+  flex: none; min-height: 30px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: var(--surface-hover); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.toast-action:hover { background: var(--border-strong); }
+.toast-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
 
 /* ===== 全局搜索（命令面板）===== */

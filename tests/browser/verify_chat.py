@@ -181,7 +181,9 @@ def admin_desktop(b, halo):
     check("免登录正常时没有提示条", page.evaluate("() => document.getElementById('chatNote').hidden"))
     box = frame_el.bounding_box()
     vw, vh = page.evaluate("() => [innerWidth, innerHeight]")
-    check("框铺到视口底部、不溢出", box and abs(box["y"] + box["height"] - vh) < 2 and box["x"] + box["width"] <= vw + 1 and box["height"] > vh * 0.7, box)
+    # 开壁纸时框贴到视口底边；默认不开壁纸时内容区是一块四周留 8px 底色的画布，框到画布底边为止。
+    gap = vh - (box["y"] + box["height"]) if box else -1
+    check("框铺到视口底部（或画布底边）、不溢出", box and -1 < gap < 11 and box["x"] + box["width"] <= vw + 1 and box["height"] > vh * 0.7, box)
     check("页面没有纵向滚动条", page.evaluate("() => document.documentElement.scrollHeight <= innerHeight + 1"))
 
     # 握手：本站后台向假 HaloWebUI 送了一张 probe 票，假站按文档格式验过

@@ -60,6 +60,8 @@ _STAMP_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # 指标快照文件：持久化每组配置上一次获取到的签到奖励/钱包余额/已用额度/请求数。
 # 以 base_url|user_id 为键，独立于 configs 数组索引，避免增删改导入打乱对齐。
 METRICS_FILE = str(DATA_DIR / "metrics.json")
+# 每个签到账户每天留一个余额点（metrics.json 里的 daily），用来画走势、估「还能用多少天」。
+METRIC_DAILY_KEEP = 90
 # 页面上「运行全部签到」走后台任务：不同站点最多同时签几个（同一站点的多个账户仍然依次签，
 # 免得同一台服务器同时收到一串请求）。环境变量 GYQD_CHECKIN_WORKERS 可调，限制在 1–8。
 try:
@@ -1500,6 +1502,14 @@ def update_metric(config, serialized, mark_signed=False, outcome=False):
                 value = serialized.get(field)
                 if value not in (None, "", "-"):
                     snap[field] = value
+            balance = serialized.get("wallet_balance")
+            if balance not in (None, "", "-"):
+                # 同一天只留最后一次；运行记录最多 50 条、回看不了几天，这里单独按天存 90 天。
+                today = _today_str()
+                daily = [d for d in snap.get("daily") or []
+                         if isinstance(d, list) and len(d) == 2 and d[0] != today]
+                daily.append([today, balance])
+                snap["daily"] = daily[-METRIC_DAILY_KEEP:]
             awarded = serialized.get("quota_awarded")
             if awarded not in (None, "", "-"):
                 snap["quota_awarded"] = awarded
@@ -4103,6 +4113,27 @@ def api_bookmark_home(idx):
     return _home_response(store)
 
 
+@app.get("/api/link_title")
+def api_link_title():
+    """添加网址时顺手取网页标题当名称（只读开头 128KB、5 秒超时，只回标题文字）。管理功能。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        url = _clean_link_url(request.args.get("url"))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        proxy = str(read_store().get("proxy_url") or "")
+    except RuntimeError:
+        proxy = ""
+    data, ctype, _final, status = _favicon_http_get(url, proxy, FAVICON_TIMEOUT, LINK_TITLE_MAX_BYTES, truncate=True)
+    title = page_title_from_html(data, ctype) if data and (not ctype or "html" in ctype.lower()) else ""
+    if not title:
+        return jsonify({"ok": False, "error": "没读到网页标题" if status else "网页打不开"})
+    return jsonify({"ok": True, "title": title})
+
+
 @app.post("/api/link_groups")
 def api_link_group_create():
     guard = _guard_admin()
@@ -4554,6 +4585,39 @@ def _favicon_curl_get(url, proxy, timeout, max_bytes, truncate=False):
         return data, ctype, str(resp.url or url), status
     except Exception:  # noqa: BLE001 - 可选路径，失败即放弃该候选
         return None, "", "", 0
+
+
+_TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title\s*>", re.I | re.S)
+_CHARSET_RE = re.compile(rb"""charset\s*=\s*["']?([A-Za-z0-9_\-]+)""", re.I)
+LINK_TITLE_MAX_BYTES = 128 * 1024
+LINK_TITLE_LIMIT = 60   # 与「添加网址」弹窗里名称框的 maxlength 一致
+
+
+def page_title_from_html(data, content_type=""):
+    """从网页开头取 <title>：按响应头或 <meta charset> 解码，反转义实体，压成一行，截到 60 字。"""
+    if not data:
+        return ""
+    match = _TITLE_RE.search(data)
+    if not match:
+        return ""
+    charset = ""
+    found = _CHARSET_RE.search((content_type or "").encode("latin-1", "ignore")) or _CHARSET_RE.search(data[:4096])
+    if found:
+        charset = found.group(1).decode("ascii", "ignore")
+    raw = match.group(1)
+    text = None
+    for enc in (charset, "utf-8", "gb18030"):
+        if not enc:
+            continue
+        try:
+            text = raw.decode(enc)
+            break
+        except (LookupError, UnicodeDecodeError):
+            continue
+    if text is None:
+        text = raw.decode("utf-8", errors="replace")
+    text = re.sub(r"\s+", " ", html.unescape(text)).strip()
+    return text[:LINK_TITLE_LIMIT]
 
 
 def _favicon_http_get(url, proxy, timeout, max_bytes, truncate=False):

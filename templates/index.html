@@ -1243,6 +1243,65 @@
       $('toasts').appendChild(el);
       setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2800);
     }
+    // ===== 删除后可撤销 =====
+    // 删除先只在页面上生效，提示条给 5 秒「撤销」；时间到（或离开页面）才真的发请求。
+    // 同一时间只留一个待删：再删别的会先把上一个提交掉，按下标定位的条目因此不会在两次删除之间错位。
+    const UNDO = { pending: null, ms: 5000 };
+    function toastUndo(msg, onUndo) {
+      const el = document.createElement('div');
+      el.className = 'toast has-action';
+      el.setAttribute('role', 'status');
+      el.innerHTML = `<span class="toast-text">${escapeHtml(msg)}</span><button type="button" class="toast-action">撤销</button>`;
+      $('toasts').appendChild(el);
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300);
+      };
+      el.querySelector('button').addEventListener('click', () => { close(); onUndo(); });
+      return close;
+    }
+    async function flushPendingDelete(keepalive) {
+      const p = UNDO.pending;
+      if (!p) return;
+      UNDO.pending = null;
+      clearTimeout(p.timer);
+      p.close();
+      const ok = await p.commit(!!keepalive);
+      if (!keepalive) await p.after(ok);
+    }
+    // build() 在上一个待删提交之后才调用，拿到的是最新的列表：
+    // 返回 { message, removeLocal, restoreLocal, commit(keepalive) → Promise<bool>, after(ok) }。
+    async function undoableDelete(build) {
+      await flushPendingDelete();
+      const o = build();
+      if (!o) return;
+      o.removeLocal();
+      const p = { commit: o.commit, after: o.after || (() => {}) };
+      p.close = toastUndo(o.message, () => {
+        if (UNDO.pending !== p) return;
+        UNDO.pending = null;
+        clearTimeout(p.timer);
+        o.restoreLocal();
+      });
+      p.timer = setTimeout(() => { if (UNDO.pending === p) flushPendingDelete(); }, UNDO.ms);
+      UNDO.pending = p;
+    }
+    // 真正发 DELETE。keepalive：页面正在关闭，请求要在页面消失后继续送达，结果不再处理。
+    async function sendDelete(url, keepalive) {
+      try {
+        const resp = await fetch(url, { method: 'DELETE', headers: adminHeaders(), keepalive });
+        if (keepalive) return true;
+        const data = await resp.json();
+        if (!data.ok) toast((data.error || '删除失败') + '，已恢复', 'err');
+        return !!data.ok;
+      } catch (e) {
+        if (!keepalive) toast('网络错误，删除没有生效：' + e.message, 'err');
+        return false;
+      }
+    }
+    window.addEventListener('pagehide', () => { flushPendingDelete(true); });
     async function copyText(text) {
       try {
         if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
@@ -1416,6 +1475,40 @@
         failedToday: m.last_status === 'failed' && at.slice(0, 10) === today && !(c && c.checked_in_today),
       };
     }
+    // 余额走势：每天一个点（服务端留 90 天）。至少两天才画；按最近 14 天估日均消耗和「还能用多少天」。
+    // 单一序列：不要图例，线用正文次要色（不借状态色），末点一个圆点；数值写在旁边的文字里，悬停有原生提示。
+    function balanceTrend(c) {
+      const pts = ((c.metrics && c.metrics.daily) || [])
+        .filter(p => Array.isArray(p) && p.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(p[0]) && /\d/.test(String(p[1])))
+        .map(([d, v]) => [d, parseNum(v)]);
+      if (pts.length < 2) return null;
+      const dayMs = (d) => new Date(d + 'T00:00:00').getTime();
+      const last = pts[pts.length - 1];
+      const recent = pts.filter(p => dayMs(last[0]) - dayMs(p[0]) <= 14 * 86400000);
+      const first = recent[0];
+      const days = Math.round((dayMs(last[0]) - dayMs(first[0])) / 86400000);
+      let note = '';
+      if (days >= 1) {
+        const perDay = (first[1] - last[1]) / days;
+        if (perDay > 0.005) note = `近 ${days} 天日均用 ${fmtNum(perDay)}` + (last[1] > 0 ? ` · 约还能用 ${Math.max(0, Math.floor(last[1] / perDay))} 天` : '');
+        else if (perDay < -0.005) note = `近 ${days} 天余额在增加`;
+        else note = `近 ${days} 天余额没变`;
+      }
+      const vals = pts.map(p => p[1]);
+      const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+      const t0 = dayMs(pts[0][0]), tspan = (dayMs(last[0]) - t0) || 1;
+      const xy = pts.map(([d, v]) => [((dayMs(d) - t0) / tspan) * 100, 22 - ((v - lo) / span) * 18]);
+      const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+      const [lx, ly] = xy[xy.length - 1];
+      const label = `余额走势：${pts[0][0]} ${fmtNum(pts[0][1])} → ${last[0]} ${fmtNum(last[1])}，共 ${pts.length} 天的记录`;
+      return `<div class="trend">
+          <svg class="trend-line" viewBox="-2 0 104 26" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title>
+            <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+          </svg>
+          <span class="trend-dot" style="left:${lx.toFixed(1)}%;top:${((ly / 26) * 100).toFixed(1)}%"></span>
+          ${note ? `<div class="trend-note">${escapeHtml(note)}</div>` : ''}
+        </div>`;
+    }
     function localDateKey(d) {
       const pad = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -1449,6 +1542,7 @@
         </div>
         ${urlLink(c.base_url)}
         ${kvHtml}
+        ${balanceTrend(c) || ''}
         ${msg ? `<div class="card-msg">${escapeHtml(msg)}</div>` : ''}
         ${stamp}
         <div class="card-actions">
@@ -2113,15 +2207,20 @@
 
     async function deleteCfg(i) {
       if (!guardAdmin()) return;
-      if (!confirm(`确认删除配置「${STATE.configs[i].name}」？`)) return;
-      try {
-        const resp = await fetch('/api/configs/' + i + expectQ(STATE.configs[i]), { method: 'DELETE', headers: adminHeaders() });
-        const data = await resp.json();
-        if (staleReload(resp, data)) return;
-        if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
-        toast('已删除', 'ok');
-        loadConfigs();
-      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+      const key = STATE.configs[i] && STATE.configs[i].key;
+      await undoableDelete(() => {
+        const at = STATE.configs.findIndex(c => c.key === key);   // 上一个待删提交后列表刷新过，按稳定键重新定位
+        if (at < 0) return null;
+        const c = STATE.configs[at], r = RESULTS[at];
+        const redraw = () => { renderConfigs(); renderCheckinCards(); };
+        return {
+          message: `已删除「${c.name}」`,
+          removeLocal: () => { STATE.configs.splice(at, 1); RESULTS.splice(at, 1); redraw(); },
+          restoreLocal: () => { STATE.configs.splice(at, 0, c); RESULTS.splice(at, 0, r); redraw(); },
+          commit: (keepalive) => sendDelete('/api/configs/' + at + expectQ(c), keepalive),
+          after: () => loadConfigs({ quiet: true }),
+        };
+      });
     }
 
     // ===== 收藏库：子页面导航（侧栏树 + 移动端 chips） =====
@@ -5198,15 +5297,20 @@
 
     async function deleteBm(i) {
       if (!guardAdmin()) return;
-      if (!confirm(`确认删除站点「${STATE.bookmarks[i].name}」？`)) return;
-      try {
-        const resp = await fetch('/api/bookmarks/' + i + expectQ(STATE.bookmarks[i]), { method: 'DELETE', headers: adminHeaders() });
-        const data = await resp.json();
-        if (staleReload(resp, data)) return;
-        if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
-        toast('已删除', 'ok');
-        loadConfigs();
-      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+      const key = STATE.bookmarks[i] && STATE.bookmarks[i].key;
+      await undoableDelete(() => {
+        const at = (STATE.bookmarks || []).findIndex(b => b.key === key);
+        if (at < 0) return null;
+        const b = STATE.bookmarks[at];
+        const redraw = () => { renderLibrary(); if (typeof renderHome === 'function') renderHome(); };
+        return {
+          message: `已删除站点「${b.name}」`,
+          removeLocal: () => { STATE.bookmarks.splice(at, 1); redraw(); },
+          restoreLocal: () => { STATE.bookmarks.splice(at, 0, b); redraw(); },
+          commit: (keepalive) => sendDelete('/api/bookmarks/' + at + expectQ(b), keepalive),
+          after: () => loadConfigs({ quiet: true }),
+        };
+      });
     }
 
     // 站点排序：action 为 'up'|'down'|'top'，本地重排后把完整新顺序提交后端持久化。
@@ -5445,11 +5549,20 @@
       if (!guardAdmin()) return;
       const g = findGroup(gid); const l = g && (g.links || []).find(x => x.id === lid);
       if (!l) return;
-      if (!confirm(`确认删除网址「${l.name}」？`)) return;
-      const data = await linkApi(`/api/link_groups/${gid}/links/${lid}`, 'DELETE');
-      if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
-      renderLibrary();
-      toast('已删除', 'ok');
+      await undoableDelete(() => {
+        const grp = findGroup(gid), links = grp ? grp.links || [] : [];
+        const at = links.findIndex(x => x.id === lid);
+        if (at < 0) return null;
+        const item = links[at];
+        const redraw = () => { renderLibrary(); if (typeof renderHome === 'function') renderHome(); };
+        return {
+          message: `已删除「${item.name}」`,
+          removeLocal: () => { links.splice(at, 1); redraw(); },
+          restoreLocal: () => { links.splice(Math.min(at, links.length), 0, item); redraw(); },
+          commit: (keepalive) => sendDelete(`/api/link_groups/${encodeURIComponent(gid)}/links/${encodeURIComponent(lid)}`, keepalive),
+          after: (ok) => { if (!ok) { links.splice(Math.min(at, links.length), 0, item); redraw(); } },
+        };
+      });
     }
 
     // ----- 网址编辑弹窗（单条 / 批量） -----
@@ -5560,6 +5673,28 @@
       box.innerHTML = `${icon('inbox')}<span>这个网址已经收藏过：${where}${hits.length > 3 ? ` 等 ${hits.length} 处` : ''}。仍可继续保存。</span>`;
     }
     $('lk_url').addEventListener('input', refreshDupHint);
+    // 新添网址、名称还空着：停手 0.8 秒后去读一下网页标题填进名称（用户自己改过名称就不再动它）。
+    const TITLE_FETCH = { timer: 0, url: '' };
+    async function fetchLinkTitle() {
+      const url = normalizeUrlInput($('lk_url').value), name = $('lk_name');
+      if (linkEdit.lid || linkEdit.mode !== 'single' || !looksLikeUrl(url) || !canEdit()) return;
+      if (name.value.trim() && name.dataset.auto !== '1') return;
+      if (url === TITLE_FETCH.url) return;
+      TITLE_FETCH.url = url;
+      name.placeholder = '正在读取网页标题…';
+      let data = null;
+      try {
+        const resp = await fetch('/api/link_title?url=' + encodeURIComponent(url), { headers: adminHeaders() });
+        data = await resp.json();
+      } catch (_) { /* 读不到就算了：留空照样能保存，名称回落到域名 */ }
+      name.placeholder = '留空则用域名';
+      if (normalizeUrlInput($('lk_url').value) !== url) return;          // 这期间网址又改了
+      if (name.value.trim() && name.dataset.auto !== '1') return;           // 这期间用户自己填了名称
+      if (data && data.ok && data.title) { name.value = data.title; name.dataset.auto = '1'; }
+    }
+    $('lk_url').addEventListener('input', () => { clearTimeout(TITLE_FETCH.timer); TITLE_FETCH.timer = setTimeout(fetchLinkTitle, 800); });
+    $('lk_url').addEventListener('change', () => { clearTimeout(TITLE_FETCH.timer); fetchLinkTitle(); });
+    $('lk_name').addEventListener('input', () => { delete $('lk_name').dataset.auto; });
     $('lk_dup').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-dup-group]');
       if (!btn) return;
@@ -5609,6 +5744,8 @@
       $('linkModeToggle').hidden = !!l;
       $('lk_url').value = l ? l.url : '';
       $('lk_name').value = l ? l.name : '';
+      delete $('lk_name').dataset.auto;
+      TITLE_FETCH.url = '';
       $('lk_desc').value = l ? (l.desc || '') : '';
       $('lk_tags').value = l ? (l.tags || []).join(', ') : '';
       $('lk_icon').value = l ? (l.icon || '') : '';

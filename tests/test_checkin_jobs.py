@@ -256,3 +256,22 @@ class FieldThresholdTest(_Base):
         for bad in ({"type": "amount", "warn_below": "abc"}, {"type": "time", "warn_days": "0"}, {"type": "time", "warn_days": "400"}):
             with self.assertRaises(ValueError):
                 app_module.clean_field(dict({"label": "x", "curl": "curl https://x.example/api", "json_path": "a"}, **bad))
+
+
+class DailyBalanceTest(_Base):
+    def test_one_point_per_day_capped(self):
+        key = metrics_key(CFG_A)
+        app_module.update_metric(CFG_A, {"wallet_balance": "$10.00"})
+        app_module.update_metric(CFG_A, {"wallet_balance": "$9.50"})   # 同一天只留最后一次
+        snap = read_metrics()[key]
+        self.assertEqual(snap["daily"], [[app_module._today_str(), "$9.50"]])
+        metrics = read_metrics()
+        metrics[key]["daily"] = [["2020-01-%02d" % (i % 28 + 1), str(i)] for i in range(120)]
+        app_module.Path(app_module.METRICS_FILE).write_text(__import__("json").dumps(metrics), encoding="utf-8")
+        app_module.update_metric(CFG_A, {"wallet_balance": "$9.00"})
+        daily = read_metrics()[key]["daily"]
+        self.assertEqual(len(daily), app_module.METRIC_DAILY_KEEP)
+        self.assertEqual(daily[-1], [app_module._today_str(), "$9.00"])
+        # 失败不产生点
+        app_module.record_outcomes([CFG_A], [{"name": "A", "status": "failed", "message": "x"}])
+        self.assertEqual(read_metrics()[key]["daily"], daily)

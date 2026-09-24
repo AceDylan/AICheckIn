@@ -9,6 +9,8 @@ from verify import *   # noqa: F401,F403  复用 check / main / new_context / ap
 def transport(browser):
     for label, (w, h, mobile) in {"pc": (1440, 900, False), "phone": (390, 844, True)}.items():
         ctx = new_context(browser, w, h, mobile=mobile)
+        # 壁纸默认关闭：要验壁纸的缓存头，先手动选一张。
+        ctx.add_cookies([{"name": "bh_wallpaper", "value": "aurora", "url": BASE}])
         page = ctx.new_page()
         errors, seen = [], {}
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
