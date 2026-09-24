@@ -52,7 +52,7 @@ def rail(b):
     # 浅色、无壁纸
     ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "rail", "bh_theme": "light", "bh_wallpaper": "off"})
     page.locator("#libSubnav .subnav-item").nth(2).hover(); page.wait_for_timeout(300)
-    check("浅色主题：提示仍是深底浅字", page.evaluate("() => getComputedStyle(document.getElementById('railTip')).backgroundColor") == "rgb(27, 27, 32)" and not page.evaluate(TIP)["hidden"])
+    check("浅色主题：提示仍是深底浅字", page.evaluate("() => getComputedStyle(document.getElementById('railTip')).backgroundColor") == "rgb(32, 30, 26)" and not page.evaluate(TIP)["hidden"])
     shot(page, "P9-rail-tip-light")
     ctx.close()
     # 完整侧栏：文字看得见 → 不出
