@@ -28,7 +28,7 @@ def checkin_tabs(b):
     page.locator('.checkin-tool[data-checkin-page="configs"]').click(); page.wait_for_timeout(300)
     v = page.evaluate(VIEW)
     check("点「服务配置」：当前页标记跟过去、地址栏跟着变", v["cur"] == ["configs"] and v["hash"][1:] == "checkin/configs", v)
-    check("服务配置：操作换成导出 / 导入 / 新增账户", page.locator("#addCfg").is_visible() and page.locator("#exportCfg").is_visible() and not page.locator("#runAllCheckin").is_visible())
+    check("服务配置：操作换成导出 / 导入 / 添加账户", page.locator("#addCfg").is_visible() and page.locator("#exportCfg").is_visible() and not page.locator("#runAllCheckin").is_visible())
     check("服务配置标签上带账户数", page.locator("#cfgTabCount").text_content() == "3")
     off = page.locator(".cfg-row.disabled")
     check("停用的账户：名字旁写「已停用」，操作按钮不跟着变淡",

@@ -101,7 +101,7 @@
           <div class="chip-row" id="libChips" aria-label="收藏库页面"></div>
           <div class="view-header" id="libHeader">
             <div><div class="eyebrow" id="libEyebrow">收藏库</div><h1 id="libTitle">收藏首页</h1><p id="libDesc"></p></div>
-            <div class="header-actions" id="libActionsMonitor" hidden><button class="btn ghost" id="refreshAllBm">刷新所有数据</button><button class="btn" id="addBm">＋ 新增站点</button></div>
+            <div class="header-actions" id="libActionsMonitor" hidden><button class="btn ghost" id="refreshAllBm">刷新所有数据</button><button class="btn" id="addBm">＋ 添加站点</button></div>
             <div class="header-actions" id="libActionsGroup" hidden><button class="btn ghost" id="checkLinksBtn" title="逐条探测本分组的网址是否还能打开">检查链接</button><button class="btn ghost" id="editGroupBtn">编辑分组</button><button class="btn" id="addLinkBtn">＋ 添加网址</button></div>
           </div>
           <div class="toolbar" id="libToolbar">
@@ -360,7 +360,7 @@
                 <button type="button" class="checkin-tool" data-checkin-page="history" aria-controls="view-history"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>运行记录</button>
               </nav>
               <div class="header-actions checkin-actions" id="checkinActOverview"><button type="button" class="btn" id="runAllCheckin" onclick="runCheckin()"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 10 7-10 7z"/></svg>运行全部签到</button></div>
-              <div class="header-actions checkin-actions" id="checkinActConfigs" hidden><button class="btn ghost" id="exportCfg">导出 JSON</button><button class="btn ghost" id="importCfg">导入</button><button class="btn" id="addCfg">＋ 新增账户</button></div>
+              <div class="header-actions checkin-actions" id="checkinActConfigs" hidden><button class="btn ghost" id="exportCfg">导出 JSON</button><button class="btn ghost" id="importCfg">导入</button><button class="btn" id="addCfg">＋ 添加账户</button></div>
               <div class="header-actions checkin-actions" id="checkinActHistory" hidden><button class="btn ghost" id="refreshHist">刷新记录</button></div>
             </div>
           </div>
@@ -441,7 +441,7 @@
   <!-- 配置编辑弹窗 -->
   <div class="modal-mask" id="cfgModal">
     <div role="dialog" aria-modal="true" aria-labelledby="cfgModalTitle" class="modal">
-      <div class="modal-head"><div><h3 id="cfgModalTitle">新增配置</h3><div class="modal-sub">签到账户的连接信息</div></div></div>
+      <div class="modal-head"><div><h3 id="cfgModalTitle">添加签到账户</h3><div class="modal-sub">签到账户的连接信息</div></div></div>
       <div class="field"><label for="m_name">名称 *</label><input class="input" id="m_name" placeholder="自己认得出的别名，如「主号 · 某某站」"></div>
       <div class="field"><label for="m_base">站点地址 *</label><input class="input" id="m_base" placeholder="https://example.com" inputmode="url"><div class="hint">New API / One API 站点的首页地址，不带 /api 等路径。</div></div>
       <div class="row-2">
@@ -489,7 +489,7 @@
   <!-- 站点看板：收藏编辑弹窗（接口字段） -->
   <div class="modal-mask" id="bmModal">
     <div role="dialog" aria-modal="true" aria-labelledby="bmModalTitle" class="modal modal-wide">
-      <div class="modal-head"><div><h3 id="bmModalTitle">新增站点</h3><div class="modal-sub">站点看板中的站点，可配置余额 / 到期时间等接口字段。</div></div></div>
+      <div class="modal-head"><div><h3 id="bmModalTitle">添加站点</h3><div class="modal-sub">站点看板中的站点，可配置余额 / 到期时间等接口字段。</div></div></div>
       <div class="field"><label>名称 *</label><input class="input" id="bm_name" placeholder="站点名称"></div>
       <div class="field"><label>URL *</label><input class="input" id="bm_url" placeholder="https://example.com"></div>
 
@@ -1665,7 +1665,7 @@
         cardsEl.innerHTML = '';
         $('enabledLabel').style.display = 'none';
         $('disabledWrap').style.display = 'none';
-        showEmpty(emptyEl, { icon: 'shield', title: '尚未配置签到平台', text: '到「服务配置」添加账户后，这里会显示签到结果与钱包指标。', actions: [{ label: '前往服务配置', onclick: "switchView('configs')" }] });
+        showEmpty(emptyEl, { icon: 'shield', title: '还没有签到账户', text: '在「服务配置」添加账户后，这里会显示每个账户的签到结果和余额。', actions: [{ label: '＋ 添加账户', onclick: "switchView('configs'); $('addCfg').click()" }] });
         renderOverview();
         return;
       }
@@ -2160,7 +2160,7 @@
       const list = $('cfgList'), empty = $('cfgEmpty');
       $('cfgCount').textContent = `共 ${STATE.configs.length} 组`;
       $('cfgTabCount').textContent = STATE.configs.length ? String(STATE.configs.length) : '';
-      if (!STATE.configs.length) { list.innerHTML = ''; showEmpty(empty, { icon: 'shield', title: '暂无签到配置', text: '点击右上角「新增」添加第一组账户，或导入之前导出的 JSON。', actions: [{ label: '＋ 新增配置', onclick: "$('addCfg').click()" }] }); return; }
+      if (!STATE.configs.length) { list.innerHTML = ''; showEmpty(empty, { icon: 'shield', title: '还没有签到账户', text: '添加第一个账户（站点地址、用户 ID 和系统访问令牌），或导入之前导出的 JSON。', actions: [{ label: '＋ 添加账户', onclick: "$('addCfg').click()" }, { label: '导入', ghost: true, onclick: "$('importCfg').click()" }] }); return; }
       hideEmpty(empty);
       list.innerHTML = STATE.configs.map((c, i) => `
         <div class="cfg-row ${c.enabled ? '' : 'disabled'}" style="--hue:${hueOf(siteHost(c.base_url))}">
@@ -2252,7 +2252,7 @@
       editKey = idx >= 0 ? STATE.configs[idx].key : null;   // 打开时记下是谁：保存时下标若已换人就拒绝
       $('m_error').style.display = 'none';
       const isEdit = idx >= 0;
-      $('cfgModalTitle').textContent = isEdit ? '编辑配置' : '新增配置';
+      $('cfgModalTitle').textContent = isEdit ? '编辑签到账户' : '添加签到账户';
       const c = isEdit ? STATE.configs[idx] : { name: '', base_url: '', user_id: '', turnstile: '', enabled: true };
       $('m_name').value = c.name; $('m_base').value = c.base_url; $('m_uid').value = c.user_id;
       $('m_ts').value = c.turnstile || ''; $('m_enabled').checked = c.enabled !== false;
@@ -4895,6 +4895,16 @@
 
     function enabledFields(b) { return ((b && b.fields) || []).filter(f => f && f.enabled !== false); }
     // 更新时间紧凑显示：当天只显示时分，否则 月-日 时:分。
+    // 「5 天前」比「09-19 21:00」更快读出有多旧：只用在「较旧」这类要人判断新鲜度的地方，原值放 title。
+    function agoText(s) {
+      const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(s || ''));
+      if (!m) return '';
+      const mins = Math.floor((Date.now() - new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]).getTime()) / 60000);
+      if (mins < 1) return '刚刚';
+      if (mins < 60) return `${mins} 分钟前`;
+      if (mins < 1440) return `${Math.floor(mins / 60)} 小时前`;
+      return `${Math.floor(mins / 1440)} 天前`;
+    }
     function shortStamp(s) {
       const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(s || ''));
       if (!m) return String(s || '');
@@ -4941,7 +4951,7 @@
     function fieldItemHtml(f, primary) {
       const type = f.type || 'amount';
       const old = !f.error && f.value != null && f.value !== '' && fieldOld(f);
-      let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? '较旧 · ' : ''}${escapeHtml(shortStamp(f.updated_at))}</span>` : '';
+      let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? `较旧 · ${escapeHtml(agoText(f.updated_at) || shortStamp(f.updated_at))}` : escapeHtml(shortStamp(f.updated_at))}</span>` : '';
       let value = '', valueCls = '', extra = '';
       if (f.error) {
         value = `<span class="field-error" title="${escapeHtml(f.error)}">${escapeHtml(f.error)}</span>`;
@@ -5355,7 +5365,7 @@
       bmEditIdx = idx;
       bmEditKey = isEdit ? STATE.bookmarks[idx].key : null;
       $('bm_error').style.display = 'none';
-      $('bmModalTitle').textContent = isEdit ? '编辑站点' : '新增站点';
+      $('bmModalTitle').textContent = isEdit ? '编辑站点' : '添加站点';
       $('bm_name').value = b.name || '';
       $('bm_url').value = b.url || '';
       bmDraftFields = (b.fields || []).map(draftFromField);

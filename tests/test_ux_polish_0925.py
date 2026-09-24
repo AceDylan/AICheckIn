@@ -73,3 +73,12 @@ class UxPolishJsTest(unittest.TestCase):
             const row = enabledRowHtml({ name: '<b>x</b>', base_url: 'https://a.example', user_id: '1', enabled: true, metrics: {} }, 0);
             assert.ok(row.includes('checkinOne(0)') && row.includes('testOne(0)') && !row.includes('<b>x</b>'));
         """)
+
+    def test_stale_field_says_how_old_in_words(self):
+        self.run_js("""
+            const pad = (n) => String(n).padStart(2, '0');
+            const stamp = (ms) => { const d = new Date(Date.now() - ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`; };
+            assert.equal(agoText(stamp(5 * 86400000 + 60000)), '5 天前');
+            assert.equal(agoText(stamp(3 * 3600000 + 60000)), '3 小时前');
+            assert.equal(agoText('bogus'), '');
+        """)
