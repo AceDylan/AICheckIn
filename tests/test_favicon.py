@@ -10,10 +10,15 @@ import urllib.error
 import urllib.request
 
 from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早于 app 导入
-from app import app, favicon_candidates, favicon_origin, sniff_image_mime  # noqa: E402
+from app import app, favicon_candidates, favicon_fixed_scheme, favicon_origin, sniff_image_mime  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-png-body"
 ICO = b"\x00\x00\x01\x00" + b"fake-ico-body"
+# 仿 HaloWebUI 的 favicon.svg：默认黑色画法，深色模式下换成白色。
+SCHEME_SVG = (b'<svg width="500" height="500" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg"><style>'
+              b'.p { stroke: #171717; } .c { fill: #171717; }'
+              b'@media (prefers-color-scheme: dark) { .p { stroke: #ffffff; } .c { fill: #ffffff; } }'
+              b'</style><path class="p" d="M60 17 A43 43 0 1 1 17 60"/><circle class="c" cx="60" cy="60" r="13"/></svg>')
 
 
 class _FakeHTTPResponse(object):
@@ -403,6 +408,46 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_data(), ICO)
 
+    def test_svg_icon_is_served_in_its_light_drawing_only(self):
+        self._patch_http({
+            "https://demo.example/": (b'<head><link rel="icon" type="image/svg+xml" href="/favicon.svg"></head>', "text/html"),
+            "https://demo.example/favicon.svg": (SCHEME_SVG, "image/svg+xml"),
+        })
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "image/svg+xml")
+        body = resp.get_data()
+        self.assertNotIn(b"prefers-color-scheme", body)
+        self.assertIn(b"stroke: #171717", body)
+        # ETag 跟着实际下发的内容走：旧版下发的原图在浏览器里验证时不会被当成「没变」。
+        self.assertEqual(resp.headers["ETag"].strip('"'), __import__("hashlib").sha1(body).hexdigest())
+        # 磁盘缓存保留原图，改写只发生在下发时。
+        cached = app_module._favicon_cache_read("https://demo.example")
+        self.assertEqual(cached["data"], SCHEME_SVG)
+
+    def test_expired_icon_is_kept_when_the_site_is_down_at_refetch_time(self):
+        # 7 天到期那一刻站点恰好打不开：沿用旧图，而不是写一条失败缓存、让图标退成首字母 6 小时。
+        origin = "https://demo.example"
+        key = app_module._favicon_key(origin)
+        app_module.FAVICON_DIR.mkdir(parents=True, exist_ok=True)
+        (app_module.FAVICON_DIR / (key + ".bin")).write_bytes(PNG)
+        (app_module.FAVICON_DIR / (key + ".json")).write_text(json.dumps(
+            {"origin": origin, "ok": True, "mime": "image/png", "v": app_module.FAVICON_CACHE_VERSION,
+             "fetched_at": time.time() - app_module.FAVICON_OK_TTL - 60}), encoding="utf-8")
+        self._patch_http({})
+        resp = self.client.get("/api/favicon?u=https://demo.example/dash")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_data(), PNG)
+        self.assertTrue(self.calls, "到期后应当真的去重抓过")
+        meta = json.loads((app_module.FAVICON_DIR / (key + ".json")).read_text(encoding="utf-8"))
+        self.assertTrue(meta["ok"])
+        # 过一个失败有效期就再试，不必等满 7 天。
+        retry_in = meta["fetched_at"] + app_module.FAVICON_OK_TTL - time.time()
+        self.assertAlmostEqual(retry_in, app_module.FAVICON_FAIL_TTL, delta=30)
+        tried = list(self.calls)
+        self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").get_data(), PNG)
+        self.assertEqual(self.calls, tried, "沿用旧图期间直接命中缓存，不会每次请求都重抓")
+
     def test_failure_is_negatively_cached(self):
         self._patch_http({})
         first = self.client.get("/api/favicon?u=https://demo.example/dash")
@@ -412,6 +457,25 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         tried = list(self.calls)
         self.assertEqual(self.client.get("/api/favicon?u=https://demo.example/dash").status_code, 404)
         self.assertEqual(self.calls, tried, "失败结果应进负缓存，不要每次刷新都重抓")
+
+
+class SvgSchemeTest(unittest.TestCase):
+    """回归：Hub 里 HaloWebUI 的图标偶尔整块发白。它的 SVG 在深色模式下换成白色画法，而底板是按黑色画法配的浅色。"""
+
+    def test_dark_branch_never_matches_and_light_branch_always_does(self):
+        fixed = favicon_fixed_scheme(SCHEME_SVG)
+        self.assertNotIn(b"prefers-color-scheme", fixed)
+        self.assertIn(b"@media ((max-width: 0px) and (min-width: 1px)) { .p { stroke: #ffffff; }", fixed)
+        self.assertIn(b"stroke: #171717", fixed)
+        self.assertEqual(favicon_fixed_scheme(b"<svg><style>@media screen and ( Prefers-Color-Scheme : LIGHT ) {}</style></svg>"),
+                         b"<svg><style>@media screen and (min-width: 0px) {}</style></svg>")
+        # 取反写法：替换后仍是合法条件，not 照常取反（浅色分支恒命中）。
+        self.assertEqual(favicon_fixed_scheme(b"@media not (prefers-color-scheme: dark) {}"),
+                         b"@media not ((max-width: 0px) and (min-width: 1px)) {}")
+
+    def test_icons_without_scheme_rules_pass_through_untouched(self):
+        for data in (PNG, ICO, b"<svg><path fill='#000'/></svg>", b""):
+            self.assertIs(favicon_fixed_scheme(data), data)
 
 
 class FaviconUiTest(unittest.TestCase):
@@ -440,6 +504,22 @@ class FaviconUiTest(unittest.TestCase):
         # 已知失败的站点不再渲染 <img>，避免每次重绘都打一次 404。
         self.assertIn("FAVICON_MEMO.get(origin) !== 'fail'", self.html)
         self.assertIn("img.dataset.favicon", self.html)
+
+    def test_icon_rendering_does_not_follow_the_page_color_scheme(self):
+        rule = re.search(r"\.avatar-img\s*\{([^}]*)\}", self.css).group(1)
+        self.assertIn("color-scheme: light", rule)
+        self.assertIn("function faviconSrc(origin) { return '/api/favicon?u=' + encodeURIComponent(origin) + '&v=' + FAVICON_REV; }", self.html)
+
+    def test_system_theme_flip_remeasures_icon_plates(self):
+        self.assertIn("window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change'", self.html)
+        body = self.html[self.html.index("function remeasureIconTones()"):]
+        self.assertIn("ICON_TONE_MEMO.clear();", body[:600])
+        self.assertIn("markIconTone(img)", body[:600])
+
+    def test_failed_icon_gets_another_chance_later(self):
+        self.assertIn("if (state === 'fail') FAVICON_FAILED_AT.set(origin, Date.now());", self.html)
+        self.assertIn("const img = (origin && faviconWorthTrying(origin))", self.html)
+        self.assertNotIn("setInterval", self.html)
 
     def test_render_paths_kick_the_loader(self):
         self.assertGreaterEqual(self.html.count("pumpFavicons();"), 4)

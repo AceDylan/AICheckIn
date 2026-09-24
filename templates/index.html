@@ -785,10 +785,25 @@
     const FAVICON_INFLIGHT = new Set();
     const FAVICON_PARALLEL = 3;         // 与后端抓取并发对齐，别让一屏卡片把请求全堆上去
     const FAVICON_TIMEOUT_MS = 20000;   // 兜底：请求卡死时也要把并发额度还回来
+    // 失败不是永久的：起始页一开就是一整天，某次 Hub 重启、站点抖一下、首次抓取排队超时，
+    // 都不该让这个站点的图标在本页余下的时间里一直是首字母。过了这段时间，下一次重绘就再试一次
+    // （真的没有图标的站点，服务端的 404 自带半小时缓存，重试只是读一下浏览器缓存）。
+    const FAVICON_RETRY_MS = 10 * 60 * 1000;
+    const FAVICON_FAILED_AT = new Map();
+    // 服务端改了图标的下发内容（例如把 SVG 固定成浅色画法）就 +1：地址变了，浏览器里缓存的旧图随之作废。
+    const FAVICON_REV = 2;
     function siteOrigin(u) {
       try { return new URL(safeUrl(u)).origin; } catch (_) { return ''; }
     }
-    function faviconSrc(origin) { return '/api/favicon?u=' + encodeURIComponent(origin); }
+    function faviconSrc(origin) { return '/api/favicon?u=' + encodeURIComponent(origin) + '&v=' + FAVICON_REV; }
+    function faviconWorthTrying(origin) {
+      if (FAVICON_MEMO.get(origin) !== 'fail') return true;
+      const at = FAVICON_FAILED_AT.get(origin);
+      if (!at || Date.now() - at < FAVICON_RETRY_MS) return false;
+      FAVICON_MEMO.delete(origin);
+      FAVICON_FAILED_AT.delete(origin);
+      return true;
+    }
     // 上传图片保留为独立的回退层，自动图标恢复后立即覆盖，之后再次失败仍可回退。
     function siteAvatarHtml(name, url, cls, emoji, customIcon) {
       const text = emoji ? escapeHtml(emoji) : escapeHtml(siteInitial(name, url));
@@ -797,7 +812,7 @@
         ? `<img class="avatar-img avatar-upload" src="${escapeHtml(customIcon)}" alt="" decoding="async" onload="uploadedIconReady(this)" onerror="this.remove()">` : '';
       // 不用 loading="lazy"：未激活的视图是 display:none，浏览器会把里面的懒加载图片无限期挂起，
       // 反而卡死下面的限流队列。并发由 drainFavicons 自己控制。
-      const img = (origin && FAVICON_MEMO.get(origin) !== 'fail')
+      const img = (origin && faviconWorthTrying(origin))
         ? `<img class="avatar-img" data-favicon="${escapeHtml(origin)}" alt="" decoding="async">`
         : '';
       return `<span class="${cls || 'site-avatar'}${emoji ? ' is-emoji' : ''}" aria-hidden="true">${img}${uploaded}<span class="avatar-text">${text}</span></span>`;
@@ -814,6 +829,8 @@
     //   多数偏亮（与浅色底板对比不到 1.5:1）→ 'light'，换深色底板；多数偏暗 → 'dark'，换浅色底板；
     //   彩色图标、自带底色铺满的图标 → ''，保持默认底板。
     // 只换底板，不对图标做反色或滤镜，图标颜色保持原样。图标同源（/api/favicon 或 data:），画布不会被污染。
+    // 量一次就按站点记住，前提是同一张图在哪儿画都一样：会随深浅色换画法的 SVG 图标，服务端下发时已固定成浅色画法，
+    // 样式里 .avatar-img 也钉了 color-scheme: light（见 app.py 的 favicon_fixed_scheme）。
     const ICON_TONE_PX = 24;
     const ICON_LIGHT_LUM = 0.6;          // 浅色底板 #f4f6fa 的亮度约 0.92：(0.92 + 0.05) / (0.6 + 0.05) ≈ 1.5
     const ICON_DARK_LUM = 0.1;           // 深色面的亮度约 0.03：(0.1 + 0.05) / (0.03 + 0.05) ≈ 1.9
@@ -862,6 +879,18 @@
       avatar.classList.toggle('icon-light', tone === 'light');
       avatar.classList.toggle('icon-dark', tone === 'dark');
     }
+    // 保险：系统切换深浅色时，已显示的图标重新量一次底板。Safari 里 SVG 图标只看系统外观、不看 color-scheme；
+    // 浏览器里也可能还缓存着服务端改写前的旧图——这两种情况下图标会当场换画法，底板要跟上，不必等用户刷新。
+    function remeasureIconTones() {
+      ICON_TONE_MEMO.clear();
+      document.querySelectorAll('img.avatar-img.is-ready').forEach(img => {
+        const auto = img.classList.contains('avatar-upload') ? img.previousElementSibling : null;
+        if (!(auto && auto.classList.contains('is-ready'))) markIconTone(img);
+      });
+    }
+    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      (window.requestAnimationFrame || ((fn) => fn()))(remeasureIconTones);
+    });
     // 上传的备用图片加载完成：自动图标已经盖在上面时，底板听自动图标的，不用再量。
     function uploadedIconReady(img) {
       img.classList.add('is-ready');
@@ -876,6 +905,7 @@
         settled = true;
         clearTimeout(timer);
         if (state) FAVICON_MEMO.set(origin, state);
+        if (state === 'fail') FAVICON_FAILED_AT.set(origin, Date.now());
         if (state === 'ok') { img.classList.add('is-ready'); markIconResolution(img); markIconTone(img); } else img.remove();
         FAVICON_INFLIGHT.delete(img);
         drainFavicons();

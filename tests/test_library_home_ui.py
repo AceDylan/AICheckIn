@@ -449,6 +449,11 @@ class LibraryHomeUiTest(unittest.TestCase):
             handlers.error();
             assert.ok(removed);
             assert.equal(FAVICON_MEMO.get(bad.dataset.favicon), 'fail');
+            // 失败只挡一阵子：刚失败时不再渲染 <img>，过了重试间隔，下一次重绘又会带上它。
+            assert.ok(!siteAvatarHtml('Bad', 'https://failed.example', 'link-avatar').includes('data-favicon='));
+            FAVICON_FAILED_AT.set('https://failed.example', Date.now() - FAVICON_RETRY_MS - 1);
+            assert.ok(siteAvatarHtml('Bad', 'https://failed.example', 'link-avatar').includes('data-favicon="https://failed.example"'));
+            assert.equal(FAVICON_MEMO.has('https://failed.example'), false);
         """)
 
     def test_engine_button_opens_a_menu_instead_of_cycling(self):

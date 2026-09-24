@@ -4385,6 +4385,25 @@ def _favicon_fetch(origin, proxy):
     return None, ""
 
 
+# SVG 图标常带「深色模式换白色画法」的分支：@media (prefers-color-scheme: dark) { … fill: #fff }。
+# 放进 <img> 以后，这个分支看的是页面此刻的深浅色（Chromium 取 <img> 自己的 color-scheme，Safari 取系统），
+# 而本站按「一张图一种底板」量明暗（前端 markIconTone，按站点记住）——同一张图在壁纸首页、深色主题下是白的，
+# 在浅色页面、系统切回白天后是黑的，于是黑图配的浅色底板上出现一张白图，整块发白、看不清。
+# 下发时把这类条件写死成「浅色」：dark 分支永不命中、light 分支恒命中，图标在任何页面、任何时刻都是同一种画法，
+# 底板按它量一次就一直对。只改媒体条件本身，其余内容原样；磁盘缓存里存的仍是原图。
+_SVG_SCHEME_RE = re.compile(rb"\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)", re.I)
+_SVG_SCHEME_NEVER = b"((max-width: 0px) and (min-width: 1px))"   # 合法且恒假，套在 not 里也照常取反
+_SVG_SCHEME_ALWAYS = b"(min-width: 0px)"
+
+
+def favicon_fixed_scheme(data):
+    """把 SVG 图标里的 prefers-color-scheme 条件固定成浅色（见上）。不含这类条件的原样返回。"""
+    if not data or b"prefers-color-scheme" not in data.lower():
+        return data
+    return _SVG_SCHEME_RE.sub(
+        lambda m: _SVG_SCHEME_NEVER if m.group(1).lower() == b"dark" else _SVG_SCHEME_ALWAYS, data)
+
+
 def _favicon_key(origin):
     return hashlib.sha1(origin.encode("utf-8")).hexdigest()
 
@@ -4393,7 +4412,8 @@ def _favicon_cache_read(origin, allow_outdated=False):
     """命中且未过期返回 {'ok': bool, 'data':, 'mime':}；未命中/过期返回 None。
 
     旧选图策略留下的条目（v 不等于 FAVICON_CACHE_VERSION）默认当作未命中；
-    allow_outdated=True 时照常返回，供重抓失败后兜底。"""
+    allow_outdated=True 时版本和有效期都不看，只要磁盘上还有一张好图就返回，供重抓失败后兜底：
+    站点恰好在 7 天到期那一刻打不开（重启、升级、网络抖一下），不能因此让图标退成首字母 6 小时。"""
     key = _favicon_key(origin)
     try:
         meta = json.loads((FAVICON_DIR / (key + ".json")).read_text(encoding="utf-8"))
@@ -4408,7 +4428,9 @@ def _favicon_cache_read(origin, allow_outdated=False):
     except (TypeError, ValueError):
         return None
     ok = bool(meta.get("ok"))
-    if age < 0 or age > (FAVICON_OK_TTL if ok else FAVICON_FAIL_TTL):
+    if allow_outdated and not ok:
+        return None
+    if not allow_outdated and (age < 0 or age > (FAVICON_OK_TTL if ok else FAVICON_FAIL_TTL)):
         return None
     if not ok:
         return {"ok": False, "data": None, "mime": ""}
@@ -4419,15 +4441,21 @@ def _favicon_cache_read(origin, allow_outdated=False):
     return {"ok": True, "data": data, "mime": str(meta.get("mime") or "image/png")}
 
 
-def _favicon_cache_write(origin, data, mime):
-    """写入缓存；失败（例如数据目录只读）只影响命中率，不影响接口可用性。"""
+def _favicon_cache_write(origin, data, mime, retry_after=None):
+    """写入缓存；失败（例如数据目录只读）只影响命中率，不影响接口可用性。
+
+    retry_after（秒）：这份缓存多久之后就该重抓，默认按成功 / 失败各自的有效期。
+    重抓失败、沿用旧图时传 FAVICON_FAIL_TTL——旧图照常用，但不必再等满 7 天才试下一次。"""
     key = _favicon_key(origin)
+    fetched_at = time.time()
+    if data and retry_after is not None:
+        fetched_at -= max(0, FAVICON_OK_TTL - retry_after)
     try:
         FAVICON_DIR.mkdir(parents=True, exist_ok=True)
         if data:
             (FAVICON_DIR / (key + ".bin")).write_bytes(data)
         (FAVICON_DIR / (key + ".json")).write_text(
-            json.dumps({"origin": origin, "ok": bool(data), "mime": mime, "fetched_at": time.time(),
+            json.dumps({"origin": origin, "ok": bool(data), "mime": mime, "fetched_at": fetched_at,
                         "v": FAVICON_CACHE_VERSION}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -4468,23 +4496,27 @@ def api_favicon():
             if hit is None:
                 with _favicon_fetch_slots:
                     data, mime = _favicon_fetch(origin, proxy)
+                retry_after = None
                 if not data:
-                    # 升级选图策略后的重抓没成功：旧图还在有效期内就继续用它。
+                    # 重抓没成功（升级选图策略后、或 7 天到期时站点恰好打不开）：磁盘上还有好图就继续用它，
+                    # 过一个失败有效期再试，而不是把图标换成首字母。
                     stale = _favicon_cache_read(origin, allow_outdated=True)
                     if stale and stale.get("ok"):
                         data, mime = stale["data"], stale["mime"]
-                _favicon_cache_write(origin, data, mime)
+                        retry_after = FAVICON_FAIL_TTL
+                _favicon_cache_write(origin, data, mime, retry_after)
                 hit = {"ok": bool(data), "data": data, "mime": mime}
     if not hit.get("ok"):
         return _favicon_missing()
-    resp = app.response_class(hit["data"], mimetype=hit["mime"])
+    body = favicon_fixed_scheme(hit["data"]) if hit["mime"] == "image/svg+xml" else hit["data"]
+    resp = app.response_class(body, mimetype=hit["mime"])
     resp.headers["Cache-Control"] = "public, max-age=86400"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     # 内容来自第三方（SVG 可内嵌脚本）：直接访问该地址时用 CSP 关死脚本与外部加载。
     resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     resp.headers["Content-Disposition"] = "inline"
     # 一天的新鲜期过后浏览器会回来重新验证：图标没变就是一个 304，首页上百个图标不必每天整份重下一遍。
-    resp.set_etag(hashlib.sha1(hit["data"]).hexdigest())
+    resp.set_etag(hashlib.sha1(body).hexdigest())
     return resp.make_conditional(request)
 
 
