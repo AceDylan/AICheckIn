@@ -57,7 +57,8 @@
   --radius-lg: 16px;
   --radius-xl: 20px;
   --sidebar-w: 252px;
-  --ease: cubic-bezier(.2, .8, .2, 1);
+  --ease: cubic-bezier(.23, 1, .32, 1);          /* 强 ease-out：进出场、悬停、按压都用它；UI 里不用 ease-in */
+  --ease-in-out: cubic-bezier(.77, 0, .175, 1);   /* 已在屏上的东西挪位置 */
   --font: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
 }
@@ -329,7 +330,6 @@ html[data-theme="light"] .theme-toggle .ic-sun { display: block; }
   transition: background-color .15s var(--ease), border-color .15s var(--ease), box-shadow .15s var(--ease), color .15s var(--ease), transform .1s var(--ease);
 }
 .btn:hover { background: color-mix(in srgb, var(--primary) 86%, var(--bg)); }
-.btn:active { transform: scale(.98); }
 .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn.ghost {
   background: var(--surface); color: var(--text); border-color: var(--border-strong);
@@ -377,13 +377,17 @@ input[type="file"]::file-selector-button:hover { background: var(--surface-hover
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: 0 0 42px; }
 .switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; inset: 0; border-radius: 999px; background: var(--border-strong); cursor: pointer; transition: background .18s cubic-bezier(0.16, 1, 0.3, 1); }
-.slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.14); transition: transform .18s cubic-bezier(0.16, 1, 0.3, 1); }
+.slider { position: absolute; inset: 0; border-radius: 999px; background: var(--border-strong); cursor: pointer; transition: background .18s var(--ease); }
+.slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.14); transition: transform .2s var(--ease), width .2s var(--ease); }
 .switch input:checked + .slider { background: var(--accent-strong); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 .switch.sm { width: 34px; height: 20px; flex-basis: 34px; }
 .switch.sm .slider::before { width: 14px; height: 14px; }
 .switch.sm input:checked + .slider::before { transform: translateX(14px); }
+.switch:active .slider::before { width: 23px; }
+.switch:active input:checked + .slider::before { transform: translateX(13px); }
+.switch.sm:active .slider::before { width: 18px; }
+.switch.sm:active input:checked + .slider::before { transform: translateX(10px); }
 .switch-row { display: flex; align-items: center; gap: 10px; }
 .switch-row .note { margin: 0; }
 .segmented { display: flex; min-height: 38px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
@@ -407,7 +411,7 @@ details > summary::-webkit-details-marker { display: none; }
 
 /* ---------- 面板 ---------- */
 .panel {
-  padding: 22px 24px; background: var(--surface); border: 1px solid var(--border);
+  padding: 24px; background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); box-shadow: var(--shadow-1), var(--highlight);
 }
 .panel + .panel { margin-top: 16px; }
@@ -424,7 +428,7 @@ details > summary::-webkit-details-marker { display: none; }
 .bookmark-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .bookmark-card {
   position: relative; min-width: 0; min-height: 210px;
-  display: flex; flex-direction: column; padding: 18px;
+  display: flex; flex-direction: column; padding: 20px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1), var(--highlight);
   transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
@@ -506,9 +510,9 @@ details > summary::-webkit-details-marker { display: none; }
   background: var(--surface-2); box-shadow: var(--shadow-pop);
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   overscroll-behavior: contain;
-  animation: modal-in .14s var(--ease) both;
+  transform-origin: bottom right; animation: pop-in .16s var(--ease) both;
 }
-.menu-popover.drop-down { bottom: auto; top: calc(100% + 6px); }
+.menu-popover.drop-down { bottom: auto; top: calc(100% + 6px); transform-origin: top right; }
 .home-tile.menu-open, .bookmark-card.menu-open, .link-card.menu-open { z-index: 25; }
 .menu-popover button {
   width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: 8px;
@@ -774,7 +778,9 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   animation: modal-in .22s var(--ease) both;
 }
 .modal.modal-wide { width: min(100%, 620px); }
-@keyframes modal-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+/* 菜单 / 下拉：用独立的 scale 属性，不和元素自己的 transform 打架。 */
+@keyframes pop-in { from { opacity: 0; scale: .96; } to { opacity: 1; scale: 1; } }
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .modal h3 { font-size: 17px; font-weight: 620; letter-spacing: -.015em; }
 .modal .modal-sub { margin-top: 3px; color: var(--text-3); font-size: 12px; }
@@ -842,7 +848,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   border-radius: 12px; background: var(--toast-bg); border: 1px solid var(--border-strong);
   color: var(--text); font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  animation: toast-in .2s cubic-bezier(0.16, 1, 0.3, 1); pointer-events: auto;
+  animation: toast-in .2s var(--ease); pointer-events: auto;
 }
 .toast::before { content: ""; width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--text-3); }
 .toast.ok::before { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 22%, transparent); }
@@ -922,7 +928,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
   overflow: hidden; border: 1px solid var(--border-strong); border-radius: var(--radius-xl);
   background: var(--surface); box-shadow: var(--shadow-pop);
   backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
-  animation: modal-in .2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: modal-in .2s var(--ease) both;
 }
 .omni-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
 .omni-head .ic { flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-3); }
@@ -1036,7 +1042,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-engine-menu {
   position: absolute; top: calc(100% + 10px); left: -2px; z-index: 5; min-width: 176px; padding: 6px;
   border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2); box-shadow: var(--shadow-pop);
-  animation: modal-in .14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top left; animation: pop-in .16s var(--ease) both;
 }
 .home-engine-option {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 38px; padding: 0 10px 0 12px;
@@ -1148,7 +1154,8 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .tile-menu { position: static; }
 .tile-menu > summary { position: absolute; top: 2px; right: 8px; width: 24px; height: 24px; font-size: 13px; opacity: 0; transition: opacity .14s ease; }
 .home-tile:hover .tile-menu > summary, .tile-menu > summary:focus-visible, .tile-menu[open] > summary { opacity: 1; }
-.tile-menu .menu-popover { width: 152px; right: auto; left: calc(50% - 76px); }
+.tile-menu .menu-popover { width: 152px; right: auto; left: calc(50% - 76px); transform-origin: bottom center; }
+.tile-menu .menu-popover.drop-down { transform-origin: top center; }
 @media (hover: none) { .tile-menu { display: none; } }
 
 /* 监控小组件（2×1）：带余额 / 到期字段的看板站点。这是真信息，值得比普通图标多占一格。
@@ -1339,7 +1346,7 @@ html.wall-on .link-card { backdrop-filter: none; -webkit-backdrop-filter: none; 
 
 /* 毛玻璃：搜索框与导航（页头 .view-header 自带 blur，跟着半透明的 --surface 自然成玻璃）。 */
 html.wall-on .home-search-bar, html.wall-on .sidebar {
-  background: rgba(18, 16, 13, .5);
+  background: rgba(18, 16, 13, .58);
   backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
 }
 html.wall-on .home-search-bar { border-color: rgba(255, 255, 255, .24); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
@@ -1375,7 +1382,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 }
 
 /* 图标栏：把 252px 侧栏收成一条细栏，全部页面一致（切页不再来回伸缩）。每个按钮都带 title / aria-label 当提示。 */
-.app-shell { transition: grid-template-columns .22s cubic-bezier(0.16, 1, 0.3, 1); }
+.app-shell { transition: grid-template-columns .22s var(--ease); }
 .nav-toggle-arrow { transform-box: fill-box; transform-origin: center; transition: transform .2s ease; }
 @media (min-width: 761px) {
   html.nav-rail { --sidebar-w: 72px; }
@@ -1503,7 +1510,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .omni-foot { padding-bottom: calc(9px + env(safe-area-inset-bottom)); }
   .omni-foot span:not(.omni-foot-meta) { display: none; }
   .modal-mask { align-items: flex-end; padding: 0; }
-  .modal, .modal.modal-wide { width: 100%; max-height: 90vh; border-radius: 24px 24px 0 0; border-bottom: 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; animation: sheet-in .2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .modal, .modal.modal-wide { width: 100%; max-height: 90vh; border-radius: 24px 24px 0 0; border-bottom: 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; animation: sheet-in .2s var(--ease) both; }
   @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
   .bm-fields-block, .fields-more-grid { grid-template-columns: 1fr; }
   .field-item.is-primary { grid-column: auto; }
@@ -1750,7 +1757,7 @@ label.set-row { cursor: pointer; }
 .deck-tab:focus-visible, .deck-icon-btn:focus-visible, .deck-add:focus-visible, .deck-link:focus-visible, .cal-next-main:focus-visible, .cal-chip:focus-visible, .cal-today:focus-visible, .expiry-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .deck-cards { display: flex; flex-direction: column; }
 .deck-card {
-  padding: 14px 16px 14px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface);
+  padding: 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface);
   box-shadow: var(--shadow-1), var(--highlight);
 }
 .deck-card:not(.is-open) { display: none; }
@@ -1984,7 +1991,7 @@ a.expiry-name:hover { color: var(--accent); }
 .todo-input:focus, .todo-edit:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .todo-add { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 10px; background: var(--primary); color: var(--primary-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16); cursor: pointer; transition: filter .14s ease, transform .14s ease; }
 .todo-add:hover { filter: brightness(1.08); }
-.todo-add:active { transform: scale(.96); }
+.todo-add:active { scale: .96; }
 .todo-add .ic { width: 17px; height: 17px; stroke-width: 2.4; }
 .todo-list { position: relative; max-height: 264px; margin: 8px -6px 0; padding: 0 2px; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; }
 .todo-item { display: flex; align-items: flex-start; gap: 10px; padding: 7px 6px; border-radius: 10px; transition: background .14s ease; }
@@ -2046,7 +2053,7 @@ html.wall-on .home-todo { --todo-drag-bg: #2a2723; }
 .todo-sort-menu {
   position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 148px; padding: 5px;
   border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-solid, var(--surface-2)); box-shadow: var(--shadow-pop);
-  animation: modal-in .12s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top left; animation: pop-in .16s var(--ease) both;
 }
 .todo-sort-menu button {
   display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 0 12px 0 9px; border: 0; border-radius: 8px;
@@ -2122,3 +2129,46 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   .todo-list { max-height: 252px; }
 }
 @media (prefers-reduced-motion: reduce) { .todo-done > summary::before, .todo-add, .todo-grip { transition: none; } .todo-sort-menu { animation: none; } }
+
+/* ==========================================================================
+   交互细节（2026-09，v5 之后）
+   参考：Emil Kowalski 的动效规范（按压 97%、160ms 强 ease-out、弹出层从触发点长出）、
+   Vercel Geist（先靠 1px 边分层，阴影留给浮起的东西；设置页左标题右内容）、Apple 2026 版 Liquid Glass。
+   ========================================================================== */
+/* 按压反馈：可按的小控件按下时缩到 97%。用独立的 scale 属性，不覆盖各自已有的 transform（悬停上浮、旋转箭头…）。
+   整行网址、整张卡片这类大块不缩——大面积一缩像整片在晃。 */
+:is(.btn, .icon-btn, .chip, .deck-tab, .tab, .segmented button, .home-view-toggle button, .mode-toggle button,
+    .home-engine-btn, .home-tools-toggle, .cal-chip, .alert-chip, .lock-pill, .omni-trigger, .deck-add, .back-link) {
+  transition: background-color .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease),
+              box-shadow .15s var(--ease), opacity .15s var(--ease), filter .15s var(--ease), scale .16s var(--ease);
+}
+:is(.btn, .icon-btn, .chip, .deck-tab, .tab, .segmented button, .home-view-toggle button, .mode-toggle button,
+    .home-engine-btn, .home-tools-toggle, .cal-chip, .alert-chip, .lock-pill, .omni-trigger, .deck-add, .back-link):active:not(:disabled) { scale: .97; }
+.tile-link:active .tile-avatar { scale: .95; }
+@media (prefers-reduced-motion: reduce) { :is(.btn, .icon-btn, .chip, .deck-tab, .tab, .tile-link .tile-avatar):active { scale: 1; } }
+
+/* 设置页（桌面、未开壁纸）：不再是一格一格的卡片墙，而是一节一节往下排——左边小标题，右边内容，节与节之间一条细线。
+   宽度收在 1040px 以内，读起来是一条线；开了壁纸仍用玻璃卡片（字不能直接压在画面上），手机上仍是卡片。 */
+@media (min-width: 761px) {
+  html:not(.wall-on) .settings-grid { grid-template-columns: minmax(0, 1fr); gap: 0; max-width: 1040px; }
+  html:not(.wall-on) .settings-grid .panel { padding: 28px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; }
+  html:not(.wall-on) .settings-grid .panel:first-child { padding-top: 6px; border-top: 0; }
+}
+@media (min-width: 1024px) {
+  html:not(.wall-on) .settings-grid .panel { display: grid; grid-template-columns: 220px minmax(0, 1fr); column-gap: 48px; align-items: start; }
+  html:not(.wall-on) .settings-grid .panel > * { grid-column: 2; min-width: 0; }
+  html:not(.wall-on) .settings-grid .panel > .panel-title {
+    grid-column: 1; grid-row: 1 / span 40; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 12px;
+    min-height: 0; margin: 0; padding-top: 4px; font-size: 15px;
+  }
+}
+
+/* 弹窗底部的操作条贴住弹窗底边：内容再长，「保存 / 取消」也一直看得见；浅一档的底 + 一条细线，和正文分开。 */
+.modal > .modal-actions:last-child {
+  position: sticky; bottom: 0; z-index: 2;
+  margin: 22px -24px -24px; padding: 14px 24px;
+  border-top: 1px solid var(--border); background: var(--surface-2);
+}
+@media (width <= 760px) {
+  .modal > .modal-actions:last-child { margin-bottom: calc(-20px - env(safe-area-inset-bottom)); padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+}

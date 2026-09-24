@@ -5712,7 +5712,7 @@
       $('schedStatus').textContent = status;
 
       // 管理密码面板
-      $('adminPanel').style.display = STATE.admin_required ? 'block' : 'none';
+      $('adminPanel').style.display = STATE.admin_required ? '' : 'none';   // '' = 交回样式表（设置页分栏时它是 grid，不是 block）
       if (STATE.admin_required) {
         const unlocked = STATE.admin_unlocked;
         $('adminStatus').innerHTML = unlocked
