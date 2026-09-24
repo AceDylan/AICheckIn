@@ -914,7 +914,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 
 /* ---------- Toast ---------- */
 /* 拖链接进来收藏：整页一层淡遮罩 + 中间一张虚线卡片，说清楚松手会发生什么、加到哪个分组。 */
-.drop-hint { position: fixed; inset: 0; z-index: 98; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.drop-hint { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
 .drop-hint[hidden] { display: none; }
 .drop-card { display: grid; justify-items: center; gap: 8px; min-width: min(420px, 100%); padding: 36px 40px; border: 2px dashed var(--border-strong); border-radius: 22px; background: var(--surface); box-shadow: var(--shadow-pop); color: var(--text); text-align: center; pointer-events: none; animation: toast-in .16s var(--ease); }
 .drop-card .ic { width: 28px; height: 28px; stroke-width: 1.8; color: var(--accent); }

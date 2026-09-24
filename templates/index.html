@@ -5680,11 +5680,21 @@
     }
     async function moveLinkTo(gid, lid, target) {
       if (!guardAdmin()) return;
+      const from = findGroup(gid), fromName = from ? from.name : gid, order = from ? (from.links || []).map(l => l.id) : [];
       const data = await linkApi(`/api/link_groups/${gid}/links/${lid}`, 'PUT', { group: target });
       if (!data.ok) { toast(data.error || '移动失败', 'err'); return; }
       const t = findGroup(target);
       renderLibrary();
-      toast(`已移到「${t ? t.name : target}」`, 'ok');
+      // 从一长串分组里点错一项很常见：提示条上给「撤销」，挪回原分组、原来的位置。
+      const close = toastUndo(`已移到「${t ? t.name : target}」`, async () => {
+        const back = await linkApi(`/api/link_groups/${target}/links/${lid}`, 'PUT', { group: gid });
+        if (!back.ok) { toast(back.error || '撤销失败', 'err'); return; }
+        const g = findGroup(gid), now = g ? (g.links || []).map(l => l.id) : [];
+        if (now.length === order.length && order.every(id => now.includes(id))) await linkApi(`/api/link_groups/${gid}/links/reorder`, 'POST', { order });
+        renderLibrary();
+        toast(`已移回「${fromName}」`, 'ok');
+      });
+      setTimeout(close, UNDO.ms);
     }
     async function deleteLink(gid, lid) {
       if (!guardAdmin()) return;

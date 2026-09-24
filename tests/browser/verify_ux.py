@@ -178,9 +178,13 @@ def move_menu(b):
     check("分组多时「移到」收成一项「移到分组」，不再平铺", st["groups"] > 4 and st["flat"] == 0 and st["sub"], st)
     page.locator("#linkList details.action-menu[open] .menu-sub > summary").click(); page.wait_for_timeout(200)
     target = page.evaluate("() => STATE.link_groups[1].name")
+    orig = page.evaluate("() => STATE.link_groups[0].links.map(l => l.id)")
     shot(page, "U3-move-submenu")
     page.locator("#linkList details.action-menu[open] .menu-sub-list button", has_text=target).first.click(); page.wait_for_timeout(600)
     check("点开后选分组即移动", page.locator(".toast", has_text="已移到「%s」" % target).count() == 1)
+    page.locator(".toast.has-action .toast-action").first.click(); page.wait_for_timeout(900)
+    after = page.evaluate("() => [STATE.link_groups[0].links.map(l => l.id), STATE.link_groups[1].links.map(l => l.id)]")
+    check("移动后点「撤销」：回到原分组、原来的位置", after[0] == orig and orig[0] not in after[1], (orig[:3], after[0][:3]))
     ctx.close()
 
 
