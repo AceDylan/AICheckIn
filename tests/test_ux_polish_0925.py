@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+"""0925 体验打磨：签到中心分段标签、命令面板里的页面 / 命令、小组件到期时间不再被截断。"""
+import unittest
+from pathlib import Path
+
+from tests import test_library_home_ui as home_ui
+from tests.test_script_boot import NODE, TEMPLATE
+
+CSS = Path(TEMPLATE).parent.parent / 'static' / 'app-v3.css'
+
+
+class CheckinTabsMarkupTest(unittest.TestCase):
+    def test_tabs_are_one_segmented_nav_and_subpages_have_no_back_link(self):
+        html = Path(TEMPLATE).read_text()
+        self.assertIn('<nav class="segmented checkin-tabs" aria-label="签到中心">', html)
+        self.assertNotIn('返回签到概览', html)
+        self.assertNotIn('workspace-subheader', html)
+        # 内页自己的操作都在标签那一行，按内页切换显示。
+        for act in ('checkinActOverview', 'checkinActConfigs', 'checkinActHistory'):
+            self.assertIn(f'id="{act}"', html)
+        css = CSS.read_text()
+        self.assertNotIn('.back-link', css)
+        self.assertIn('.home-list.is-tiles .home-section .section-label::after { order: 3; }', css)
+
+
+@unittest.skipIf(NODE is None, '未安装 node')
+class UxPolishJsTest(unittest.TestCase):
+    run_js = home_ui.LibraryHomeUiTest.run_js
+
+    def test_current_checkin_tab_is_marked_and_actions_follow_it(self):
+        self.run_js("""
+            switchView('checkin/configs');
+            assert.deepEqual([$('checkinActOverview').hidden, $('checkinActConfigs').hidden, $('checkinActHistory').hidden], [true, false, true]);
+            switchView('checkin');
+            assert.deepEqual([$('checkinActOverview').hidden, $('checkinActConfigs').hidden, $('checkinActHistory').hidden], [false, true, true]);
+        """)
+
+    def test_palette_lists_pages_and_commands_only_after_typing(self):
+        self.run_js("""
+            assert.ok(!omniSearch('').some(i => i.kind === 'command'));
+            const titles = (q) => omniSearch(q).filter(i => i.kind === 'command').map(i => i.title);
+            assert.ok(titles('签到').includes('签到中心') && titles('签到').includes('运行全部签到'));
+            assert.equal(omniSearch('设置')[0].title, '系统设置');
+            assert.ok(titles('theme').length === 1 && /^切换到/.test(titles('theme')[0]));
+            // 跑一条命令：关掉面板、切到对应页面。
+            omniOpen(omniSearch('运行记录').find(i => i.kind === 'command'));
+            assert.equal(currentViewName(), 'history');
+            // 没有编辑权限时，签到 / 添加这类命令根本不出现。
+            STATE.admin_required = true; STATE.admin_unlocked = false;
+            assert.deepEqual(titles('签到'), []);
+            assert.deepEqual(titles('添加网址'), []);
+            assert.ok(titles('设置').includes('系统设置'));
+        """)
+
+    def test_widget_time_value_splits_number_from_words(self):
+        self.run_js("""
+            const now = Date.now() / 1000;
+            const site = (fields) => ({ name: 'S', url: 'https://s.example', fields: fields.map((f, k) => Object.assign({ id: 'f' + k, enabled: true }, f)) });
+            let w = siteWidgetParts(site([{ label: '到期', type: 'time', value: 'x', raw: now - 16 * 3600 - 60 }]));
+            assert.deepEqual([w.value, w.unit, w.valueCls], ['16', '小时前过期', ' is-past']);
+            w = siteWidgetParts(site([{ label: '到期', type: 'time', value: 'x', raw: now + 70 * 86400 }]));
+            assert.deepEqual([w.value, w.unit, w.valueCls], ['2', '个月后到期', '']);
+        """)

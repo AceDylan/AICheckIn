@@ -352,10 +352,15 @@
         <section class="view" id="view-checkin">
           <div class="view-header checkin-header">
             <div><div class="eyebrow">日常维护</div><h1>签到中心</h1><p>管理签到账户，查看执行结果，让日常维护更轻松。</p></div>
-            <div class="header-actions checkin-actions" aria-label="签到中心工具">
-              <button type="button" class="btn ghost checkin-tool" data-checkin-page="configs" aria-controls="view-configs" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>服务配置</button>
-              <button type="button" class="btn ghost checkin-tool" data-checkin-page="history" aria-controls="view-history" aria-pressed="false"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>运行记录</button>
-              <button type="button" class="btn" id="runAllCheckin" onclick="runCheckin()"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 10 7-10 7z"/></svg>运行全部签到</button>
+            <div class="checkin-bar">
+              <nav class="segmented checkin-tabs" aria-label="签到中心">
+                <button type="button" class="checkin-tool" data-checkin-page="overview" aria-controls="checkinOverview"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h4l2.5-6 3 11 2.5-5H20"/></svg>概览</button>
+                <button type="button" class="checkin-tool" data-checkin-page="configs" aria-controls="view-configs"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>服务配置<span class="seg-count" id="cfgTabCount"></span></button>
+                <button type="button" class="checkin-tool" data-checkin-page="history" aria-controls="view-history"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>运行记录</button>
+              </nav>
+              <div class="header-actions checkin-actions" id="checkinActOverview"><button type="button" class="btn" id="runAllCheckin" onclick="runCheckin()"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 10 7-10 7z"/></svg>运行全部签到</button></div>
+              <div class="header-actions checkin-actions" id="checkinActConfigs" hidden><button class="btn ghost" id="exportCfg">导出 JSON</button><button class="btn ghost" id="importCfg">导入</button><button class="btn" id="addCfg">＋ 新增账户</button></div>
+              <div class="header-actions checkin-actions" id="checkinActHistory" hidden><button class="btn ghost" id="refreshHist">刷新记录</button></div>
             </div>
           </div>
           <section class="checkin-panel" id="checkinOverview" aria-label="签到概览">
@@ -368,21 +373,13 @@
             <div id="empty" class="empty-state" style="display:none"></div>
           </section>
           <section class="checkin-panel" id="view-configs" aria-label="服务配置" hidden>
-            <div class="workspace-subheader">
-              <div><button type="button" class="back-link" data-checkin-page="overview">← 返回签到概览</button><h2>服务配置</h2><p>管理签到账户、连接凭证与可用状态。</p></div>
-              <div class="header-actions"><button class="btn ghost sm" id="exportCfg">导出 JSON</button><button class="btn ghost sm" id="importCfg">导入</button><button class="btn sm" id="addCfg">＋ 新增</button></div>
-            </div>
             <div class="panel">
               <div class="panel-title">配置组 <span class="sub" id="cfgCount"></span></div>
               <div id="cfgList" class="cfg-list"></div><div id="cfgEmpty" class="empty-state" style="display:none"></div>
             </div>
           </section>
           <section class="checkin-panel" id="view-history" aria-label="运行记录" hidden>
-            <div class="workspace-subheader">
-              <div><button type="button" class="back-link" data-checkin-page="overview">← 返回签到概览</button><h2>运行记录</h2><p>最近 50 次手动或定时任务执行结果。</p></div>
-              <div class="header-actions"><button class="btn ghost" id="refreshHist">刷新记录</button></div>
-            </div>
-            <div class="panel"><div id="histList"></div><div id="histEmpty" class="empty">暂无历史记录。</div></div>
+            <div class="panel"><div class="panel-title">最近运行 <span class="sub">保留最近 50 次手动或定时签到</span></div><div id="histList"></div><div id="histEmpty" class="empty"></div></div>
           </section>
         </section>
 
@@ -524,20 +521,24 @@
           <div class="dup-hint" id="lk_dup" hidden></div>
         </div>
         <div class="field"><label>名称</label><input class="input" id="lk_name" placeholder="留空则用域名" maxlength="60"></div>
-        <div class="field"><label>描述</label><input class="input" id="lk_desc" placeholder="一句话说明用途（可选）" maxlength="160"></div>
-        <div class="row-2">
-          <div class="field"><label>标签</label><input class="input" id="lk_tags" placeholder="逗号分隔，最多 8 个"></div>
-          <div class="field"><label>备用文字图标（可选 emoji）</label><input class="input" id="lk_icon" placeholder="如 🚀，留空使用首字母" maxlength="8"></div>
-        </div>
-        <div class="field"><span class="field-label-text" id="lk_icon_label">上传备用图标</span>
-          <label class="drop-zone" id="lk_icon_drop" for="lk_icon_file">
-            <input class="sr-only" id="lk_icon_file" type="file" aria-labelledby="lk_icon_label" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico">
-            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-            <span class="drop-text"><b>选择图片</b>，或拖到这里</span>
-          </label>
-          <div class="icon-upload-preview" id="lk_icon_preview" hidden><img id="lk_icon_image" alt="上传图标预览"><button type="button" class="btn ghost sm" id="lk_icon_remove">移除上传图标</button></div>
-          <div class="hint">自动图标优先；获取失败时使用上传图片，否则使用文字头像。支持 PNG、JPEG、WebP、GIF、ICO（最大 2 MB），自动缩为 128 像素；上传图片会保留作为备用。</div>
-        </div>
+        <!-- 描述、标签、图标都是可选的：添加时默认收起，只填网址（标题会自动取）就能保存；编辑已有这些内容的网址时自动展开。 -->
+        <details class="adv-fold" id="lk_more">
+          <summary>描述、标签与图标（可选）</summary>
+          <div class="field"><label>描述</label><input class="input" id="lk_desc" placeholder="一句话说明用途（可选）" maxlength="160"></div>
+          <div class="row-2">
+            <div class="field"><label>标签</label><input class="input" id="lk_tags" placeholder="逗号分隔，最多 8 个"></div>
+            <div class="field"><label>备用文字图标（可选 emoji）</label><input class="input" id="lk_icon" placeholder="如 🚀，留空使用首字母" maxlength="8"></div>
+          </div>
+          <div class="field"><span class="field-label-text" id="lk_icon_label">上传备用图标</span>
+            <label class="drop-zone" id="lk_icon_drop" for="lk_icon_file">
+              <input class="sr-only" id="lk_icon_file" type="file" aria-labelledby="lk_icon_label" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico">
+              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+              <span class="drop-text"><b>选择图片</b>，或拖到这里</span>
+            </label>
+            <div class="icon-upload-preview" id="lk_icon_preview" hidden><img id="lk_icon_image" alt="上传图标预览"><button type="button" class="btn ghost sm" id="lk_icon_remove">移除上传图标</button></div>
+            <div class="hint">自动图标优先；获取失败时使用上传图片，否则使用文字头像。支持 PNG、JPEG、WebP、GIF、ICO（最大 2 MB），自动缩为 128 像素；上传图片会保留作为备用。</div>
+          </div>
+        </details>
         <div class="field"><label class="home-check"><input type="checkbox" id="lk_home">同时展示在收藏首页</label></div>
         <div class="row-2">
           <div class="field"><label>所在分组</label><select class="input" id="lk_group"></select></div>
@@ -581,7 +582,7 @@
       <div class="omni-head">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
         <input id="omniInput" class="omni-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="搜索网址、站点、签到配置…（支持 #标签）" aria-label="全局搜索" aria-controls="omniList" role="combobox" aria-expanded="true">
+               placeholder="搜索网址、站点、页面或命令…（支持 #标签）" aria-label="全局搜索" aria-controls="omniList" role="combobox" aria-expanded="true">
         <kbd class="omni-kbd">Esc</kbd>
       </div>
       <div class="omni-list" id="omniList" role="listbox" aria-label="搜索结果"></div>
@@ -1012,6 +1013,10 @@
       note: '<path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 20v-5a1 1 0 0 1 1-1h5M8 9h8M8 13h4"/>',
       bell: '<path d="M12 4a6 6 0 0 0-6 6v3.5L4.5 16v1h15v-1L18 13.5V10a6 6 0 0 0-6-6zM10 20a2 2 0 0 0 4 0"/>',
       widgets: '<rect x="4" y="4" width="7" height="9" rx="2"/><rect x="13" y="4" width="7" height="5" rx="2"/><rect x="13" y="11" width="7" height="9" rx="2"/><rect x="4" y="15" width="7" height="5" rx="2"/>',
+      gear: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7.7 7.7 0 0 0 14.8 6L14.5 3h-5l-.3 3a7.7 7.7 0 0 0-1.7 1L5.1 6.1l-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.7 7.7 0 0 0 1.7 1l.3 3h5l.3-3a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/>',
+      moon: '<path d="M19.5 14.2A7.8 7.8 0 0 1 9.8 4.5a7.8 7.8 0 1 0 9.7 9.7z"/>',
+      sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>',
+      image: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m4.5 17 4.8-4.6 3.4 3.2 2.6-2.4 4.2 3.8"/>',
     };
     const GROUP_ICONS = ['folder', 'server', 'globe', 'sparkles', 'code', 'book', 'play', 'chat', 'wrench', 'star', 'cloud', 'shield'];
     const GROUP_COLORS = ['mint', 'sky', 'violet', 'amber', 'rose', 'slate'];
@@ -1363,11 +1368,14 @@
         $('checkinOverview').hidden = section !== 'overview';
         $('view-configs').hidden = section !== 'configs';
         $('view-history').hidden = section !== 'history';
-        $('runAllCheckin').hidden = section !== 'overview';
+        $('checkinActOverview').hidden = section !== 'overview';
+        $('checkinActConfigs').hidden = section !== 'configs';
+        $('checkinActHistory').hidden = section !== 'history';
+        // 三个内页是同一处的标签，不是「按下 / 未按下」的开关：当前那个标 aria-current，读屏念「当前页」。
         document.querySelectorAll('.checkin-tool').forEach(btn => {
           const active = btn.dataset.checkinPage === section;
           btn.classList.toggle('active', active);
-          btn.setAttribute('aria-pressed', String(active));
+          if (active) btn.setAttribute('aria-current', 'page'); else btn.removeAttribute('aria-current');
         });
       }
       if (updateHash) {
@@ -1470,10 +1478,16 @@
         disabled ? item(disabled, '手动签到') : '',
         // 一个账户都还没取到过余额时显示「—」，别让人以为余额真的是 0。
         item(walletKnown ? fmtNum(walletSum) : '—', '余额合计'),
-        item(s.enabled ? (s.time || '--:--') : '未开启', '每日定时'),
+        // 定时签到的开关在系统设置里：这一项直接做成入口，看到「未开启」点一下就到开关跟前。
+        `<button type="button" class="ov-item ov-go" data-ov-sched title="到系统设置${s.enabled ? '修改' : '开启'}每日定时签到"><span class="ov-num">${escapeHtml(s.enabled ? (s.time || '--:--') : '未开启')}</span><span class="ov-label">每日定时 ›</span></button>`,
       ].join('');
       el.style.display = 'flex';
     }
+    $('overview').addEventListener('click', (e) => {
+      if (!e.target.closest('[data-ov-sched]')) return;
+      switchView('settings');
+      requestAnimationFrame(() => { const t = $('schedEnabled'); t.focus({ preventScroll: true }); t.closest('.panel').scrollIntoView({ block: 'center' }); });
+    });
 
     // 最近一次签到（服务端持久化）：刷新页面、定时签到之后也能看到「失败 + 原因」。
     function lastOutcome(c, i) {
@@ -2091,14 +2105,15 @@
     function renderConfigs() {
       const list = $('cfgList'), empty = $('cfgEmpty');
       $('cfgCount').textContent = `共 ${STATE.configs.length} 组`;
+      $('cfgTabCount').textContent = STATE.configs.length ? String(STATE.configs.length) : '';
       if (!STATE.configs.length) { list.innerHTML = ''; showEmpty(empty, { icon: 'shield', title: '暂无签到配置', text: '点击右上角「新增」添加第一组账户，或导入之前导出的 JSON。', actions: [{ label: '＋ 新增配置', onclick: "$('addCfg').click()" }] }); return; }
       hideEmpty(empty);
       list.innerHTML = STATE.configs.map((c, i) => `
         <div class="cfg-row ${c.enabled ? '' : 'disabled'}" style="--hue:${hueOf(siteHost(c.base_url))}">
-          <label class="switch" title="启用/禁用"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCfg(${i}, this.checked)"><span class="slider"></span></label>
+          <label class="switch" title="${c.enabled ? '已启用：参与一键 / 定时签到' : '已停用：改为手动签到'}"><input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleCfg(${i}, this.checked)" aria-label="启用「${escapeHtml(c.name)}」"><span class="slider"></span></label>
           ${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}
           <div class="cfg-main">
-            <div class="cfg-name">${escapeHtml(c.name)}</div>
+            <div class="cfg-name">${escapeHtml(c.name)}${c.enabled ? '' : ' <span class="badge gray">已停用</span>'}</div>
             <div class="cfg-sub">${urlLink(c.base_url)} <span>· uid ${escapeHtml(c.user_id)} ·</span> <span class="cfg-token" id="tok-${i}">${escapeHtml(c.token_masked)}</span></div>
           </div>
           <div class="cfg-actions">
@@ -2694,18 +2709,23 @@
       const secondary = rest.find(f => (f.type || 'amount') === 'time') || rest[0] || null;
       // 好几天没更新的数值不再亮绿点「正常」：它可能早就不是这个数了。
       const state = bookmarkAlert(b) || (fieldBlank(primary) ? 'stale' : fields.some(f => !f.error && !fieldBlank(f) && fieldOld(f)) ? 'old' : 'ok');
-      let value = '', unit = '';
+      let value = '', unit = '', past = false;
       if (primary.error) value = '取数失败';
       else if (fieldBlank(primary)) value = '待刷新';
       else if ((primary.type || 'amount') === 'amount') {
         const text = String(primary.value).trim();
         value = /^-?[\d,]*\.?\d+$/.test(text) ? fmtNum(parseNum(text)) : text;
         unit = primary.unit || '';
+      } else if ((primary.type || 'amount') === 'time') {
+        // 小组件只有一百来像素宽，「已过期 16 小时」「还有 2 个月」整句放大号字会被截成「已过期 16…」：
+        // 大字只放数字，单位和「前过期 / 后到期」用小字跟在后面。
+        const text = compactFieldValue(primary), m = /^(已过期|还有) (\d+) (.+)$/.exec(text);
+        if (m) { value = m[2]; unit = m[3] + (m[1] === '已过期' ? '前过期' : '后到期'); past = m[1] === '已过期'; } else value = text;
       } else value = compactFieldValue(primary);
       let sub;
       if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
       else sub = primary.updated_at ? `${primary.label} · 更新于 ${dayStamp(primary.updated_at)}` : primary.label;
-      return { state, value, unit, sub, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : '' };
+      return { state, value, unit, sub, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
     }
     function homeSiteWidgetHtml(b, i) {
       const host = siteHost(b.url) || '未设置域名';
@@ -5789,6 +5809,7 @@
       $('lk_desc').value = l ? (l.desc || '') : '';
       $('lk_tags').value = l ? (l.tags || []).join(', ') : '';
       $('lk_icon').value = l ? (l.icon || '') : '';
+      $('lk_more').open = !!(l && (l.desc || (l.tags || []).length || l.icon || l.custom_icon));
       $('lk_pinned').checked = !!(l && l.pinned);
       $('lk_home').checked = !!(l && l.show_on_home);
       fillGroupSelect($('lk_group'), g.id);
@@ -6302,6 +6323,7 @@
           haystack: omniHaystack([c.name, c.base_url, c.user_id, '签到配置']),
         });
       }
+      for (const cmd of omniCommands()) items.push(cmd);
       return items;
     }
 
@@ -6318,13 +6340,14 @@
           if (hit) scored.push({ item, score: (item.tags || []).some(t => t.toLowerCase() === query) ? 90 : 60 });
           continue;
         }
+        if (!query && item.kind === 'command') continue;   // 空查询列的是「置顶与最近添加」，命令只在输入后出现
         const score = omniScore(item, query);
         if (score > 0) scored.push({ item, score });
       }
       // 同分时：置顶优先 → 网址优先于分组/配置 → 最近添加的在前 → 名称字典序。
       // 「最近添加」这一档主要服务于空查询：刚收进来的一批正是接下来要用的，
       // 按字典序摆出来则基本等于随机。没有 created_at 的旧数据排在后面。
-      const kindRank = { link: 0, bookmark: 1, config: 2, group: 3 };
+      const kindRank = { link: 0, bookmark: 1, config: 2, group: 3, command: 4 };
       scored.sort((a, b) => b.score - a.score
         || (b.item.pinned ? 1 : 0) - (a.item.pinned ? 1 : 0)
         || kindRank[a.item.kind] - kindRank[b.item.kind]
@@ -6333,9 +6356,34 @@
       return scored.slice(0, OMNI_LIMIT).map(x => x.item);
     }
 
-    const OMNI_KIND_LABEL = { link: '网址', bookmark: '看板', config: '配置', group: '分组' };
+    const OMNI_KIND_LABEL = { link: '网址', bookmark: '看板', config: '配置', group: '分组', command: '命令' };
+    // 页面和常用操作也能从这里直达（Linear / Raycast 式的命令面板）：输「签到」「设置」「深色」「壁纸」就有。
+    // 只在输入后出现；没权限的操作（未解锁时的签到、添加……）根本不列出来，免得点了再被拦。
+    function omniCommands() {
+      const edit = canEdit(), locked = libraryLocked(), cmds = [];
+      const add = (ok, title, sub, iconName, words, run) => {
+        if (ok) cmds.push({ kind: 'command', title, sub, icon: iconName, color: 'slate', tags: [], host: '', run, haystack: omniHaystack([title, sub, words]) });
+      };
+      const lib = (page) => () => { switchView('bookmarks'); openLibPage(page); };
+      const light = document.documentElement.getAttribute('data-theme') === 'light';
+      add(!locked, '收藏首页', '前往页面', 'star', 'home shouye 起始页 主页', lib('@home'));
+      add(!locked, '站点看板', '前往页面 · 余额与到期', 'pulse', 'monitor kanban 余额 到期 监控', lib('monitor'));
+      add(edit && !locked, '签到中心', '前往页面', 'check', 'checkin qiandao 概览', () => switchView('checkin'));
+      add(edit && !locked, '服务配置', '签到中心 · 管理签到账户', 'wrench', 'configs 账户 配置 token peizhi', () => switchView('checkin/configs'));
+      add(edit && !locked, '运行记录', '签到中心 · 最近 50 次', 'clock', 'history 历史 日志 jilu', () => switchView('checkin/history'));
+      add(true, '系统设置', '前往页面 · 定时、代理、密码、备份', 'gear', 'settings shezhi 定时 代理 密码 备份 恢复 自检', () => switchView('settings'));
+      add(edit && !locked, '运行全部签到', '签到中心 · 在后台执行', 'play', 'run checkin 一键签到 全部 yunxing', () => { switchView('checkin'); runCheckin(); });
+      add(edit && !locked && libGroups().length > 0, '添加网址', '收藏到当前分组', 'plus', 'add link new 新增 收藏 tianjia', () => openLinkModal(LIB.page, null, 'single'));
+      add(edit && !locked, '新建分组', '收藏库', 'folder', 'new group 分组 fenzu', () => openGroupModal());
+      add(edit && !locked && (STATE.bookmarks || []).some(b => enabledFields(b).length), '刷新看板数据', '站点看板 · 重新取余额与到期', 'pulse', 'refresh 刷新 shuaxin', () => { lib('monitor')(); $('refreshAllBm').click(); });
+      add(true, light ? '切换到深色' : '切换到浅色', '外观 · 主题', light ? 'moon' : 'sun', 'theme dark light 主题 暗色 夜间 白天 深色 浅色 zhuti', () => setTheme(light ? 'dark' : 'light'));
+      add(true, '外观…', '壁纸、遮罩与导航', 'image', 'appearance wallpaper 壁纸 遮罩 侧栏 bizhi', openHomeLook);
+      add(!locked, '首页组件…', '日历、待办、倒数日、便签', 'widgets', 'widgets deck 日历 待办 倒数日 便签 zujian', openDeckModal);
+      add(true, '键盘快捷键', '帮助', 'book', 'keyboard shortcuts keys 快捷键 帮助 help', openKeysModal);
+      return cmds;
+    }
     function omniRowHtml(item, i) {
-      const avatar = item.kind === 'group'
+      const avatar = item.kind === 'group' || item.kind === 'command'
         ? `<span class="omni-ic tone-${escapeHtml(item.color || 'mint')}">${icon(item.icon || 'folder')}</span>`
         : siteAvatarHtml(item.title, item.url, 'link-avatar omni-avatar', item.emoji, item.customIcon);
       const tags = (item.tags || []).slice(0, 3).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
@@ -6389,6 +6437,7 @@
     // Shift+Enter：不打开网址，改为跳到它所在的分组页面，方便接着编辑 / 排序。
     function omniOpen(item, jumpToGroup) {
       if (!item) return;
+      if (item.kind === 'command') { closeOmni(); item.run(); return; }
       if (jumpToGroup || item.kind === 'group') {
         if (item.groupId) { closeOmni(); switchView('bookmarks'); openLibPage(item.groupId); return; }
       }
@@ -6866,7 +6915,7 @@
     });
 
     // ===== 历史 =====
-    const HIST_EMPTY_TEXT = '暂无历史记录。';
+    const HIST_EMPTY_TEXT = '还没有运行记录。在「概览」点「运行全部签到」，或在系统设置里开启每日定时签到，之后每一次的结果都记在这里。';
     const HIST_TRIGGER_LABEL = { scheduled: '定时', 'manual-single': '单签', manual: '手动', retry: '补签' };
 
     // 单条结果：站点名 + 状态 + 一句话说明 + 本次额度。
@@ -6928,14 +6977,44 @@
 
     // 弹窗点击遮罩关闭。表单里已经改过东西时不关：一下误点就把填了半天的内容丢掉太亏，
     // 要放弃就点「取消」。弹窗每次打开都重新计「改过没有」。
+    // 焦点跟着弹窗走：打开时记下是谁打开的，关上后把焦点还给它——键盘用户不会被扔回页面开头；
+    // 打开期间 Tab / Shift+Tab 在弹窗里循环，不会跑到遮罩后面看不见的按钮上。
+    const MODAL_OPENER = new WeakMap();
+    // 打开弹窗的函数多半会同步把焦点挪进弹窗，等观察者回调时 activeElement 已经不是「打开它的那个」了，
+    // 所以平时就记着最近一个弹窗外的焦点。
+    let lastOutsideFocus = null;
+    document.addEventListener('focusin', (e) => { if (e.target.closest && !e.target.closest('.modal-mask')) lastOutsideFocus = e.target; });
+    const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+    function returnModalFocus(m) {
+      const opener = MODAL_OPENER.get(m), a = document.activeElement;
+      MODAL_OPENER.delete(m);
+      if (!opener || !opener.isConnected || (a && a !== document.body && !m.contains(a))) return;
+      // 从「···」菜单里点开的：菜单已收起、菜单项不可见，还给菜单的触发钮。
+      const menu = opener.offsetParent === null && opener.closest ? opener.closest('details') : null;
+      const target = menu ? menu.querySelector('summary') : opener;
+      if (target && target.focus) target.focus({ preventScroll: true });
+    }
     document.querySelectorAll('.modal-mask').forEach(m => {
       const markDirty = (e) => { if (e.target.matches && e.target.matches('input, textarea, select')) m.dataset.dirty = '1'; };
       m.addEventListener('input', markDirty);
       m.addEventListener('change', markDirty);
       if (typeof MutationObserver === 'function') {
-        new MutationObserver(() => { if (m.classList.contains('show')) delete m.dataset.dirty; })
-          .observe(m, { attributes: true, attributeFilter: ['class'] });
+        new MutationObserver(() => {
+          if (m.classList.contains('show')) {
+            delete m.dataset.dirty;
+            const a = document.activeElement;
+            if (!MODAL_OPENER.has(m)) MODAL_OPENER.set(m, a && a !== document.body && !m.contains(a) ? a : lastOutsideFocus);
+          } else if (MODAL_OPENER.has(m)) returnModalFocus(m);
+        }).observe(m, { attributes: true, attributeFilter: ['class'] });
       }
+      m.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab' || !m.classList.contains('show')) return;
+        const items = [...m.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null && !el.closest('[hidden]'));
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      });
       m.addEventListener('click', e => {
         if (e.target !== m) return;
         if (m.dataset.dirty && !m.classList.contains('omni-mask')) {

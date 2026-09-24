@@ -38,7 +38,7 @@ class CheckinMarkupTest(unittest.TestCase):
         self.assertEqual(markup.tabs, ['bookmarks', 'chat', 'vault', 'checkin', 'settings'])
         for panel in ('checkinOverview', 'view-configs', 'view-history'):
             self.assertEqual(markup.parents[panel], ['view-checkin'])
-        self.assertEqual(markup.tools, [('configs', ['view-checkin']), ('history', ['view-checkin'])])
+        self.assertEqual(markup.tools, [('overview', ['view-checkin']), ('configs', ['view-checkin']), ('history', ['view-checkin'])])
 
 
 @unittest.skipIf(NODE is None, '未安装 node')
