@@ -670,6 +670,10 @@ def main(sections, results_file=""):
     if unknown:
         sys.exit("没有这一段：%s（可选：%s）" % (" ".join(unknown), " ".join(fn.__name__ for fn in sections)))
     t0 = time.time()
+    # 这几套（verify / verify_polish / verify_deck / verify_railtip / verify_transport）写于「收藏库默认公开」的年代：
+    # 访客段要看到首页、空库段要看到建库引导。8947960 起设了管理密码就默认私密，这里与 tests/__init__.py 一样显式公开；
+    # 私密默认由 verify_chat / verify_ask 覆盖（它们起服务前会把这个变量删掉）。
+    os.environ["HUB_PUBLIC_LIBRARY"] = "1"
     start_server()
     with sync_playwright() as p:
         b = launch(p)
