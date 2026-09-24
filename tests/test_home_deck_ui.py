@@ -603,7 +603,7 @@ class ExpiryAndCheckinScriptTest(DeckScriptCase):
             assert.deepEqual(rows.map(r => [r.b.name, r.f.label, r.kind]), [['过期<b>站', '到期', 'expired'], ['快到期', '续费', 'soon'], ['还早', '到期', '']]);
             const html = $('expiryList').innerHTML;
             assert.ok(html.includes('过期&lt;b&gt;站') && !html.includes('<b>站'));
-            assert.ok(html.includes('已过期 1 天<') && html.includes('2 天后'));
+            assert.ok(html.includes('已过期 1 天<') && html.includes('还有 2 天'));
             assert.ok(html.includes('href="https://soon.example"') && html.includes('rel="noopener noreferrer"'));
             assert.ok(!html.includes('javascript:'));                                       // 不安全的网址不变成链接
             assert.equal($('deckExpiryMeta').textContent, '2 个要留意');

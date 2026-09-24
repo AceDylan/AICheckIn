@@ -945,6 +945,17 @@ def clean_field(raw, existing=None, taken=()):
             errors.append("单位过长（最多 12 字）")
         elif unit:
             field["unit"] = unit
+        # 低于多少时在看板上标「余额偏低」（可选）。
+        warn_raw = raw.get("warn_below")
+        if warn_raw is not None and str(warn_raw).strip() != "":
+            try:
+                warn_below = float(warn_raw)
+            except (TypeError, ValueError):
+                warn_below = None
+            if warn_below is None or warn_below != warn_below or warn_below in (float("inf"), float("-inf")):
+                errors.append("余额提醒阈值需为数字")
+            else:
+                field["warn_below"] = warn_below
     elif ftype == "time":
         ts_unit = str(raw.get("ts_unit") or "auto").strip().lower()
         if ts_unit not in TS_UNITS:
@@ -956,6 +967,17 @@ def clean_field(raw, existing=None, taken=()):
         except ValueError as exc:
             errors.append(str(exc))
         field["tz"] = tz
+        # 到期前几天开始提醒（可选，默认 7 天）：VPS、域名续费往往要提前更久。
+        days_raw = raw.get("warn_days")
+        if days_raw is not None and str(days_raw).strip() != "":
+            try:
+                warn_days = int(str(days_raw).strip())
+            except (TypeError, ValueError):
+                warn_days = 0
+            if not 1 <= warn_days <= 365:
+                errors.append("到期提醒天数需为 1–365 的整数")
+            else:
+                field["warn_days"] = warn_days
 
     if errors:
         raise ValueError("；".join(errors))
@@ -1227,7 +1249,7 @@ def public_config(item, reveal=False):
 # 请求体、接口 URL（常带 key / token 查询参数）。这些一律不出现在开放接口里。
 _FIELD_SECRET_KEYS = ("headers", "curl", "body", "url", "method")
 # 展示用的非敏感元信息（缺失则不输出，保持响应精简）。
-_FIELD_PUBLIC_META = ("unit", "divisor", "ts_unit", "tz")
+_FIELD_PUBLIC_META = ("unit", "divisor", "ts_unit", "tz", "warn_below", "warn_days")
 
 
 def public_error(message):
@@ -1375,6 +1397,20 @@ def summarize(results):
 
 def _now_str():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def server_clock():
+    """服务器本地时间与时区：定时签到按它执行，页面拿来和浏览器所在时区比对。"""
+    now = datetime.datetime.now().astimezone()
+    offset = now.utcoffset() or datetime.timedelta(0)
+    minutes = int(offset.total_seconds() // 60)
+    sign = "+" if minutes >= 0 else "-"
+    return {
+        "now": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "offset_minutes": minutes,
+        "utc_offset": "{0}{1:02d}:{2:02d}".format(sign, abs(minutes) // 60, abs(minutes) % 60),
+        "tz": now.tzname() or "",
+    }
 
 
 def _today_str():
@@ -2722,6 +2758,20 @@ def collect_diagnostics(request_is_https=None):
     else:
         checks.append(_check("ok", "后台调度", "运行中"))
 
+    # 8.5 服务器时区：定时签到按服务器本地时间执行。页面带上浏览器的 UTC 偏移（分钟）时顺带比对。
+    clock = server_clock()
+    detail = "UTC{0}{1} · 服务器现在 {2}".format(
+        clock["utc_offset"], "（{0}）".format(clock["tz"]) if clock["tz"] else "", clock["now"][11:16])
+    try:
+        client_offset = int(request.args.get("client_offset", ""))
+    except (TypeError, ValueError, RuntimeError):
+        client_offset = None
+    if client_offset is not None and client_offset != clock["offset_minutes"] and schedule.get("enabled"):
+        checks.append(_check("warn", "服务器时区", detail + " · 与你的浏览器时区不同，定时按服务器时间执行；"
+                             "想按本地时间请给容器设置 TZ（如 TZ=Asia/Shanghai）"))
+    else:
+        checks.append(_check("ok", "服务器时区", detail))
+
     # 9. 定时签到 / 补签
     if store is not None:
         if not schedule.get("enabled"):
@@ -2989,6 +3039,52 @@ def api_test_one(idx):
     })
 
 
+@app.post("/api/test")
+def api_test_draft():
+    """弹窗里「测试连接」：用还没保存的表单内容查一次钱包，不签到、不落盘。
+
+    编辑已有账户且令牌留空时，带 ?index=<下标>&expect=<稳定键> 沿用原令牌（与保存时的规则一致）。
+    """
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    existing = None
+    raw_idx = request.args.get("index")
+    if raw_idx is not None:
+        try:
+            idx = int(raw_idx)
+        except ValueError:
+            return jsonify({"ok": False, "error": "index 无效"}), 400
+        configs = store["configs"]
+        if idx < 0 or idx >= len(configs):
+            return jsonify({"ok": False, "error": "配置不存在"}), 404
+        stale = _stale_target(configs[idx], metrics_key, "这个账户")
+        if stale:
+            return stale
+        existing = configs[idx]
+    try:
+        draft = clean_config(payload, existing=existing)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        wallet = test_single(draft, store["proxy_url"])
+    except gyqd.CheckinError as exc:
+        return jsonify({"ok": False, "error": public_error(str(exc))}), 200
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": "测试异常：{0}".format(exc)}), 200
+    return jsonify({
+        "ok": True,
+        "wallet_balance": gyqd.format_quota(wallet.get("quota")),
+        "used_quota": gyqd.format_quota(wallet.get("used_quota")),
+        "request_count": gyqd.format_count(wallet.get("request_count")),
+    })
+
+
 # =========================
 # 路由：配置查询
 # =========================
@@ -3082,6 +3178,9 @@ def api_configs():
             "retry_delay_minutes": SCHEDULE_RETRY_DELAY_MIN,
             # 今天还没签成功的启用配置数：>0 且未用完重试次数时，后台还会自动补签。
             "pending_today": len(pending_configs(store, metrics)) if schedule.get("enabled") else 0,
+            # 服务器时钟：页面只在它与浏览器所在时区不一致时才提示设置 TZ，并在执行时间旁显示服务器现在几点。
+            # 属于部署信息，只给已解锁的人（和部署自检同一待遇）。
+            "clock": server_clock() if unlocked else None,
         },
         "refresh": {
             "enabled": bool(refresh.get("enabled")),

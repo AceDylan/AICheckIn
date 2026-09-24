@@ -195,3 +195,64 @@ class CheckinJobTest(_Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DraftTestAndClockTest(_Base):
+    """弹窗里的「测试连接」与服务器时区提示。"""
+
+    def setUp(self):
+        super(DraftTestAndClockTest, self).setUp()
+        self.write_config({"configs": [dict(CFG_A)], "bookmarks": [], "link_groups": [],
+                           "schedule": {"enabled": True, "time": "08:30"}})
+        self.seen = []
+        real = app_module.test_single
+        self.addCleanup(setattr, app_module, "test_single", real)
+
+        def fake(config, proxy):
+            self.seen.append(dict(config))
+            if config["access_token"] == "bad":
+                raise app_module.gyqd.CheckinError("查询钱包额度失败：HTTP 401（响应开头：<html>")
+            return {"quota": 1000000, "used_quota": 500000, "request_count": 3}
+        app_module.test_single = fake
+
+    def test_draft_uses_form_values_and_saves_nothing(self):
+        before = self.read_config()
+        resp = self.client.post("/api/test", json={"name": "x", "base_url": "https://new.example", "user_id": "5", "access_token": "tok"})
+        self.assertTrue(resp.get_json()["ok"])
+        self.assertEqual(self.seen[0]["base_url"], "https://new.example")
+        self.assertEqual(self.read_config(), before)
+        bad = self.client.post("/api/test", json={"name": "x", "base_url": "https://new.example", "user_id": "5", "access_token": "bad"}).get_json()
+        self.assertFalse(bad["ok"])
+        self.assertNotIn("<html>", bad["error"])
+
+    def test_blank_token_reuses_existing_only_when_key_matches(self):
+        body = {"name": "A", "base_url": "https://a.example", "user_id": "1", "access_token": ""}
+        ok = self.client.post("/api/test?index=0&expect=https://a.example|1", json=body)
+        self.assertTrue(ok.get_json()["ok"])
+        self.assertEqual(self.seen[-1]["access_token"], "tok-a")
+        self.assertEqual(self.client.post("/api/test?index=0&expect=other", json=body).status_code, 409)
+        self.assertEqual(self.client.post("/api/test", json=body).status_code, 400)  # 新建时令牌必填
+
+    def test_clock_and_timezone_check(self):
+        clock = self.client.get("/api/configs").get_json()["schedule"]["clock"]
+        self.assertEqual(set(clock), {"now", "offset_minutes", "utc_offset", "tz"})
+        other = clock["offset_minutes"] + 60
+        checks = self.client.get("/api/diagnostics?client_offset=%d" % other).get_json()["checks"]
+        tz = [c for c in checks if c["label"] == "服务器时区"][0]
+        self.assertEqual(tz["status"], "warn")
+        checks = self.client.get("/api/diagnostics?client_offset=%d" % clock["offset_minutes"]).get_json()["checks"]
+        self.assertEqual([c for c in checks if c["label"] == "服务器时区"][0]["status"], "ok")
+
+
+class FieldThresholdTest(_Base):
+    def test_thresholds_are_cleaned_and_public(self):
+        f = app_module.clean_field({"label": "余额", "type": "amount", "curl": "curl https://x.example/api", "json_path": "a",
+                                    "warn_below": "5"})
+        self.assertEqual(f["warn_below"], 5.0)
+        t = app_module.clean_field({"label": "到期", "type": "time", "curl": "curl https://x.example/api", "json_path": "a",
+                                    "warn_days": "30"})
+        self.assertEqual(t["warn_days"], 30)
+        self.assertEqual(app_module.public_field(t)["warn_days"], 30)
+        for bad in ({"type": "amount", "warn_below": "abc"}, {"type": "time", "warn_days": "0"}, {"type": "time", "warn_days": "400"}):
+            with self.assertRaises(ValueError):
+                app_module.clean_field(dict({"label": "x", "curl": "curl https://x.example/api", "json_path": "a"}, **bad))

@@ -237,8 +237,12 @@ class RefreshUiTest(unittest.TestCase):
         cls.html = app.test_client().get("/").get_data(as_text=True)
 
     def test_settings_panel_exists(self):
-        for hook in ('id="refreshEnabled"', 'id="refreshInterval"', 'id="saveRefresh"', 'id="refreshStatus"'):
+        for hook in ('id="refreshEnabled"', 'id="refreshInterval"', 'id="refreshStatus"'):
             self.assertIn(hook, self.html)
+        # 开关与间隔改了就存，不再另有「保存刷新」按钮。
+        self.assertNotIn('id="saveRefresh"', self.html)
+        self.assertIn("$('refreshEnabled').addEventListener('change', saveRefreshNow)", self.html)
+        self.assertIn("$('refreshInterval').addEventListener('change', saveRefreshNow)", self.html)
 
     def test_interval_labels_are_human_readable(self):
         self.assertIn("function intervalLabel", self.html)

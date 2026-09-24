@@ -164,7 +164,7 @@ class LibraryHomeUiTest(unittest.TestCase):
                 { label: '到期', type: 'time', value: '2030-01-01', raw: now + 40 * day },
                 { label: '余额', type: 'amount', value: '1234.5', unit: 'USD' }]));
             assert.deepEqual([w.state, w.value, w.unit, w.label], ['ok', '1,234.5', 'USD', '余额']);
-            assert.ok(w.sub.startsWith('到期 · ') && w.sub.includes('后'));
+            assert.ok(w.sub.startsWith('到期 · 还有 '));
             // 状态取最严重的一类：快到期 → 警告；已过期 / 取数失败 → 错误。
             w = siteWidgetParts(site([{ label: '余额', type: 'amount', value: '3' }, { label: '到期', type: 'time', value: 'x', raw: now + 2 * day }]));
             assert.equal(w.state, 'soon');
@@ -202,7 +202,12 @@ class LibraryHomeUiTest(unittest.TestCase):
         self.run_js("""
             const root = document.documentElement, layer = $('homeWall');
             const look = () => [root.classList.contains('wall-on'), root.classList.contains('nav-rail')];
-            // 默认启用内置壁纸 + 图标栏，而且不看当前在哪个页面：首页、看板、分组、签到、设置都是同一套。
+            // 默认不开壁纸（内置壁纸都是深色，一开整页固定深色场景）：只有图标栏。
+            assert.equal(currentWallpaper(), null);
+            assert.deepEqual(look(), [false, true]);
+            // 手动选了壁纸就全局生效，不看当前在哪个页面：首页、看板、分组、签到、设置都是同一套。
+            setCookie('bh_wallpaper=aurora');
+            applyLook();
             assert.equal(currentWallpaper().id, 'aurora');
             assert.deepEqual(look(), [true, true]);
             assert.equal(layer.style['--wall-color'], '#112f49');
@@ -231,6 +236,7 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.deepEqual([homeNavPref(), look()[1], $('navToggle').title], ['rail', true, '展开侧栏']);
             $('navToggle').click();
             assert.deepEqual([homeNavPref(), look()[1], $('navToggle').title], ['full', false, '收起侧栏']);
+            setCookie('bh_wallpaper=dusk; bh_home_nav=full');   // 上面 writePref 把整串 cookie 换掉了，壁纸选择重新写回
             // 高对比 / 强制颜色：壁纸整个让路，导航形态不受影响。
             const mm = globalThis.matchMedia;
             globalThis.matchMedia = (q) => ({ matches: q.includes('forced-colors'), addEventListener() {} });
@@ -241,8 +247,8 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.deepEqual(look(), [true, false]);
             // Cookie 被改成别的值只会回落到默认，不会拿去拼地址。
             setCookie('bh_wallpaper=../../evil; bh_wp_dim=9; bh_home_nav=x');
-            assert.deepEqual([wallPref(), wallDimPref(), homeNavPref()], ['aurora', 'medium', 'rail']);
-            assert.equal(currentWallpaper().url, '/static/wallpapers/aurora.webp');
+            assert.deepEqual([wallPref(), wallDimPref(), homeNavPref()], ['off', 'medium', 'rail']);
+            assert.equal(currentWallpaper(), null);
             // 选了「自定义」但服务器上没有：回落到默认内置；有了才用，地址带内容哈希。
             setCookie('bh_wallpaper=custom');
             assert.equal(currentWallpaper().id, 'aurora');
@@ -357,7 +363,7 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.ok(failed.includes('is-error') && failed.includes('取数失败'));
             assert.ok(!failed.includes('<b>HTTP'));
             const soon = siteMetricHtml(site({ type: 'time', value: '2030-01-01', raw: Date.now() / 1000 + 86400 * 2 }));
-            assert.ok(soon.includes('is-warning') && soon.includes('天后'));
+            assert.ok(soon.includes('is-warning') && soon.includes('还有 2 天'));
             const past = siteMetricHtml(site({ type: 'time', value: '2020-01-01', raw: 1577836800 }));
             assert.ok(past.includes('is-error'));
         """)

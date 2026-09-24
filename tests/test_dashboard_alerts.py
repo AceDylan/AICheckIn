@@ -55,6 +55,18 @@ class AlertClassificationTest(unittest.TestCase):
         self.assertEqual(out["fields"], ["error"])
         self.assertEqual(out["bookmark"], "error")
 
+    def test_custom_thresholds(self):
+        # 字段自设「提前 30 天提醒」：20 天后到期算快到期；默认 7 天的字段不算。
+        out = self.classify([{"id": "a", "type": "time", "raw": time.time() + 20 * DAY, "warn_days": 30},
+                             {"id": "b", "type": "time", "raw": time.time() + 20 * DAY}])
+        self.assertEqual(out["fields"], ["soon", ""])
+        # 余额低于阈值：余额偏低，排在「快到期」前面。
+        out = self.classify([{"id": "a", "type": "amount", "value": "3.50", "warn_below": 5},
+                             {"id": "b", "type": "amount", "value": "8", "warn_below": 5},
+                             {"id": "c", "type": "time", "raw": time.time() + 2 * DAY}])
+        self.assertEqual(out["fields"], ["low", "", "soon"])
+        self.assertEqual(out["bookmark"], "low")
+
     def test_past_expiry_is_expired(self):
         out = self.classify([{"id": "a", "type": "time", "raw": time.time() - DAY}])
         self.assertEqual(out["bookmark"], "expired")

@@ -114,7 +114,8 @@ class ScriptBootTest(unittest.TestCase):
         self.assertLess(fetches.index("/api/configs"), fetches.index("/api/history"))
 
     def test_settings_hash_loads_diagnostics_after_configs(self):
-        fetches = self.boot("#settings")["fetches"]
+        # 自检请求带着浏览器的 UTC 偏移（?client_offset=…），好比对服务器时区。
+        fetches = [f.split("?")[0] for f in self.boot("#settings")["fetches"]]
         self.assertIn("/api/diagnostics", fetches)
         self.assertLess(fetches.index("/api/configs"), fetches.index("/api/diagnostics"))
 

@@ -792,6 +792,23 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .modal h3 { font-size: 17px; font-weight: 620; letter-spacing: -.015em; }
 .modal .modal-sub { margin-top: 3px; color: var(--text-3); font-size: 12px; }
 .modal .field + .field, .modal .row-2 + .field, .modal .field + .row-2, .modal .row-2 + .row-2 { margin-top: 14px; }
+/* 双列里的右列不吃上面那条间距：否则右列比左列低 14px，两列标签对不齐。 */
+.modal .row-2 > .field + .field { margin-top: 0; }
+.modal .adv-fold { margin-top: 14px; }
+.modal .adv-fold > summary { cursor: pointer; width: fit-content; color: var(--text-2); font-size: 12.5px; font-weight: 560; }
+.modal .adv-fold > summary::before { content: '▸'; display: inline-block; width: 1em; transition: transform .16s var(--ease); }
+.modal .adv-fold[open] > summary::before { transform: rotate(90deg); }
+.modal .adv-fold > .field { margin-top: 10px; }
+.label-note { color: var(--text-3); font-weight: 400; }
+.cfg-test-result { margin-top: 12px; }
+.cfg-test-result.is-ok { color: var(--success); }
+.cfg-test-result.is-bad { color: var(--danger); }
+.field-row { margin-top: 12px; }
+.field-time.is-old { color: var(--warning); }
+/* 表单改过内容时点遮罩：弹窗轻轻晃一下，提示要点「保存」或「取消」。 */
+@keyframes modal-nudge { 0%, 100% { translate: 0; } 25% { translate: -6px 0; } 75% { translate: 6px 0; } }
+.modal.nudge { animation: modal-nudge .24s var(--ease); }
+@media (prefers-reduced-motion: reduce) { .modal.nudge { animation: none; } }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .modal-actions .spacer { flex: 1; }
 .icon-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }

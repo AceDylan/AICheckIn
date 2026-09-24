@@ -57,7 +57,7 @@ def contrast_and_overlays(b):
     check("深色主题 --text-3 = #938e87", page.evaluate("() => getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim()") == "#938e87")
     ctx.close()
     # 浅色主题 + 壁纸：弹窗 / 命令面板 / 提示条 / 排序菜单固定深色
-    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "aurora"})
     check("浅色 + 壁纸：场景已启用", page.evaluate("() => document.documentElement.classList.contains('wall-on') && document.documentElement.dataset.theme === 'light'"))
     page.locator("#homeToolsToggle").click() if page.locator("#homeToolsToggle").is_visible() else None
     page.locator("#homeAddLink").click(); page.wait_for_selector("#linkModal.show")
