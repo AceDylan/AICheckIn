@@ -880,6 +880,13 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .tag-err { background: var(--danger-soft); color: var(--danger); }
 
 /* ---------- Toast ---------- */
+/* 拖链接进来收藏：整页一层淡遮罩 + 中间一张虚线卡片，说清楚松手会发生什么、加到哪个分组。 */
+.drop-hint { position: fixed; inset: 0; z-index: 98; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.drop-hint[hidden] { display: none; }
+.drop-card { display: grid; justify-items: center; gap: 8px; min-width: min(420px, 100%); padding: 36px 40px; border: 2px dashed var(--border-strong); border-radius: 22px; background: var(--surface); box-shadow: var(--shadow-pop); color: var(--text); text-align: center; pointer-events: none; animation: toast-in .16s var(--ease); }
+.drop-card .ic { width: 28px; height: 28px; stroke-width: 1.8; color: var(--accent); }
+.drop-card b { font-size: 16px; font-weight: 620; }
+.drop-card span { color: var(--text-2); font-size: 13px; }
 .toast-wrap { position: fixed; top: 18px; right: 18px; z-index: 99; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .toast {
   display: flex; align-items: center; gap: 10px; max-width: 360px; padding: 11px 15px;
@@ -941,6 +948,11 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .diag-detail { flex: 1; min-width: 0; color: var(--text-2); }
 .diag-row.is-warn .diag-detail { color: var(--warning); }
 .diag-row.is-error .diag-detail { color: var(--danger); }
+.diag-more > summary { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; padding: 6px 2px; color: var(--text-2); font-size: 12px; font-weight: 520; cursor: pointer; }
+.diag-more > summary::before { content: '▸'; display: inline-block; transition: transform .16s var(--ease); }
+.diag-more[open] > summary::before { transform: rotate(90deg); }
+.diag-more > summary:hover { color: var(--text); }
+.diag-more > .diag-row:first-of-type { border-top: 1px dashed var(--border); }
 
 /* 书签小工具 */
 .bookmarklet { cursor: grab; user-select: none; -webkit-user-select: none; }

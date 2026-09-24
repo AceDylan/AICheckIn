@@ -38,6 +38,7 @@
   <!-- 壁纸层：选了壁纸就垫在全部页面之下；图片同源（CSP img-src 'self'），加载前先露出主色占位。 -->
   <div class="home-wall" id="homeWall" aria-hidden="true"></div>
   <div class="toast-wrap" id="toasts" aria-live="polite"></div>
+  <div class="drop-hint" id="dropHint" hidden><div class="drop-card"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><b>松手收藏这个网址</b><span id="dropHintTo"></span></div></div>
   <div class="rail-tip" id="railTip" aria-hidden="true" hidden></div>
 
   <div class="app-shell">
@@ -1252,12 +1253,18 @@
     }
 
     // ===== Toast =====
+    // 提示停留时间按长短和轻重给：出错的、字多的多留一会儿（最多 8 秒）；鼠标停在上面时不消失，移开再等 1.5 秒。
+    function toastMs(msg, kind) { return Math.min(8000, Math.max(kind === 'err' ? 5000 : 2800, String(msg).length * 110)); }
     function toast(msg, kind) {
       const el = document.createElement('div');
       el.className = 'toast ' + (kind || '');
+      if (kind === 'err') el.setAttribute('role', 'alert');
       el.textContent = msg;
       $('toasts').appendChild(el);
-      setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2800);
+      const close = () => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); };
+      let timer = setTimeout(close, toastMs(msg, kind));
+      el.addEventListener('mouseenter', () => clearTimeout(timer));
+      el.addEventListener('mouseleave', () => { clearTimeout(timer); timer = setTimeout(close, 1500); });
     }
     // ===== 删除后可撤销 =====
     // 删除先只在页面上生效，提示条给 5 秒「撤销」；时间到（或离开页面）才真的发请求。
@@ -6144,6 +6151,7 @@
 
     // ===== 部署自检 =====
     const DIAG_ICON = { ok: 'check', warn: 'alert', error: 'ban' };
+    const DIAG_OPEN = { on: false };   // 「其余 N 项正常」展开过就一直展开（重新检查不收回去）
     async function loadDiagnostics() {
       const box = $('diagList');
       if (!canEdit()) { box.innerHTML = '<div class="note">解锁后可查看部署自检。</div>'; return; }
@@ -6153,12 +6161,17 @@
         const data = await resp.json();
         if (!Array.isArray(data.checks)) { box.innerHTML = `<div class="note">${escapeHtml(data.error || '检查失败')}</div>`; return; }
         const bad = data.checks.filter(c => c.status !== 'ok').length;
-        box.innerHTML = `<div class="diag-head ${data.ok ? 'is-ok' : 'is-bad'}">${icon(data.ok ? 'check' : 'ban')}${data.ok ? '未发现阻断性问题' : '存在需要处理的问题'}${bad ? ` · ${bad} 项待关注` : ''}<span class="diag-time">${escapeHtml(data.generated_at || '')}</span></div>`
-          + data.checks.map(c => `<div class="diag-row is-${escapeHtml(c.status)}">
+        const row = (c) => `<div class="diag-row is-${escapeHtml(c.status)}">
               <span class="diag-mark">${icon(DIAG_ICON[c.status] || 'alert')}</span>
               <span class="diag-label">${escapeHtml(c.label)}</span>
               <span class="diag-detail">${escapeHtml(c.detail)}</span>
-            </div>`).join('');
+            </div>`;
+        // 要处理的几项始终摆出来；其余正常的收进一行「其余 N 项正常」，一眼看到的是问题而不是十几行对勾。
+        const okRows = data.checks.filter(c => c.status === 'ok');
+        box.innerHTML = `<div class="diag-head ${data.ok ? 'is-ok' : 'is-bad'}">${icon(data.ok ? 'check' : 'ban')}${data.ok ? '未发现阻断性问题' : '存在需要处理的问题'}${bad ? ` · ${bad} 项待关注` : ''}<span class="diag-time">${escapeHtml(data.generated_at || '')}</span></div>`
+          + data.checks.filter(c => c.status !== 'ok').map(row).join('')
+          + (okRows.length ? `<details class="diag-more" id="diagMore"${DIAG_OPEN.on ? ' open' : ''}><summary>${bad ? '其余' : '全部'} ${okRows.length} 项正常</summary>${okRows.map(row).join('')}</details>` : '');
+        $('diagMore') && $('diagMore').addEventListener('toggle', (e) => { DIAG_OPEN.on = e.currentTarget.open; });
       } catch (e) { box.innerHTML = `<div class="note">检查失败：${escapeHtml(e.message)}</div>`; }
     }
     $('runDiag').addEventListener('click', loadDiagnostics);
@@ -7085,12 +7098,60 @@
       if (!canEdit()) { toast('请先在「系统设置」中解锁后再收藏', 'err'); switchView('settings'); return; }
       const target = findGroup(LIB.page) ? LIB.page : (libGroups()[0] || {}).id;
       if (!target) { toast('请先新建一个分组', 'err'); return; }
+      prefillLink(target, share);
+    }
+    // 分享、书签小工具、拖进来的链接共用：打开「添加网址」并预填；没带标题就马上去读网页标题。
+    function prefillLink(target, share) {
       openLinkModal(target, null, 'single');
       $('lk_url').value = share.url;
       if (share.name) $('lk_name').value = share.name;
       refreshDupHint();
+      if (!share.name) fetchLinkTitle();
       $('lk_name').focus();
     }
+    function dropTargetGroup() { return findGroup(LIB.page) ? LIB.page : (libGroups()[0] || {}).id; }
+
+    // ===== 把链接拖进来收藏 =====
+    // 从别的标签页、地址栏或书签栏把链接拖到这一页任意位置，松手就打开「添加网址」并预填（不会直接落盘）。
+    // 页面自己的拖动（图标、网址行、待办）会先触发 dragstart，那种一概不接；带文件的拖动留给上传图标的拖放区。
+    const DROP = { internal: false };
+    document.addEventListener('dragstart', () => { DROP.internal = true; });
+    document.addEventListener('dragend', () => { DROP.internal = false; });
+    function dropAccepts(e) {
+      const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+      return !DROP.internal && types.includes('text/uri-list') && !types.includes('Files') && canEdit() && !libraryLocked()
+        && !document.querySelector('.modal-mask.show') && !!dropTargetGroup();
+    }
+    function droppedLink(dt) {
+      const moz = (dt.getData('text/x-moz-url') || '').split(/\r?\n/);
+      const raw = (dt.getData('text/uri-list') || '').split(/\r?\n/).find(l => l.trim() && !l.startsWith('#')) || moz[0] || dt.getData('text/plain') || '';
+      const url = safeUrl(normalizeUrlInput(raw.trim()));
+      let name = (moz[1] || '').trim();
+      if (!name) {
+        // 从网页里拖出来的链接带着 text/html：链接文字就是现成的名称（文字就是网址本身时不算）。
+        const html = dt.getData('text/html');
+        const a = html ? new DOMParser().parseFromString(html, 'text/html').querySelector('a') : null;
+        const text = a ? a.textContent.replace(/\s+/g, ' ').trim() : '';
+        if (text && !looksLikeUrl(text)) name = text;
+      }
+      return url ? { url, name: name.slice(0, 60) } : null;
+    }
+    window.addEventListener('dragenter', (e) => {
+      if (!dropAccepts(e)) return;
+      e.preventDefault();
+      const g = findGroup(dropTargetGroup());
+      $('dropHintTo').textContent = g ? `添加到「${g.name}」` : '';
+      $('dropHint').hidden = false;
+    });
+    $('dropHint').addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    $('dropHint').addEventListener('dragleave', (e) => { if (e.target === $('dropHint')) $('dropHint').hidden = true; });
+    $('dropHint').addEventListener('drop', (e) => {
+      e.preventDefault();
+      $('dropHint').hidden = true;
+      const link = droppedLink(e.dataTransfer);
+      if (!link) { toast('拖进来的不是可收藏的网址', 'err'); return; }
+      prefillLink(dropTargetGroup(), link);
+    });
 
     // 书签小工具：拖到书签栏，在任意网页上点一下即可把当前页收进来。
     function bookmarkletHref() {

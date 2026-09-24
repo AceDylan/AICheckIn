@@ -89,6 +89,54 @@ def modal_focus(b):
     ctx.close()
 
 
+DRAG = """([type, html]) => { const dt = new DataTransfer(); dt.setData('text/uri-list', 'https://drop.example.com/docs');
+  if (html) dt.setData('text/html', html);
+  const fire = (target, name) => target.dispatchEvent(new DragEvent(name, { bubbles: true, cancelable: true, dataTransfer: dt }));
+  fire(document.body, 'dragenter');
+  const hint = document.getElementById('dropHint'), shown = !hint.hidden, to = document.getElementById('dropHintTo').textContent;
+  if (type === 'drop') fire(hint, 'drop'); else fire(hint, 'dragleave');
+  return { shown, to, hidden: hint.hidden }; }"""
+
+
+def drop_link(b):
+    reset()
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    r = page.evaluate(DRAG, ["leave", ""])
+    check("把链接拖进页面：出现「松手收藏」提示并写明加到哪个分组", r["shown"] and r["to"].startswith("添加到「") and r["hidden"], r)
+    r = page.evaluate(DRAG, ["drop", '<a href="https://drop.example.com/docs">Drop 文档</a>'])
+    page.wait_for_timeout(300)
+    vals = page.evaluate("() => [document.getElementById('lk_url').value, document.getElementById('lk_name').value, !!document.querySelector('#linkModal.show')]")
+    check("松手：打开添加网址，网址和链接文字都预填好（不直接保存）", vals == ["https://drop.example.com/docs", "Drop 文档", True], vals)
+    page.keyboard.press("Escape"); page.wait_for_timeout(200)
+    internal = page.evaluate("""() => { document.dispatchEvent(new DragEvent('dragstart', { bubbles: true }));
+      const dt = new DataTransfer(); dt.setData('text/uri-list', 'https://x.example');
+      document.body.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const shown = !document.getElementById('dropHint').hidden; document.dispatchEvent(new DragEvent('dragend', { bubbles: true })); return shown; }""")
+    check("页面自己的拖动（图标、网址行）不出这个提示", internal is False)
+    ctx.close()
+    ctx, page = open_page(b, 1440, 900, unlocked=False)
+    r = page.evaluate(DRAG, ["leave", ""])
+    check("未解锁：拖链接进来不出提示", not r["shown"], r)
+    ctx.close()
+
+
+def settings_and_toast(b):
+    reset()
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    page.goto(BASE + "/#settings"); page.reload(); page.wait_for_selector("#diagList .diag-head"); page.wait_for_timeout(300)
+    st = page.evaluate("""() => { const box = document.getElementById('diagList'), more = document.getElementById('diagMore');
+      return { shown: [...box.querySelectorAll(':scope > .diag-row')].map(r => r.className), okInside: more ? more.querySelectorAll('.diag-row.is-ok').length : 0, open: more ? more.open : null,
+               summary: more ? more.querySelector('summary').textContent : '' }; }""")
+    check("部署自检：只直接列出要关注的项，正常项收进「其余 N 项正常」", all("is-ok" not in c for c in st["shown"]) and st["okInside"] > 3 and st["open"] is False
+          and st["summary"].endswith("%d 项正常" % st["okInside"]), st)
+    page.locator("#diagMore summary").click(); page.locator("#runDiag").click(); page.wait_for_timeout(800)
+    check("展开过「其余 N 项正常」后重新检查：保持展开", page.evaluate("() => document.getElementById('diagMore').open") is True)
+    page.evaluate("() => toast('出错了：这是一条比较长的错误提示，读完需要一点时间', 'err')")
+    page.wait_for_timeout(3600)
+    check("出错提示多停一会儿（3.6 秒后还在）", page.locator(".toast.err").count() == 1)
+    ctx.close()
+
+
 def home_widgets(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -101,4 +149,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, home_widgets))
