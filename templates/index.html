@@ -1028,7 +1028,16 @@
     // ===== 主题 =====
     function readTheme() { const m = document.cookie.match(/(?:^|; )bh_theme=(light|dark|system)/); return m ? m[1] : 'dark'; }
     function systemTheme() { return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
+    // 浏览器地址栏 / 手机状态栏的颜色（theme-color）跟着页面主题走：页面选了浅色、系统是深色时，顶上不再是一条黑边。
+    const THEME_BG = { dark: '#0e0c09', light: '#f5f2ee' };
+    function applyThemeColor(pref) {
+      document.querySelectorAll('meta[name=theme-color]').forEach(m => {
+        const media = (m.getAttribute('media') || '').includes('light') ? 'light' : 'dark';
+        m.setAttribute('content', THEME_BG[pref === 'system' ? media : pref] || THEME_BG.dark);
+      });
+    }
     function applyTheme(pref) {
+      applyThemeColor(pref);
       document.documentElement.setAttribute('data-theme', pref === 'system' ? systemTheme() : pref);
       document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('active', b.dataset.themeOpt === pref));
     }
@@ -1158,6 +1167,7 @@
       const w = currentWallpaper();
       const rail = homeNavPref() === 'rail';
       root.classList.toggle('wall-on', !!w);
+      applyThemeColor(w ? 'dark' : readTheme());   // 开着壁纸整页是深色场景
       root.classList.toggle('nav-rail', rail);
       const toggle = $('navToggle');
       const label = rail ? '展开侧栏' : '收起侧栏';   // 状态直接写在名称里，不再叠一层 aria-pressed，读屏不会念成「展开侧栏，已按下」

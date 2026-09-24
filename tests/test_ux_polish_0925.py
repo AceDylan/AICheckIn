@@ -9,6 +9,14 @@ from tests.test_script_boot import NODE, TEMPLATE
 CSS = Path(TEMPLATE).parent.parent / 'static' / 'app-v3.css'
 
 
+class ThemeColorTest(unittest.TestCase):
+    def test_theme_color_follows_the_chosen_theme(self):
+        html = Path(TEMPLATE).read_text()
+        self.assertIn("function applyThemeColor(pref)", html)
+        self.assertIn("applyThemeColor(pref);", html)
+        self.assertIn("applyThemeColor(w ? 'dark' : readTheme());", html)
+
+
 class CheckinTabsMarkupTest(unittest.TestCase):
     def test_tabs_are_one_segmented_nav_and_subpages_have_no_back_link(self):
         html = Path(TEMPLATE).read_text()

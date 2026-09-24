@@ -54,6 +54,7 @@ def checkin_tabs(b):
 def palette(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    check("浅色主题：浏览器顶栏颜色（theme-color）也是浅色", page.evaluate("() => [...document.querySelectorAll('meta[name=theme-color]')].map(m => m.content.slice(1))") == ["f5f2ee", "f5f2ee"])
     page.keyboard.press("Control+k"); page.wait_for_timeout(250)
     check("空查询不列命令（仍是置顶与最近添加）", page.locator(".omni-row .omni-kind", has_text="命令").count() == 0)
     page.keyboard.type("运行记录"); page.wait_for_timeout(250)
@@ -63,6 +64,7 @@ def palette(b):
     check("回车执行：面板关掉、到了运行记录", v["hash"][1:] == "checkin/history" and not page.locator("#omniModal.show").count(), v)
     page.keyboard.press("Control+k"); page.wait_for_timeout(250)
     page.keyboard.type("深色"); page.wait_for_timeout(250); page.keyboard.press("Enter"); page.wait_for_timeout(300)
+    check("切到深色后，浏览器顶栏颜色（theme-color）也跟着变深", page.evaluate("() => [...document.querySelectorAll('meta[name=theme-color]')].map(m => m.content.slice(1))") == ["0e0c09", "0e0c09"])
     check("「切换到深色」立即生效并记进 Cookie", page.evaluate("() => document.documentElement.dataset.theme") == "dark"
           and any(c["name"] == "bh_theme" and c["value"] == "dark" for c in ctx.cookies()))
     ctx.close()
