@@ -7036,7 +7036,8 @@
     // 这些数据后端一直在存，此前只在页面上显示汇总数字，失败了也看不出是哪个站点。
     function histResultHtml(r) {
       const color = r.color || 'gray';
-      const note = r.message || '';
+      // 「签到成功 · 签到成功」这种和状态一模一样的说明不再重复一遍。
+      const note = r.message && r.message !== r.status_label ? r.message : '';
       const quota = r.quota_awarded && r.quota_awarded !== '-' ? r.quota_awarded : '';
       return `<div class="hist-row">
         <span class="pill ${escapeHtml(color)}">${escapeHtml(r.status_label || r.status || '')}</span>
@@ -7053,7 +7054,8 @@
       const results = Array.isArray(h.results) ? h.results : [];
       let stats = '';
       if (h.error) stats = `<span class="pill red">错误</span> ${escapeHtml(h.error)}`;
-      else if (s) stats = `<span class="pill green">成功 ${s.signed}</span><span class="pill cyan">跳过 ${s.skipped}</span><span class="pill red">失败 ${s.failed}</span> · 本次额度 ${s.quota_total}`;
+      // 为 0 的「跳过 / 失败」不再挂一颗彩色胶囊：红色的「失败 0」只会让人以为出了事。
+      else if (s) stats = `<span class="pill green">成功 ${s.signed}</span>${s.skipped ? `<span class="pill cyan">跳过 ${s.skipped}</span>` : ''}${s.failed ? `<span class="pill red">失败 ${s.failed}</span>` : ''} · 本次额度 ${s.quota_total}`;
       const head = `<div class="hist-head">
           <span class="hist-time">${escapeHtml(h.time)}</span>
           <span class="hist-trigger ${trigCls}">${trig}</span>

@@ -784,7 +784,7 @@ details > summary::-webkit-details-marker { display: none; }
 .cfg-actions .btn.danger:hover, .card-actions .btn.danger:hover { background: var(--danger-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
 .hist-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
 .hist-item:last-child { border-bottom: 0; }
-.hist-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.hist-head { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }   /* 触发方式紧跟时间，不被推到最右 */
 .hist-time { font-size: 13px; font-weight: 580; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .hist-trigger { padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 520; }
 .hist-trigger.scheduled { color: var(--accent); background: var(--accent-soft); }
@@ -802,6 +802,9 @@ details > summary::-webkit-details-marker { display: none; }
 details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--accent-soft); }
 .hist-results { margin: 12px 0 4px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); display: grid; gap: 8px; }
 .hist-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+/* 各行的状态胶囊等宽、额度靠右：账户名在一条竖线上，没有说明的行额度也不会跟着名字跑到中间。 */
+.hist-row > .pill:first-child { display: inline-flex; flex: 0 0 auto; min-width: 64px; justify-content: center; margin-right: 0; }
+.hist-row-quota { margin-left: auto; }
 .hist-row-name { flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 580; }
 .hist-row-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
 .hist-row-quota { flex: 0 0 auto; color: var(--success); font-weight: 580; font-variant-numeric: tabular-nums; }
@@ -1564,6 +1567,8 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .checkin-bar { flex-direction: column; align-items: stretch; gap: 10px; }
   .checkin-tabs { width: 100%; }
   .checkin-tabs button { flex: 1 1 0; min-width: 0; padding: 0 6px; gap: 5px; }
+  #checkinActHistory { justify-content: flex-end; }
+  #checkinActHistory .btn { flex: none; }   /* 进页面就会自动取一次：「刷新记录」是偶尔才点的次要操作，不占满一整行 */
   .cards.is-list { padding: 2px 14px; }
   .ck-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "id badge" "bal act" "note note"; gap: 4px 10px; padding: 12px 0; }
   .ck-id { grid-area: id; } .ck-row .badge { grid-area: badge; justify-self: end; } .ck-bal { grid-area: bal; padding-left: 38px; }

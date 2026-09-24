@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """0925 体验打磨的浏览器验证：签到中心分段标签、命令面板里的页面 / 命令、弹窗焦点、首页小组件与折叠按钮。"""
+import json
+import os
 import sys
 from verify import *   # noqa: F401,F403
 
@@ -182,6 +184,27 @@ def move_menu(b):
     ctx.close()
 
 
+def history_list(b):
+    reset()
+    res = lambda name, st, label, color, msg="", q="-": {"name": name, "status": st, "status_label": label, "color": color, "message": msg, "quota_awarded": q}
+    hist = [{"time": "2026-09-24 08:30:02", "trigger": "scheduled", "summary": {"signed": 2, "skipped": 0, "failed": 1, "quota_total": "0.50"},
+             "results": [res("Alpha", "signed", "签到成功", "green", "签到成功", "0.50"), res("Beta", "failed", "失败", "red", "HTTP 401"), res("Gamma", "signed", "签到成功", "green", "", "0.20")]},
+            {"time": "2026-09-22 09:10:44", "trigger": "retry", "summary": {"signed": 1, "skipped": 2, "failed": 0, "quota_total": "0.20"}, "results": []}]
+    with open(os.path.join(DATA, "history.json"), "w", encoding="utf-8") as fh:
+        json.dump(hist, fh, ensure_ascii=False)
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    page.goto(BASE + "/#checkin/history"); page.reload(); page.wait_for_selector("#histList .hist-item"); page.wait_for_timeout(300)
+    st = page.evaluate("""() => ({ pills: [...document.querySelectorAll('#histList .hist-stats .pill')].map(p => p.textContent),
+        names: [...document.querySelectorAll('#histList .hist-row-name')].map(n => Math.round(n.getBoundingClientRect().left)),
+        quotas: [...document.querySelectorAll('#histList .hist-row-quota')].map(n => Math.round(n.getBoundingClientRect().right)),
+        notes: [...document.querySelectorAll('#histList .hist-row-note')].map(n => n.textContent),
+        trig: (() => { const h = document.querySelectorAll('#histList .hist-item')[1].querySelector('.hist-head'); return Math.round(h.querySelector('.hist-trigger').getBoundingClientRect().left - h.querySelector('.hist-time').getBoundingClientRect().right); })() })""")
+    check("运行记录：为 0 的「跳过 / 失败」不挂胶囊", st["pills"] == ["成功 2", "失败 1", "成功 1", "跳过 2"], st["pills"])
+    check("运行记录：各行账户名对齐、额度都靠右", len(set(st["names"])) == 1 and len(set(st["quotas"])) == 1, st)
+    check("运行记录：和状态一样的说明不重复、触发方式紧跟时间", st["notes"] == ["HTTP 401"] and 0 <= st["trig"] <= 16, st)
+    ctx.close()
+
+
 def home_toolbar(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -208,4 +231,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, home_toolbar, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, home_toolbar, home_widgets))
