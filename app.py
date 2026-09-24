@@ -31,6 +31,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlencode, urljoin, urlparse
 from pathlib import Path
 
@@ -59,6 +60,12 @@ _STAMP_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # 指标快照文件：持久化每组配置上一次获取到的签到奖励/钱包余额/已用额度/请求数。
 # 以 base_url|user_id 为键，独立于 configs 数组索引，避免增删改导入打乱对齐。
 METRICS_FILE = str(DATA_DIR / "metrics.json")
+# 页面上「运行全部签到」走后台任务：不同站点最多同时签几个（同一站点的多个账户仍然依次签，
+# 免得同一台服务器同时收到一串请求）。环境变量 GYQD_CHECKIN_WORKERS 可调，限制在 1–8。
+try:
+    CHECKIN_WORKERS = max(1, min(8, int(os.environ.get("GYQD_CHECKIN_WORKERS", "3"))))
+except ValueError:
+    CHECKIN_WORKERS = 3
 
 # 管理密码：保护配置写入 / 查看真实 token / 定时设置。留空表示完全开放（公网部署强烈建议设置）。
 ADMIN_PASSWORD = os.environ.get("GYQD_ADMIN_PASSWORD", "").strip()
@@ -111,6 +118,9 @@ _metrics_lock = threading.Lock()
 # 定时刷新用独立的锁：它和签到互不相干，没必要互相等待。
 _refresh_lock = threading.Lock()
 _sched_thread = None
+# 后台签到任务（页面上的「运行全部签到」）：同一时刻只有一个，状态放在内存里供页面轮询。
+_job_lock = threading.Lock()
+_checkin_job = None
 
 # =========================
 # 配置存取（持久化层）
@@ -1208,6 +1218,8 @@ def public_config(item, reveal=False):
         "has_turnstile": bool(str(item.get("turnstile") or "").strip()),
     }
     out["turnstile"] = item.get("turnstile", "") if reveal else ""
+    # 稳定键（base_url|user_id）：页面按下标调接口时带上它，服务端对不上号就拒绝（见 _stale_target）。
+    out["key"] = metrics_key(item)
     return out
 
 
@@ -1254,6 +1266,8 @@ def public_bookmark(bookmark):
         # 旧键镜像仅用于展示，本身不含凭据；balance_config（含请求头）刻意不下发。
         "balance": bookmark.get("balance", ""),
         "balance_updated_at": bookmark.get("balance_updated_at", ""),
+        # 稳定键（网址|名称），用途同签到账户的 key。
+        "key": bookmark_snapshot_key(bookmark),
     }
 
 
@@ -1274,6 +1288,49 @@ def run_checkin(configs, proxy_url):
 
 def run_single(config, proxy_url):
     return gyqd.run_one(config, _build_client(proxy_url))
+
+
+def _site_of(config):
+    """账户所在站点（主机名，不分大小写），用来决定哪些账户不能同时签。"""
+    base = str(config.get("base_url") or "").strip()
+    try:
+        host = (urlparse(base).hostname or "").lower()
+    except ValueError:
+        host = ""
+    return host or base.lower()
+
+
+def run_checkin_parallel(configs, proxy_url, on_start=None, on_done=None, workers=None):
+    """按站点分组并发签到，结果顺序与 configs 一致。
+
+    同一站点的账户依次签（别让一台服务器同时收到同一个人的一串请求），
+    不同站点最多 workers 个同时进行：一个连不上的站点（约 64 秒才放弃）不再拖住其余账户。
+    客户端只建一次、各线程共用：它不在请求之间保存状态，curl_cffi 的模块级请求函数也是线程安全的。
+    """
+    client = _build_client(proxy_url)  # 依赖缺失等启动错误在这里就抛出，一个账户都不发
+    groups = {}
+    for i, cfg in enumerate(configs):
+        groups.setdefault(_site_of(cfg), []).append(i)
+    results = [None] * len(configs)
+
+    def work(indices):
+        for i in indices:
+            if on_start:
+                on_start(i)
+            try:
+                result = gyqd.run_one(configs[i], client)
+            except Exception as exc:  # noqa: BLE001 - run_one 自己兜底，这里防的是意外
+                name = str(configs[i].get("name") or configs[i].get("base_url") or "未命名平台")
+                result = gyqd.result_item(name, "failed", "签到执行异常：{0}".format(exc))
+            results[i] = result
+            if on_done:
+                on_done(i, result)
+
+    if groups:
+        size = max(1, min(workers or CHECKIN_WORKERS, len(groups)))
+        with ThreadPoolExecutor(max_workers=size) as pool:
+            list(pool.map(work, groups.values()))
+    return results
 
 
 def test_single(config, proxy_url):
@@ -1342,9 +1399,8 @@ def _write_history_entry(entry):
         data = data[:HISTORY_CAP]
         try:
             Path(HISTORY_FILE).parent.mkdir(parents=True, exist_ok=True)
-            Path(HISTORY_FILE).write_text(
-                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            # 与 config.json 同样先写临时文件再替换：写到一半崩溃不会留下半截 JSON。
+            _write_text_atomic(Path(HISTORY_FILE), json.dumps(data, ensure_ascii=False, indent=2))
         except OSError:
             pass  # 历史写失败不影响主流程。
 
@@ -1384,39 +1440,58 @@ def read_metrics():
     return data if isinstance(data, dict) else {}
 
 
-def update_metric(config, serialized, mark_signed=False):
-    """从一次签到/测试结果提取四项指标，合并写入快照（仅在成功取到数据时调用）。
+def update_metric(config, serialized, mark_signed=False, outcome=False):
+    """从一次签到/测试结果提取四项指标，合并写入快照。
 
     - 钱包三项（余额/已用/请求数）：只要本次取到有效值就刷新。
     - 签到奖励：仅签到成功时有值，测试不产生；无有效值时保留旧值，不覆盖为 '-'。
     - mark_signed=True：额外记录今日已签到日期（last_checkin_date），供「待签到」统计；
       测试连接不传此参数，故不会把站点标记为已签到。
-    失败/禁用项不调用本函数，从而保留上一次的有效快照。
+    - outcome=True：这是一次真正的签到结果（serialized 带 status / message），
+      另记「最近一次签到」的状态、原因和时间，刷新页面后卡片仍能显示「失败 + 原因」。
+      失败时只记这三项，不动指标与 updated_at，保留上一次的有效快照。
     """
     key = metrics_key(config)
     if not key.strip("|"):
         return
+    failed = outcome and serialized.get("status") == "failed"
     with _metrics_lock:
         metrics = read_metrics()
         snap = dict(metrics.get(key) or {})
-        for field in ("wallet_balance", "used_quota", "request_count"):
-            value = serialized.get(field)
-            if value not in (None, "", "-"):
-                snap[field] = value
-        awarded = serialized.get("quota_awarded")
-        if awarded not in (None, "", "-"):
-            snap["quota_awarded"] = awarded
-        if mark_signed:
-            snap["last_checkin_date"] = _today_str()
-        snap["updated_at"] = _now_str()
+        now = _now_str()
+        if not failed:
+            for field in ("wallet_balance", "used_quota", "request_count"):
+                value = serialized.get(field)
+                if value not in (None, "", "-"):
+                    snap[field] = value
+            awarded = serialized.get("quota_awarded")
+            if awarded not in (None, "", "-"):
+                snap["quota_awarded"] = awarded
+            if mark_signed:
+                snap["last_checkin_date"] = _today_str()
+            snap["updated_at"] = now
+        if outcome:
+            snap["last_status"] = str(serialized.get("status") or "")
+            snap["last_message"] = public_error(serialized.get("message") or "")[:300]
+            snap["last_run_at"] = now
         metrics[key] = snap
         try:
             Path(METRICS_FILE).parent.mkdir(parents=True, exist_ok=True)
-            Path(METRICS_FILE).write_text(
-                json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            _write_text_atomic(Path(METRICS_FILE), json.dumps(metrics, ensure_ascii=False, indent=2))
         except OSError:
             pass  # 指标写失败不影响主流程。
+
+
+def record_outcomes(configs, results):
+    """把一轮签到结果逐个账户写回快照：成功 / 已签刷新指标并记今日已签，失败只记状态与原因。
+
+    禁用项不记（它根本没去签）。
+    """
+    for cfg, r in zip(configs, results):
+        status = r.get("status")
+        if status == "disabled":
+            continue
+        update_metric(cfg, serialize(r), mark_signed=status in ("signed", "skipped"), outcome=True)
 
 
 # =========================
@@ -2699,6 +2774,19 @@ def api_diagnostics():
 # 签到会带着账号凭据请求第三方平台，并把结果写进历史，属于代表账号主人执行的动作。
 # 未设管理密码时 _guard_admin 恒放行，本地/内网部署的行为不变。
 
+def _stale_target(item, key_fn, noun):
+    """按下标定位的接口可带 ?expect=<稳定键>：下标上已经换成别的条目就回 409。
+
+    另一台设备删过 / 排过序之后，旧页面上的下标会指向别的条目；不核对的话，
+    「令牌留空 = 沿用原值」会把 A 账户的令牌配到 B 账户的地址上。不带 expect 的旧客户端照旧放行。
+    """
+    expect = request.args.get("expect")
+    if expect is None or key_fn(item) == expect:
+        return None
+    return jsonify({"ok": False, "stale": True,
+                    "error": "{0}已在别处调整或删除，请刷新页面后再操作".format(noun)}), 409
+
+
 @app.post("/api/checkin")
 def api_checkin():
     guard = _guard_admin()
@@ -2721,10 +2809,8 @@ def api_checkin():
         except Exception as exc:  # noqa: BLE001
             return jsonify({"ok": False, "error": "签到执行异常：{0}".format(exc)}), 500
         record_history("manual", results)
-        # 成功取到钱包数据的项（签到成功/今日已签）刷新指标快照；禁用/失败保留旧值。
-        for cfg, r in zip(configs, results):
-            if r.get("status") in ("signed", "skipped"):
-                update_metric(cfg, serialize(r), mark_signed=True)
+        # 成功项刷新指标快照；失败项只记状态与原因，禁用项不动。
+        record_outcomes(configs, results)
 
     return jsonify({
         "ok": True,
@@ -2732,6 +2818,103 @@ def api_checkin():
         "summary": summarize(results),
         "time": _now_str(),
     })
+
+
+def _job_view(job):
+    """后台签到任务的对外视图（拷贝一份，免得序列化时撞上工作线程在改）。"""
+    if job is None:
+        return None
+    with _job_lock:
+        view = {k: v for k, v in job.items() if k != "items"}
+        view["items"] = [dict(item) for item in job["items"]]
+    return view
+
+
+def _run_checkin_job(job, configs, proxy_url):
+    """工作线程：等签到锁（定时签到可能正在跑）→ 分站点并发签 → 记历史与快照。"""
+    def mark(i, **changes):
+        with _job_lock:
+            job["items"][i].update(changes)
+            job["done"] = sum(1 for item in job["items"] if item["state"] == "done")
+
+    try:
+        with _run_lock:
+            with _job_lock:
+                job["phase"] = "running"
+            results = run_checkin_parallel(
+                configs, proxy_url,
+                on_start=lambda i: mark(i, state="running"),
+                on_done=lambda i, r: mark(i, state="done", result=serialize(r)),
+            )
+            record_history("manual", results)
+            record_outcomes(configs, results)
+            with _job_lock:
+                job["summary"] = summarize(results)
+    except gyqd.CheckinError as exc:
+        with _job_lock:
+            job["error"] = str(exc)
+        record_history("manual", error=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        with _job_lock:
+            job["error"] = "签到执行异常：{0}".format(exc)
+    finally:
+        with _job_lock:
+            job["running"] = False
+            job["phase"] = "finished"
+            job["finished_at"] = _now_str()
+
+
+@app.post("/api/checkin/jobs")
+def api_checkin_job_start():
+    """在后台跑一轮全部签到，立刻返回；页面轮询 GET /api/checkin/jobs 看逐个账户的进度。
+
+    同步的 POST /api/checkin 要等所有账户签完才返回，一个连不上的站点就要约 64 秒，
+    前面有反向代理（nginx 默认 60 秒）时页面会先收到 504。已有任务在跑时直接返回那个任务。
+    """
+    global _checkin_job
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    configs = store["configs"]
+    if not configs:
+        return jsonify({"ok": False, "error": "未配置任何平台，请先在「服务配置」中添加"}), 400
+    with _job_lock:
+        current = _checkin_job
+        if current is not None and current["running"]:
+            busy = True
+        else:
+            busy = False
+            _checkin_job = current = {
+                "id": secrets.token_hex(6),
+                "running": True,
+                "phase": "waiting",  # 等签到锁：定时签到 / 补签正在跑时先排队
+                "started_at": _now_str(),
+                "finished_at": "",
+                "total": len(configs),
+                "done": 0,
+                "workers": CHECKIN_WORKERS,
+                "summary": None,
+                "error": "",
+                "items": [{"name": str(c.get("name") or c.get("base_url") or ""), "key": metrics_key(c),
+                           "state": "queued", "result": None} for c in configs],
+            }
+    if not busy:
+        worker = threading.Thread(target=_run_checkin_job, args=(current, configs, store["proxy_url"]),
+                                  name="checkin-job", daemon=True)
+        worker.start()
+    return jsonify({"ok": True, "job": _job_view(current), "already_running": busy}), (200 if busy else 202)
+
+
+@app.get("/api/checkin/jobs")
+def api_checkin_job_status():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    return jsonify({"ok": True, "job": _job_view(_checkin_job)})
 
 
 @app.post("/api/checkin/<int:idx>")
@@ -2747,6 +2930,9 @@ def api_checkin_one(idx):
     configs = store["configs"]
     if idx < 0 or idx >= len(configs):
         return jsonify({"ok": False, "error": "配置不存在"}), 404
+    stale = _stale_target(configs[idx], metrics_key, "这个账户")
+    if stale:
+        return stale
 
     with _run_lock:
         try:
@@ -2756,8 +2942,7 @@ def api_checkin_one(idx):
         except Exception as exc:  # noqa: BLE001
             return jsonify({"ok": False, "error": "签到执行异常：{0}".format(exc)}), 500
         record_history("manual-single", [result])
-        if result.get("status") in ("signed", "skipped"):
-            update_metric(configs[idx], serialize(result), mark_signed=True)
+        record_outcomes([configs[idx]], [result])
 
     return jsonify({"ok": True, "result": serialize(result), "time": _now_str()})
 
@@ -2775,6 +2960,9 @@ def api_test_one(idx):
     configs = store["configs"]
     if idx < 0 or idx >= len(configs):
         return jsonify({"ok": False, "error": "配置不存在"}), 404
+    stale = _stale_target(configs[idx], metrics_key, "这个账户")
+    if stale:
+        return stale
 
     try:
         wallet = test_single(configs[idx], store["proxy_url"])
@@ -2932,6 +3120,9 @@ def api_config_secret(idx):
     configs = store["configs"]
     if idx < 0 or idx >= len(configs):
         return jsonify({"ok": False, "error": "配置不存在"}), 404
+    stale = _stale_target(configs[idx], metrics_key, "这个账户")
+    if stale:
+        return stale
     return jsonify({"ok": True, "access_token": configs[idx].get("access_token", "")})
 
 
@@ -2971,6 +3162,9 @@ def api_config_update(idx):
     configs = store["configs"]
     if idx < 0 or idx >= len(configs):
         return jsonify({"ok": False, "error": "配置不存在"}), 404
+    stale = _stale_target(configs[idx], metrics_key, "这个账户")
+    if stale:
+        return stale
     try:
         configs[idx] = clean_config(payload, existing=configs[idx])
     except ValueError as exc:
@@ -2994,6 +3188,9 @@ def api_config_delete(idx):
     configs = store["configs"]
     if idx < 0 or idx >= len(configs):
         return jsonify({"ok": False, "error": "配置不存在"}), 404
+    stale = _stale_target(configs[idx], metrics_key, "这个账户")
+    if stale:
+        return stale
     configs.pop(idx)
     try:
         write_store(store)
@@ -3038,6 +3235,9 @@ def api_bookmark_update(idx):
     bookmarks = store["bookmarks"]
     if idx < 0 or idx >= len(bookmarks):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    stale = _stale_target(bookmarks[idx], bookmark_snapshot_key, "这个站点")
+    if stale:
+        return stale
     try:
         bookmarks[idx] = clean_bookmark(payload, existing=bookmarks[idx])
     except ValueError as exc:
@@ -3061,6 +3261,9 @@ def api_bookmark_delete(idx):
     bookmarks = store["bookmarks"]
     if idx < 0 or idx >= len(bookmarks):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    stale = _stale_target(bookmarks[idx], bookmark_snapshot_key, "这个站点")
+    if stale:
+        return stale
     bookmarks.pop(idx)
     try:
         write_store(store)
@@ -3137,6 +3340,9 @@ def api_bookmark_secret(idx):
     bookmarks = store["bookmarks"]
     if idx < 0 or idx >= len(bookmarks):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    stale = _stale_target(bookmarks[idx], bookmark_snapshot_key, "这个站点")
+    if stale:
+        return stale
     return jsonify({"ok": True, "bookmark": bookmarks[idx]})
 
 
@@ -3153,6 +3359,9 @@ def api_bookmark_refresh_balance(idx):
     bookmarks = store["bookmarks"]
     if idx < 0 or idx >= len(bookmarks):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    stale = _stale_target(bookmarks[idx], bookmark_snapshot_key, "这个站点")
+    if stale:
+        return stale
     bookmark = bookmarks[idx]
     if not [f for f in bookmark.get("fields") or [] if f.get("enabled", True)]:
         return jsonify({"ok": False, "error": "该收藏没有启用的接口字段"}), 400
@@ -3173,6 +3382,9 @@ def api_bookmark_refresh_field(idx, field_id):
     bookmarks = store["bookmarks"]
     if idx < 0 or idx >= len(bookmarks):
         return jsonify({"ok": False, "error": "收藏不存在"}), 404
+    stale = _stale_target(bookmarks[idx], bookmark_snapshot_key, "这个站点")
+    if stale:
+        return stale
     bookmark = bookmarks[idx]
     if not any(f.get("id") == field_id for f in bookmark.get("fields") or []):
         return jsonify({"ok": False, "error": "字段不存在"}), 404
@@ -6043,10 +6255,8 @@ def _scheduler_tick():
         try:
             results = run_checkin(configs, store["proxy_url"])
             record_history("scheduled", results)
-            # 定时签到同样回写指标快照，保持签到页与手动签到一致（修复定时不回写）。
-            for cfg, r in zip(configs, results):
-                if r.get("status") in ("signed", "skipped"):
-                    update_metric(cfg, serialize(r), mark_signed=True)
+            # 定时签到同样回写快照（含失败原因），保持签到页与手动签到一致。
+            record_outcomes(configs, results)
         except Exception as exc:  # noqa: BLE001
             record_history("scheduled", error="定时签到失败：{0}".format(exc))
         # 定时签到联动刷新收藏字段：配置了接口字段的收藏顺带取一次，
@@ -6132,9 +6342,7 @@ def _retry_tick():
         try:
             results = run_checkin(pending, store["proxy_url"])
             record_history("retry", results)
-            for cfg, r in zip(pending, results):
-                if r.get("status") in ("signed", "skipped"):
-                    update_metric(cfg, serialize(r), mark_signed=True)
+            record_outcomes(pending, results)
         except Exception as exc:  # noqa: BLE001
             record_history("retry", error="补签失败：{0}".format(exc))
         persist_field_snapshots({}, schedule_run={

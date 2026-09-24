@@ -1367,62 +1367,90 @@
       };
     }
 
-    // 顶部仪表盘：钱包合计 / 今日已签 / 待签·禁用 / 下次定时。
+    // 顶部状态行：今日已签 / 待签 / 禁用 / 余额合计 / 下次定时，一行文字，不再堆五个等大的图标方块。
+    // 「运行全部签到」只留页头那一个按钮。
     function renderOverview() {
       const el = $('overview');
       if (!STATE.configs.length) { el.style.display = 'none'; return; }
-      let walletSum = 0, signed = 0, enabled = 0, disabled = 0;
+      let walletSum = 0, walletKnown = 0, signed = 0, enabled = 0, disabled = 0, failed = 0;
       STATE.configs.forEach((c, i) => {
         if (c.enabled) enabled++; else disabled++;
-        walletSum += parseNum(displayMetrics(i).wallet_balance);
+        const w = displayMetrics(i).wallet_balance;
+        if (w != null && w !== '' && w !== '-') { walletSum += parseNum(w); walletKnown++; }
         const r = RESULTS[i];
         const signedNow = r && (r.status === 'signed' || r.status === 'skipped');
         // 已签判定：本次会话结果优先，否则采用后端持久化的「今日已签」，使刷新/重启后待签到仍准确。
         if (c.enabled && (signedNow || c.checked_in_today)) signed++;
+        else if (c.enabled && lastOutcome(c, i).failedToday) failed++;
       });
       const pending = Math.max(0, enabled - signed);
       const s = STATE.schedule || {};
-      const next = s.enabled ? (s.time || '--:--') : '未启用';
-      const kpi = (ic, num, label) =>
-        `<div class="kpi"><div class="kpi-icon">${ic}</div><div class="kpi-body"><div class="kpi-num">${escapeHtml(String(num))}</div><div class="kpi-label">${escapeHtml(label)}</div></div></div>`;
-      // 一键签到方框：与各 KPI 同尺寸，紧随「下次定时」之后，点击/回车即触发全量签到。
-      const runBox =
-        `<div class="kpi kpi-run" id="runBox" role="button" tabindex="0" onclick="runCheckin()"` +
-        ` onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();runCheckin();}">` +
-        `<div class="kpi-icon">${icon('play')}</div><div class="kpi-body">` +
-        `<div class="kpi-num" id="runBoxNum">一键签到</div>` +
-        `<div class="kpi-label" id="runBoxLabel">点击立即签到</div></div></div>`;
+      const item = (num, label, tone) =>
+        `<div class="ov-item${tone ? ' ' + tone : ''}"><span class="ov-num">${escapeHtml(String(num))}</span><span class="ov-label">${escapeHtml(label)}</span></div>`;
       el.innerHTML = [
-        kpi(icon('wallet'), fmtNum(walletSum), '钱包余额合计'),
-        kpi(icon('check'), `${signed}/${enabled}`, '今日已签 / 启用'),
-        kpi(icon('clock'), disabled ? `${pending} · ${disabled}` : `${pending}`, disabled ? '待签到 · 已禁用' : '待签到'),
-        kpi(icon('calendar'), next, '下次定时'),
-        runBox,
+        item(`${signed}/${enabled}`, '今日已签'),
+        item(pending, failed ? `待签 · 其中 ${failed} 个失败` : '待签到', failed ? 'bad' : ''),
+        disabled ? item(disabled, '手动签到') : '',
+        // 一个账户都还没取到过余额时显示「—」，别让人以为余额真的是 0。
+        item(walletKnown ? fmtNum(walletSum) : '—', '余额合计'),
+        item(s.enabled ? (s.time || '--:--') : '未开启', '每日定时'),
       ].join('');
-      el.style.display = 'grid';
+      el.style.display = 'flex';
+    }
+
+    // 最近一次签到（服务端持久化）：刷新页面、定时签到之后也能看到「失败 + 原因」。
+    function lastOutcome(c, i) {
+      const m = (c && c.metrics) || {};
+      const at = m.last_run_at || '';
+      const today = localDateKey(new Date());
+      return {
+        status: m.last_status || '', message: m.last_message || '', at,
+        today: at.slice(0, 10) === today,
+        failedToday: m.last_status === 'failed' && at.slice(0, 10) === today && !(c && c.checked_in_today),
+      };
+    }
+    function localDateKey(d) {
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+    // 「2026-09-24 08:30:05」→ 今天显示「08:30」，其它日子「9月24日 08:30」。
+    function shortStamp(at) {
+      if (!at) return '';
+      const day = at.slice(0, 10), hm = at.slice(11, 16);
+      if (day === localDateKey(new Date())) return '今天 ' + hm;
+      const [, mo, dd] = day.split('-');
+      return mo && dd ? `${Number(mo)}月${Number(dd)}日 ${hm}` : at;
     }
 
     function enabledCardHtml(c, i) {
       const r = RESULTS[i];
       const m = displayMetrics(i);
-      // badge 优先用本次会话结果；刷新后回退到后端持久化的「今日已签」，否则显示未签到。
+      const last = lastOutcome(c, i);
+      // badge 优先用本次会话结果；刷新后回退到后端持久化的「今日已签 / 今天失败」，否则显示未签到。
       const badge = r
         ? { label: r.status_label, color: r.color }
-        : (c.checked_in_today ? { label: '今日已签', color: 'green' } : { label: '未签到', color: 'gray' });
-      const stamp = (!r && m.updated_at) ? `<div class="stamp">↻ 上次获取 ${escapeHtml(m.updated_at)}</div>` : '';
+        : c.checked_in_today ? { label: '今日已签', color: 'green' }
+        : last.failedToday ? { label: '失败', color: 'red' }
+        : { label: '未签到', color: 'gray' };
+      const msg = r ? r.message : (last.failedToday ? last.message : '');
+      const lastLabel = { signed: '成功', skipped: '已签', failed: '失败' }[last.status] || '';
+      const stamp = r ? '' : last.at
+        ? `<div class="stamp">最近签到 ${escapeHtml(shortStamp(last.at))} · ${escapeHtml(lastLabel)}${last.status === 'failed' && !last.failedToday && last.message ? '：' + escapeHtml(last.message) : ''}</div>`
+        : m.updated_at ? `<div class="stamp">↻ 上次获取 ${escapeHtml(shortStamp(m.updated_at))}</div>` : '';
+      // 四项指标只列有值的；一项都没有时给一句说明，不再摆四行「-」。
+      const kv = [['签到奖励', m.quota_awarded], ['钱包余额', m.wallet_balance], ['已用额度', m.used_quota], ['请求数', m.request_count]]
+        .filter(([, v]) => v != null && v !== '' && v !== '-');
+      const kvHtml = kv.length
+        ? `<div class="kvs">${kv.map(([k, v]) => `<div class="kv"><span class="k">${k}</span><span class="v">${escapeHtml(v)}</span></div>`).join('')}</div>`
+        : `<div class="kvs-empty">${r && (r.status === 'running' || r.status === 'queued') ? '正在取数…' : '还没有数据 · 签到或点「测试」后显示余额'}</div>`;
       return `<div class="card ${badge.color}" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
         <div class="card-head">
           <span class="card-title">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}<span class="card-name">${escapeHtml(c.name)}</span></span>
           <span class="badge ${badge.color}">${escapeHtml(badge.label)}</span>
         </div>
         ${urlLink(c.base_url)}
-        <div class="kvs">
-          <div class="kv"><span class="k">签到奖励</span><span class="v">${escapeHtml(m.quota_awarded)}</span></div>
-          <div class="kv"><span class="k">钱包余额</span><span class="v">${escapeHtml(m.wallet_balance)}</span></div>
-          <div class="kv"><span class="k">已用额度</span><span class="v">${escapeHtml(m.used_quota)}</span></div>
-          <div class="kv"><span class="k">请求数</span><span class="v">${escapeHtml(m.request_count)}</span></div>
-        </div>
-        ${r && r.message ? `<div class="card-msg">${escapeHtml(r.message)}</div>` : ''}
+        ${kvHtml}
+        ${msg ? `<div class="card-msg">${escapeHtml(msg)}</div>` : ''}
         ${stamp}
         <div class="card-actions">
           <button class="btn sm" onclick="checkinOne(${i})">签到</button>
@@ -1490,42 +1518,96 @@
     }
 
     // ===== 签到动作 =====
-    // 设置一键签到方框的忙碌态（方框在 renderOverview 中动态重建，故每次取最新节点）。
-    function setRunBusy(busy) {
-      const box = $('runBox');
-      if (!box) return;
-      box.classList.toggle('busy', busy);
-      const num = $('runBoxNum'), label = $('runBoxLabel');
-      if (num) num.innerHTML = busy ? '<span class="spinner"></span>签到中' : '一键签到';
-      if (label) label.textContent = busy ? '请稍候…' : '点击立即签到';
+    // 「运行全部签到」是后台任务：POST 立刻返回，这里隔一秒多问一次进度，卡片逐个换成结果。
+    // 不再是一个要等所有账户签完的长请求（一个连不上的站点就要 64 秒，反向代理 60 秒会先回 504）。
+    const CHECKIN_JOB = { polling: false, resumed: false };
+    function setRunBusy(busy, job) {
+      const btn = $('runAllCheckin');
+      if (!btn) return;
+      btn.disabled = busy;
+      btn.classList.toggle('busy', busy);
+      const label = busy
+        ? (job && job.phase === 'waiting' ? '排队中…' : `签到中 ${job ? job.done : 0}/${job ? job.total : STATE.configs.length}`)
+        : '运行全部签到';
+      btn.innerHTML = (busy ? '<span class="spinner"></span>' : icon('play')) + escapeHtml(label);
     }
-
+    function showCheckinError(msg) { $('error').textContent = msg; $('error').style.display = 'block'; }
+    function applyCheckinJob(job) {
+      if (!job) return;
+      (job.items || []).forEach((it, i) => {
+        const c = STATE.configs[i];
+        if (!c || c.key !== it.key) return;   // 期间账户增删过：对不上号的不认
+        if (it.state === 'done' && it.result) RESULTS[i] = it.result;
+        else if (job.running) RESULTS[i] = { name: it.name, status: it.state, status_label: it.state === 'running' ? '签到中' : '排队中', color: 'cyan', message: '' };
+        else if (RESULTS[i] && (RESULTS[i].status === 'running' || RESULTS[i].status === 'queued')) RESULTS[i] = undefined;
+      });
+      renderCheckinCards();
+      setRunBusy(!!job.running, job);
+    }
+    function finishCheckinJob(job) {
+      if (job.error) { showCheckinError(job.error); toast('签到没能执行：' + job.error, 'err'); return; }
+      const sum = job.summary || {};
+      $('meta').textContent = `最近执行 ${job.finished_at} · 本次额度 +${sum.quota_total || 0}`;
+      toast(sum.failed ? `签到完成：${sum.failed} 个失败，原因见卡片` : '签到完成', sum.failed ? 'err' : 'ok');
+      loadConfigs({ quiet: true });   // 取回服务端刚写的快照（余额 / 最近签到状态）
+    }
+    async function pollCheckinJob() {
+      if (CHECKIN_JOB.polling) return;
+      CHECKIN_JOB.polling = true;
+      let misses = 0;
+      try {
+        for (;;) {
+          await new Promise(res => setTimeout(res, 1200));
+          let data;
+          try {
+            const resp = await fetch('/api/checkin/jobs', { headers: adminHeaders() });
+            data = await resp.json();
+          } catch (_) {
+            if (++misses >= 30) { showCheckinError('一直连不上服务器，签到仍在后台进行，稍后刷新页面查看结果'); break; }
+            continue;   // 网络抖一下接着问：任务在服务端照跑
+          }
+          misses = 0;
+          if (!data.ok || !data.job) { if (!data.ok) showCheckinError(data.error || '查询进度失败'); break; }
+          applyCheckinJob(data.job);
+          if (!data.job.running) { finishCheckinJob(data.job); break; }
+        }
+      } finally {
+        CHECKIN_JOB.polling = false;
+        setRunBusy(false);
+      }
+    }
     async function runCheckin() {
-      const box = $('runBox');
-      if (box && box.classList.contains('busy')) return;  // 防止签到进行中重复触发。
+      if (CHECKIN_JOB.polling) return;  // 防止签到进行中重复触发。
       if (!guardAdmin()) return;
       $('error').style.display = 'none';
       setRunBusy(true);
+      let data;
       try {
-        const resp = await fetch('/api/checkin', { method: 'POST', headers: adminHeaders() });
+        const resp = await fetch('/api/checkin/jobs', { method: 'POST', headers: adminHeaders() });
+        data = await resp.json();
+      } catch (e) { showCheckinError('网络错误：' + e.message); setRunBusy(false); return; }
+      if (!data.ok) { showCheckinError(data.error || '启动签到失败'); setRunBusy(false); return; }
+      if (data.already_running) toast('已有一轮签到在进行，接着显示它的进度');
+      applyCheckinJob(data.job);
+      pollCheckinJob();
+    }
+    // 页面刷新 / 换设备打开时，后台可能还有一轮没跑完：接着显示它的进度。
+    async function resumeCheckinJob() {
+      if (CHECKIN_JOB.resumed || !canEdit() || !STATE.configs.length) return;
+      CHECKIN_JOB.resumed = true;
+      try {
+        const resp = await fetch('/api/checkin/jobs', { headers: adminHeaders() });
         const data = await resp.json();
-        if (!data.ok) { $('error').textContent = data.error || ('HTTP ' + resp.status); $('error').style.display = 'block'; return; }
-        RESULTS = data.results.slice();
-        renderCheckinCards();
-        $('meta').textContent = `最近执行 ${data.time} · 本次额度 +${data.summary.quota_total}`;
-        toast('签到完成', 'ok');
-      } catch (e) {
-        $('error').textContent = '网络错误：' + e.message; $('error').style.display = 'block';
-      } finally {
-        setRunBusy(false);
-      }
+        if (data.ok && data.job && data.job.running) { applyCheckinJob(data.job); pollCheckinJob(); }
+      } catch (_) { /* 查不到就算了，不影响页面 */ }
     }
 
     async function checkinOne(idx) {
       if (!guardAdmin()) return;
       try {
-        const resp = await fetch('/api/checkin/' + idx, { method: 'POST', headers: adminHeaders() });
+        const resp = await fetch('/api/checkin/' + idx + expectQ(STATE.configs[idx]), { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
+        if (staleReload(resp, data)) return;
         if (!data.ok) { toast(data.error || '失败', 'err'); return; }
         RESULTS[idx] = data.result;
         renderCheckinCards();
@@ -1535,8 +1617,9 @@
     async function testOne(idx) {
       if (!guardAdmin()) return;
       try {
-        const resp = await fetch('/api/test/' + idx, { method: 'POST', headers: adminHeaders() });
+        const resp = await fetch('/api/test/' + idx + expectQ(STATE.configs[idx]), { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
+        if (staleReload(resp, data)) return;
         if (!data.ok) { toast('测试失败：' + (data.error || ''), 'err'); return; }
         // 测试拿到的钱包指标本地写回快照，立即刷新卡片显示（后端也已持久化）。
         const c = STATE.configs[idx];
@@ -1593,6 +1676,7 @@
         renderLibrary();
         renderSettings();
         renderCheckinCards();
+        resumeCheckinJob();
         // 首次加载时 initRoute() 已经把视图切好了，但那时 STATE 还没到位，
         // 页面自带的加载动作被跳过了——这里按当前所在页面补上。
         refreshActiveView(currentViewName());
@@ -1922,6 +2006,16 @@
       pumpFavicons();
     }
 
+    // 签到账户和看板站点的接口按下标定位：带上稳定键，别处删过 / 排过序后下标错位时，
+    // 服务端回 409 而不是改到另一个条目上（比如把 A 的令牌配到 B 的地址上）。
+    function expectQ(item) { return item && item.key != null ? '?expect=' + encodeURIComponent(item.key) : ''; }
+    function staleReload(resp, data) {
+      if (resp.status !== 409 || !data || !data.stale) return false;
+      toast(data.error || '数据已在别处变更，已重新加载', 'err');
+      loadConfigs();
+      return true;
+    }
+
     function guardAdmin() {
       if (canEdit()) return true;
       toast('请先在「系统设置」中输入管理密码解锁', 'err');
@@ -1931,8 +2025,9 @@
     async function revealToken(i) {
       if (!guardAdmin()) return;
       try {
-        const resp = await fetch(`/api/configs/${i}/secret`, { headers: adminHeaders() });
+        const resp = await fetch(`/api/configs/${i}/secret` + expectQ(STATE.configs[i]), { headers: adminHeaders() });
         const data = await resp.json();
+        if (staleReload(resp, data)) return;
         if (!data.ok) { toast(data.error || '失败', 'err'); return; }
         const el = $('tok-' + i);
         el.textContent = data.access_token;
@@ -1944,11 +2039,12 @@
       if (!guardAdmin()) { renderConfigs(); return; }
       const c = STATE.configs[i];
       try {
-        const resp = await fetch('/api/configs/' + i, {
+        const resp = await fetch('/api/configs/' + i + expectQ(c), {
           method: 'PUT', headers: adminHeaders(),
           body: JSON.stringify({ name: c.name, base_url: c.base_url, user_id: c.user_id, turnstile: c.turnstile, enabled, access_token: '' }),
         });
         const data = await resp.json();
+        if (staleReload(resp, data)) return;
         if (!data.ok) { toast(data.error || '失败', 'err'); renderConfigs(); return; }
         STATE.configs[i].enabled = enabled;
         renderConfigs();
@@ -1957,9 +2053,10 @@
     }
 
     // ----- 编辑/新增弹窗 -----
-    let editIdx = -1;
+    let editIdx = -1, editKey = null;
     function openCfgModal(idx) {
       editIdx = idx;
+      editKey = idx >= 0 ? STATE.configs[idx].key : null;   // 打开时记下是谁：保存时下标若已换人就拒绝
       $('m_error').style.display = 'none';
       const isEdit = idx >= 0;
       $('cfgModalTitle').textContent = isEdit ? '编辑配置' : '新增配置';
@@ -1980,11 +2077,12 @@
         user_id: $('m_uid').value.trim(), turnstile: $('m_ts').value.trim(),
         access_token: $('m_token').value.trim(), enabled: $('m_enabled').checked,
       };
-      const url = editIdx >= 0 ? '/api/configs/' + editIdx : '/api/configs';
+      const url = editIdx >= 0 ? '/api/configs/' + editIdx + expectQ({ key: editKey }) : '/api/configs';
       const method = editIdx >= 0 ? 'PUT' : 'POST';
       try {
         const resp = await fetch(url, { method, headers: adminHeaders(), body: JSON.stringify(body) });
         const data = await resp.json();
+        if (staleReload(resp, data)) { $('cfgModal').classList.remove('show'); return; }
         if (!data.ok) { $('m_error').textContent = data.error || '保存失败'; $('m_error').style.display = 'block'; return; }
         $('cfgModal').classList.remove('show');
         toast('已保存', 'ok');
@@ -1996,8 +2094,9 @@
       if (!guardAdmin()) return;
       if (!confirm(`确认删除配置「${STATE.configs[i].name}」？`)) return;
       try {
-        const resp = await fetch('/api/configs/' + i, { method: 'DELETE', headers: adminHeaders() });
+        const resp = await fetch('/api/configs/' + i + expectQ(STATE.configs[i]), { method: 'DELETE', headers: adminHeaders() });
         const data = await resp.json();
+        if (staleReload(resp, data)) return;
         if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
         toast('已删除', 'ok');
         loadConfigs();
@@ -4775,8 +4874,9 @@
       setBusy(true);
       const timeoutId = setTimeout(() => setBusy(false), 30000);  // 30s 强制恢复
       try {
-        const resp = await fetch(`/api/bookmarks/${i}/refresh_balance`, { method: 'POST', headers: adminHeaders() });
+        const resp = await fetch(`/api/bookmarks/${i}/refresh_balance` + expectQ(STATE.bookmarks[i]), { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
+        if (staleReload(resp, data)) return false;
         if (data.bookmark) STATE.bookmarks[i] = data.bookmark;
         if (LIB.page === 'monitor' || LIB.page === '@home') renderCurrentLibraryPage();
         if (!data.ok) { if (!quiet) toast(data.error || '刷新失败', 'err'); return false; }
@@ -4795,7 +4895,7 @@
       }
     }
 
-    let bmEditIdx = -1;
+    let bmEditIdx = -1, bmEditKey = null;
     let bmDraftFields = [];  // 弹窗内的字段草稿（含 _key/_open/_curl_text 等本地状态），保存时整体提交
     // 把已存的请求配置还原成 curl 文本：优先用保存的原始 curl，
     // 旧数据（无 curl 字段）则按 method/url/headers/body 反向拼一条等价 curl。
@@ -4977,13 +5077,15 @@
       let b = { name: '', url: '', fields: [] };
       if (isEdit) {
         try {
-          const resp = await fetch(`/api/bookmarks/${idx}/secret`, { headers: adminHeaders() });
+          const resp = await fetch(`/api/bookmarks/${idx}/secret` + expectQ(STATE.bookmarks[idx]), { headers: adminHeaders() });
           const data = await resp.json();
+          if (staleReload(resp, data)) return;
           if (!data.ok) { toast(data.error || '读取站点配置失败', 'err'); return; }
           b = data.bookmark || b;
         } catch (e) { toast('网络错误：' + e.message, 'err'); return; }
       }
       bmEditIdx = idx;
+      bmEditKey = isEdit ? STATE.bookmarks[idx].key : null;
       $('bm_error').style.display = 'none';
       $('bmModalTitle').textContent = isEdit ? '编辑站点' : '新增站点';
       $('bm_name').value = b.name || '';
@@ -5013,11 +5115,12 @@
         if (err) { d._open = true; renderFieldEditor(); showBmError(`字段「${d.label || '未命名'}」：${err}`); return; }
       }
       const body = { name, url, fields: bmDraftFields.map(draftToPayload) };
-      const ep = bmEditIdx >= 0 ? `/api/bookmarks/${bmEditIdx}` : '/api/bookmarks';
+      const ep = bmEditIdx >= 0 ? `/api/bookmarks/${bmEditIdx}` + expectQ({ key: bmEditKey }) : '/api/bookmarks';
       const method = bmEditIdx >= 0 ? 'PUT' : 'POST';
       try {
         const resp = await fetch(ep, { method, headers: adminHeaders(), body: JSON.stringify(body) });
         const data = await resp.json();
+        if (staleReload(resp, data)) { $('bmModal').classList.remove('show'); return; }
         if (!data.ok) { showBmError(data.error || '保存失败'); return; }
         $('bmModal').classList.remove('show');
         toast('已保存', 'ok');
@@ -5034,8 +5137,9 @@
       if (!guardAdmin()) return;
       if (!confirm(`确认删除站点「${STATE.bookmarks[i].name}」？`)) return;
       try {
-        const resp = await fetch('/api/bookmarks/' + i, { method: 'DELETE', headers: adminHeaders() });
+        const resp = await fetch('/api/bookmarks/' + i + expectQ(STATE.bookmarks[i]), { method: 'DELETE', headers: adminHeaders() });
         const data = await resp.json();
+        if (staleReload(resp, data)) return;
         if (!data.ok) { toast(data.error || '删除失败', 'err'); return; }
         toast('已删除', 'ok');
         loadConfigs();

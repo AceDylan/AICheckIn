@@ -692,26 +692,18 @@ details > summary::-webkit-details-marker { display: none; }
 .empty-state .empty-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
 
 /* ---------- 签到中心 ---------- */
-/* 概览是一条统计带：五个数字共用一块面板，中间用 1px 的缝当分隔线（缝里露出的是面板的边框色），不是五张一样的卡片。 */
+/* 概览是一行状态：几个数字挨着排、竖线分隔，不做图标方块；主操作只有页头的「运行全部签到」。 */
 .overview {
-  display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 1px; margin-bottom: 22px; overflow: hidden;
-  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--border); box-shadow: var(--shadow-1);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 0; margin-bottom: 18px; padding: 2px 2px 16px;
+  border-bottom: 1px solid var(--border);
 }
-.kpi {
-  min-height: 92px; display: flex; align-items: center; gap: 14px; padding: 16px 20px;
-  background: var(--surface);
-  transition: background-color .16s var(--ease);
-}
-.kpi-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 10px; background: var(--surface-2); font-size: 16px; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--border); }
-.kpi-icon svg { width: 18px; height: 18px; }
-.kpi-body { min-width: 0; }
-.kpi-num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 21px; font-weight: 620; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
-.kpi-label { margin-top: 3px; color: var(--text-2); font-size: 11px; font-weight: 500; }
-.kpi-run { cursor: pointer; position: relative; overflow: hidden; }
-.kpi-run .kpi-icon { background: var(--primary); color: var(--primary-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2); }
-.kpi-run .kpi-num { color: var(--text); font-size: 18px; letter-spacing: -.02em; }
-.kpi-run:hover { background: var(--surface-hover); }
-.kpi-run.busy { opacity: .7; cursor: default; }
+.ov-item { display: inline-flex; align-items: baseline; gap: 7px; padding: 0 18px; border-left: 1px solid var(--border); }
+.ov-item:first-child { padding-left: 0; border-left: 0; }
+.ov-num { font-size: 20px; font-weight: 620; font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.ov-label { color: var(--text-2); font-size: 12.5px; }
+.ov-item.bad .ov-num, .ov-item.bad .ov-label { color: var(--danger); }
+#runAllCheckin.busy { opacity: .85; cursor: progress; }
+.kvs-empty { margin-top: 12px; color: var(--text-3); font-size: 12.5px; }
 .run-meta { min-height: 18px; margin: 0 2px 14px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 16px; }
 .card {
@@ -1460,8 +1452,6 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   :root { --sidebar-w: 236px; }
   .content { padding-inline: 24px; }
   .bookmark-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .overview { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
-  .overview > .kpi:last-child:nth-child(3n + 2) { grid-column: span 2; }
   .settings-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
@@ -1508,9 +1498,8 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .bookmark-grid { grid-template-columns: 1fr; }
   .link-grid, .home-section .link-grid { grid-template-columns: 1fr; }
   .bookmark-card { min-height: 0; }
-  .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .overview > .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .kpi { min-height: 84px; padding: 14px; }
+  .ov-item { padding: 0 12px; }
+  .ov-num { font-size: 18px; }
   .panel { padding: 18px; }
   .row-2 { grid-template-columns: 1fr; }
   .cfg-actions { width: 100%; }
@@ -1596,10 +1585,6 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 /* 比 360px 还窄（小屏 + 系统字号放大）：先收起星期，问候和日期留全。 */
 @media (max-width: 359px) { .hero-weekday { display: none; } }
 @media (max-width: 400px) {
-  /* 窄屏仍排两列（统计带里一格一个数字，不必各占一整行）：图标收小、留白收紧。 */
-  .kpi { gap: 10px; padding: 12px; }
-  .kpi-icon { width: 30px; height: 30px; flex-basis: 30px; }
-  .kpi-num { font-size: 18px; }
   .tab { min-width: 50px; }
   .bookmark-actions { flex-wrap: wrap; }
 }

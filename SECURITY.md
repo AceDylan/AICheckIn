@@ -296,6 +296,7 @@
 | `GYQD_CONFIG_FILE` | `/app/data/config.json` | 配置文件路径，其所在目录同时存放历史 / 指标 / 图标缓存 |
 | `GYQD_HSTS` | `0` | 设 `1` 时在 https 请求上下发 HSTS（会波及整个域名） |
 | `GYQD_SCHEDULER` | `1` | 设 `0` 关掉后台线程：定时签到、当日补签与站点数据自动刷新都不再跑 |
+| `GYQD_CHECKIN_WORKERS` | `3` | 页面「运行全部签到」同时签几个站点（1–8）。同一站点的多个账户始终依次签 |
 | `GYQD_RETRY_LIMIT` | `3` | 定时签到当日最多补签几次（只重跑当天未签成的账号）。`0` 关闭 |
 | `GYQD_RETRY_DELAY_MINUTES` | `30` | 两次补签之间至少间隔多少分钟 |
 | `GYQD_LOGIN_MAX_FAILS` | `8` | 单个来源 IP 在窗口内允许的管理密码失败次数 |
