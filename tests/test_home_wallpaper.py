@@ -253,8 +253,8 @@ class WallpaperPageGuardsTest(unittest.TestCase):
         # 浅色主题的分组色调不能压过场景色调：场景选择器的优先级必须更高。
         self.assertIn("html.wall-on .app-shell .tone-mint {", self.css)
         # 浮层压在画面上必须是实底；根滚动条 / 页面底色跟着场景走，浅色主题下不露白边。
-        self.assertRegex(self.css, r"html\.wall-on \.app-shell \.menu-popover[^{]*\{ background: #141a27;")
-        self.assertIn("html.wall-on body { background: #0c1017; }", self.css)
+        self.assertRegex(self.css, r"html\.wall-on \.app-shell \.menu-popover[^{]*\{ background: #16161b;")
+        self.assertIn("html.wall-on body { background: #0b0b0e; }", self.css)
 
     def test_look_does_not_depend_on_the_current_page(self):
         block = self.html[self.html.index("function applyLook()"):self.html.index("// 侧栏底部的收起 / 展开")]

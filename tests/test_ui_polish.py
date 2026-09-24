@@ -54,7 +54,7 @@ class UiPolishStyleTest(unittest.TestCase):
         selector = re.search(r"(:root, html\.wall-on \.modal-mask[^{]*)\{", self.css).group(1)
         for overlay in ("html.wall-on .modal-mask", "html.wall-on .toast-wrap", "html.wall-on .todo-sort-menu"):
             self.assertIn(overlay, selector)
-        for decl in ("color-scheme: dark", "--surface: #131926", "--text: #f8fafc", "--scrim:", "--toast-bg:", "--shadow-pop:"):
+        for decl in ("color-scheme: dark", "--surface: #151519", "--text: #f4f4f6", "--scrim:", "--toast-bg:", "--shadow-pop:"):
             self.assertIn(decl, self.dark)
         for layout_token in ("--sidebar-w", "--radius", "--font"):
             self.assertNotIn(layout_token, self.dark)   # 重新声明会盖掉 html.nav-rail / 媒体查询里的值
@@ -104,7 +104,7 @@ class UiPolishStyleTest(unittest.TestCase):
         self.assertNotIn("backdrop-filter", rule)
         self.assertIn(".rail-tip[hidden] { display: none; }", self.css)
         # 固定深底浅字：不依赖主题令牌，壁纸 / 浅色页面上都 ≥ 4.5:1。
-        self.assertGreaterEqual(contrast("#f8fafc", "#161e2e"), 4.5)
+        self.assertGreaterEqual(contrast("#f4f4f6", "#1b1b20"), 4.5)
         block = self.html[self.html.index("const RAIL_TIP = "):self.html.index("// ===== Toast =====")]
         for needle in ("e.pointerType !== 'touch'", "t.matches(':focus-visible')", "bar.addEventListener('focusout', hideRailTip)",
                        "!e.buttons", "railTipKey(t) === RAIL_TIP.mute", "bar.addEventListener('scroll', hideRailTip, true)",

@@ -54,7 +54,7 @@ def empty_state(b):
 
 def contrast_and_overlays(b):
     ctx, page = open_page(b, 1440, 900, cookies={"bh_wallpaper": "off"})
-    check("深色主题 --text-3 = #8292a8", page.evaluate("() => getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim()") == "#8292a8")
+    check("深色主题 --text-3 = #8e8e98", page.evaluate("() => getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim()") == "#8e8e98")
     ctx.close()
     # 浅色主题 + 壁纸：弹窗 / 命令面板 / 提示条 / 排序菜单固定深色
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
@@ -62,29 +62,30 @@ def contrast_and_overlays(b):
     page.locator("#homeToolsToggle").click() if page.locator("#homeToolsToggle").is_visible() else None
     page.locator("#homeAddLink").click(); page.wait_for_selector("#linkModal.show")
     bg, fg = rgb(page, "#linkModal .modal", "backgroundColor"), rgb(page, "#linkModal .modal", "color")
-    check("浅色 + 壁纸：弹窗是深色实底 + 浅色字", bg == "rgb(19, 25, 38)" and fg == "rgb(248, 250, 252)", (bg, fg))
-    check("浅色 + 壁纸：弹窗里的输入框也是深色", rgb(page, "#linkModal input[type=text], #linkModal input", "backgroundColor") == "rgb(15, 20, 34)", rgb(page, "#linkModal input", "backgroundColor"))
-    check("浅色 + 壁纸：遮罩用深色那一档", rgb(page, "#linkModal", "backgroundColor") == "rgba(5, 8, 14, 0.76)", rgb(page, "#linkModal", "backgroundColor"))
+    check("浅色 + 壁纸：弹窗是深色实底 + 浅色字", bg == "rgb(21, 21, 25)" and fg == "rgb(244, 244, 246)", (bg, fg))
+    check("浅色 + 壁纸：弹窗里的输入框也是深色", rgb(page, "#linkModal input[type=text], #linkModal input", "backgroundColor") == "rgb(15, 15, 19)", rgb(page, "#linkModal input", "backgroundColor"))
+    check("浅色 + 壁纸：遮罩用深色那一档", rgb(page, "#linkModal", "backgroundColor") == "rgba(4, 4, 8, 0.72)", rgb(page, "#linkModal", "backgroundColor"))
     page.wait_for_timeout(300); shot(page, "P3-wall-light-modal")
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Control+k"); page.wait_for_selector("#omniModal.show")
     check("浅色 + 壁纸：命令面板深色", rgb(page, "#omniModal .omni", "backgroundColor") != "rgb(255, 255, 255)", rgb(page, "#omniModal .omni", "backgroundColor"))
     page.keyboard.press("Escape")
     page.evaluate("() => toast('验证提示', 'ok')"); page.wait_for_selector(".toast")
-    check("浅色 + 壁纸：提示条深色", rgb(page, ".toast", "backgroundColor") == "rgb(22, 30, 46)", rgb(page, ".toast", "backgroundColor"))
+    check("浅色 + 壁纸：提示条深色", rgb(page, ".toast", "backgroundColor") == "rgb(27, 27, 32)", rgb(page, ".toast", "backgroundColor"))
     ctx.close()
     # 对照：浅色、不开壁纸——弹窗仍是白的（只改壁纸场景）
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
     page.locator("#homeToolsToggle").click() if page.locator("#homeToolsToggle").is_visible() else None
     page.locator("#homeAddLink").click(); page.wait_for_selector("#linkModal.show")
-    check("浅色、无壁纸：弹窗保持白底深字（不受影响）", rgb(page, "#linkModal .modal", "backgroundColor") == "rgb(255, 255, 255)" and rgb(page, "#linkModal .modal", "color") == "rgb(15, 23, 42)")
+    check("浅色、无壁纸：弹窗保持白底深字（不受影响）", rgb(page, "#linkModal .modal", "backgroundColor") == "rgb(255, 255, 255)" and rgb(page, "#linkModal .modal", "color") == "rgb(24, 24, 30)")
     shot(page, "P4-light-nowall-modal")
     ctx.close()
     # 图标栏宽度令牌没有被浮层那组声明盖掉
     for nav, want in (("rail", "72px"), ("full", "252px")):
         ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": nav, "bh_theme": "light"})
         page.keyboard.press("Control+k"); page.wait_for_selector("#omniModal.show")
-        got = page.evaluate("() => [getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim(), getComputedStyle(document.querySelector('.sidebar')).width]")
+        # 壁纸场景（默认）里侧栏浮起、左边留 10px：它占的那一列 = 自身宽度 + 左外边距。
+        got = page.evaluate("() => { const s = getComputedStyle(document.querySelector('.sidebar')); return [getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w').trim(), (parseFloat(s.width) + parseFloat(s.marginLeft)) + 'px']; }")
         check(f"导航 {nav}：--sidebar-w = {want}，没被浮层那组令牌盖掉", got[0] == want and got[1] == want, got)
         ctx.close()
 
