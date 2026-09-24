@@ -1530,7 +1530,9 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .bookmark-grid { grid-template-columns: 1fr; }
   .link-grid, .home-section .link-grid { grid-template-columns: 1fr; }
   .bookmark-card { min-height: 0; }
-  .ov-item { padding: 0 12px; }
+  /* 状态行会折成两行：第二行开头不该挂一条竖线，改成只用间距分隔。 */
+  .overview { gap: 10px 18px; }
+  .ov-item, .ov-item:first-child { padding: 0; border-left: 0; }
   .ov-num { font-size: 18px; }
   .panel { padding: 18px; }
   .row-2 { grid-template-columns: 1fr; }
@@ -2241,4 +2243,4 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 }
 /* 设置行里的分段控件（主题）：按钮文字不折行，控件按内容宽。 */
 .set-ctrl .segmented { flex: none; }
-.set-ctrl .segmented button { white-space: nowrap; }
+.set-ctrl .segmented button { flex: 1 0 auto; min-width: 0; padding: 0 12px; white-space: nowrap; }
