@@ -388,7 +388,7 @@
         <!-- ===== 设置 ===== -->
         <section class="view" id="view-settings">
           <div class="view-header"><div><div class="eyebrow">偏好</div><h1>系统设置</h1><p>自动签到、全局代理、管理权限与外观。</p></div></div>
-          <div class="settings-grid">
+          <div class="settings-grid" id="settingsGrid">
             <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote" hidden></div>
               <div class="set-rows">
                 <label class="set-row"><span class="set-text"><b>每天自动签到</b><span>到点把启用的账户全部签一遍，没签成的会自动补签</span></span><span class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></span></label>
@@ -1878,6 +1878,8 @@
         if (tab) tab.hidden = !show;
       });
       const locked = libraryLocked();
+      // 没解锁时设置页里能做的只有「解锁」：把管理密码这一节提到最前面，不用翻过三节改不了的设置去找密码框。
+      $('settingsGrid').classList.toggle('is-locked', !show);
       const libTab = document.querySelector('.tab[data-view="bookmarks"]');
       if (libTab) libTab.hidden = locked;
       LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && currentViewName() !== 'bookmarks'); });

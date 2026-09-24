@@ -801,6 +801,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .settings-grid .panel { margin: 0; }
 .settings-grid .panel.span-2 { grid-column: 1 / -1; }
+.settings-grid.is-locked #adminPanel { order: -1; grid-column: 1 / -1; }
 
 /* ---------- 弹窗 ---------- */
 .modal-mask {
@@ -2263,6 +2264,8 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   html:not(.wall-on) .settings-grid { grid-template-columns: minmax(0, 1fr); gap: 0; max-width: 1040px; }
   html:not(.wall-on) .settings-grid .panel { padding: 28px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; }
   html:not(.wall-on) .settings-grid .panel:first-child { padding-top: 6px; border-top: 0; }
+  html:not(.wall-on) .settings-grid.is-locked .panel:first-child { padding-top: 28px; border-top: 1px solid var(--border); }
+  html:not(.wall-on) .settings-grid.is-locked #adminPanel { padding-top: 6px; border-top: 0; }
 }
 @media (min-width: 1024px) {
   html:not(.wall-on) .settings-grid .panel { display: grid; grid-template-columns: 220px minmax(0, 1fr); column-gap: 48px; align-items: start; }

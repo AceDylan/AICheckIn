@@ -141,6 +141,23 @@ def settings_and_toast(b):
     ctx.close()
 
 
+def locked_settings(b):
+    reset()
+    for w, h, mobile in ((1440, 900, False), (390, 844, True)):
+        ctx, page = open_page(b, w, h, mobile=mobile, unlocked=False)
+        page.goto(BASE + "/#settings"); page.reload(); page.wait_for_selector("#adminPanel"); page.wait_for_timeout(400)
+        st = page.evaluate("""() => { const tops = [...document.querySelectorAll('#settingsGrid > .panel')].filter(p => p.offsetParent)
+            .map(p => [p.id, Math.round(p.getBoundingClientRect().top)]).sort((a, b) => a[1] - b[1]);
+            const pw = document.querySelector('#adminPanel input[type=password]'); return { first: tops[0][0], pwBottom: pw ? Math.round(pw.getBoundingClientRect().bottom) : -1, h: innerHeight }; }""")
+        check("未解锁（%s）：管理密码一节排在设置页最前、密码框在首屏" % ("手机" if mobile else "电脑"), st["first"] == "adminPanel" and 0 < st["pwBottom"] < st["h"] - 80, st)
+        ctx.close()
+    ctx, page = open_page(b, 1440, 900)
+    page.goto(BASE + "/#settings"); page.reload(); page.wait_for_timeout(600)
+    first = page.evaluate("() => [...document.querySelectorAll('#settingsGrid > .panel')].filter(p => p.offsetParent).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0].id")
+    check("已解锁：设置页照旧从定时签到开始", first != "adminPanel", first)
+    ctx.close()
+
+
 def home_toolbar(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -167,4 +184,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, home_toolbar, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, home_toolbar, home_widgets))
