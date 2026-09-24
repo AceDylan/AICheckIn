@@ -94,3 +94,12 @@ class UxPolishJsTest(unittest.TestCase):
             assert.equal(agoText(stamp(3 * 3600000 + 60000)), '3 小时前');
             assert.equal(agoText('bogus'), '');
         """)
+
+    def test_run_all_finish_toast_counts_everything(self):
+        self.run_js("""
+            const seen = [];
+            toast = (msg, kind) => seen.push([msg, kind]);
+            finishCheckinJob({ finished_at: '08:30', summary: { signed: 3, skipped: 1, failed: 1, quota_total: '0.70' } });
+            finishCheckinJob({ finished_at: '08:31', summary: { signed: 2, skipped: 0, failed: 0, quota_total: '0' } });
+            assert.deepEqual(seen, [['签到完成：3 个成功，1 个今天已签过，1 个失败（原因见卡片），额度 +0.70', 'err'], ['签到完成：2 个成功', 'ok']]);
+        """)

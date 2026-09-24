@@ -369,14 +369,14 @@
             <div class="run-meta"><span class="meta" id="meta"></span></div>
             <div id="error" class="error" style="display:none"></div>
             <div id="disabledWrap" style="display:none"><div class="section-label">需手动签到 <span class="count" id="disabledCount"></span></div><div class="disabled-group"><div id="disabledCards" class="dlist"></div></div></div>
-            <div class="section-label" id="enabledLabel" style="display:none">启用配置 <span class="count" id="enabledCount"></span>
+            <div class="section-label" id="enabledLabel" style="display:none">自动签到 <span class="count" id="enabledCount"></span>
               <span class="segmented ck-view" id="ckView" role="radiogroup" aria-label="账户显示方式"><button type="button" role="radio" data-ck-view="cards">卡片</button><button type="button" role="radio" data-ck-view="list">列表</button></span></div>
             <div id="cards" class="cards"></div>
             <div id="empty" class="empty-state" style="display:none"></div>
           </section>
           <section class="checkin-panel" id="view-configs" aria-label="服务配置" hidden>
             <div class="panel">
-              <div class="panel-title">配置组 <span class="sub" id="cfgCount"></span></div>
+              <div class="panel-title">签到账户 <span class="sub" id="cfgCount"></span></div>
               <div id="cfgList" class="cfg-list"></div><div id="cfgEmpty" class="empty-state" style="display:none"></div>
             </div>
           </section>
@@ -1647,7 +1647,7 @@
         : `<button class="btn sm" disabled>无网址</button>`;
       return `<div class="dcard" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
         <div class="dcard-main">
-          <div class="card-name">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}${escapeHtml(c.name)} <span class="badge gray">禁用</span></div>
+          <div class="card-name">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}${escapeHtml(c.name)} <span class="badge gray">已停用</span></div>
           ${urlLink(c.base_url)}
           <div class="dmetrics">${[['余额', m.wallet_balance], ['已用', m.used_quota], ['请求', m.request_count]].filter(([, v]) => v && v !== '-').map(([k, v]) => `${k} ${escapeHtml(v)}`).join(' · ') || '还没有数据'}${stamp}</div>
         </div>
@@ -1682,7 +1682,7 @@
       hideEmpty(emptyEl);
 
       $('enabledLabel').style.display = enabledIdx.length ? 'flex' : 'none';
-      $('enabledCount').textContent = enabledIdx.length ? `${enabledIdx.length} 组` : '';
+      $('enabledCount').textContent = enabledIdx.length ? `${enabledIdx.length} 个账户` : '';
       const view = ckView(enabledIdx.length);
       document.querySelectorAll('#ckView [data-ck-view]').forEach(b => { const on = b.dataset.ckView === view; b.classList.toggle('active', on); b.setAttribute('aria-checked', String(on)); });
       cardsEl.classList.toggle('is-list', view === 'list');
@@ -1690,7 +1690,7 @@
 
       if (disabledIdx.length) {
         $('disabledWrap').style.display = 'block';
-        $('disabledCount').textContent = `${disabledIdx.length} 组 · 不参与一键/定时签到`;
+        $('disabledCount').textContent = `${disabledIdx.length} 个账户 · 不参与一键 / 定时签到`;
         $('disabledCards').innerHTML = disabledIdx.map(i => disabledItemHtml(STATE.configs[i], i)).join('');
       } else {
         $('disabledWrap').style.display = 'none';
@@ -1730,7 +1730,12 @@
       if (job.error) { showCheckinError(job.error); toast('签到没能执行：' + job.error, 'err'); return; }
       const sum = job.summary || {};
       $('meta').textContent = `最近执行 ${job.finished_at} · 本次额度 +${sum.quota_total || 0}`;
-      toast(sum.failed ? `签到完成：${sum.failed} 个失败，原因见卡片` : '签到完成', sum.failed ? 'err' : 'ok');
+      // 结束提示把这一轮说全：几个成功、几个今天已签过、几个失败、拿了多少额度，不用再去翻卡片数。
+      const parts = [`${sum.signed || 0} 个成功`];
+      if (sum.skipped) parts.push(`${sum.skipped} 个今天已签过`);
+      if (sum.failed) parts.push(`${sum.failed} 个失败（原因见卡片）`);
+      if (Number(sum.quota_total) > 0) parts.push(`额度 +${sum.quota_total}`);
+      toast('签到完成：' + parts.join('，'), sum.failed ? 'err' : 'ok');
       loadConfigs({ quiet: true });   // 取回服务端刚写的快照（余额 / 最近签到状态）
     }
     async function pollCheckinJob() {
@@ -2170,7 +2175,7 @@
 
     function renderConfigs() {
       const list = $('cfgList'), empty = $('cfgEmpty');
-      $('cfgCount').textContent = `共 ${STATE.configs.length} 组`;
+      $('cfgCount').textContent = `共 ${STATE.configs.length} 个`;
       $('cfgTabCount').textContent = STATE.configs.length ? String(STATE.configs.length) : '';
       if (!STATE.configs.length) { list.innerHTML = ''; showEmpty(empty, { icon: 'shield', title: '还没有签到账户', text: '添加第一个账户（站点地址、用户 ID 和系统访问令牌），或导入之前导出的 JSON。', actions: [{ label: '＋ 添加账户', onclick: "$('addCfg').click()" }, { label: '导入', ghost: true, onclick: "$('importCfg').click()" }] }); return; }
       hideEmpty(empty);
@@ -6411,7 +6416,7 @@
         const c = STATE.configs[i];
         items.push({
           kind: 'config', title: c.name, host: siteHost(c.base_url),
-          sub: c.enabled === false ? '签到配置 · 已禁用' : '签到配置', tags: [], url: c.base_url,
+          sub: c.enabled === false ? '签到配置 · 已停用' : '签到配置', tags: [], url: c.base_url,
           color: 'violet', configIndex: i,
           haystack: omniHaystack([c.name, c.base_url, c.user_id, '签到配置']),
         });
