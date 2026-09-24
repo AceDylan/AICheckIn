@@ -135,6 +135,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 ::selection { background: color-mix(in srgb, var(--accent) 34%, transparent); }
+/* 标题行宽均衡（不留孤零零的最后一个字），说明文字避免末行只剩一两个字。旧浏览器忽略，排版照旧。 */
+h1, h2, h3 { text-wrap: balance; }
+p, .hint, .note, .set-text span, .modal-sub { text-wrap: pretty; }
 [hidden] { display: none !important; }
 svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -2176,6 +2179,13 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
     min-height: 0; margin: 0; padding-top: 4px; font-size: 15px;
   }
 }
+
+/* 键盘选中的那一行在最右边提示「回车打开」（Raycast / Linear 的做法）：知道按哪个键，不用看底栏。 */
+:is(.omni-row, .home-search-row).is-active::after {
+  content: "↵"; flex: 0 0 auto; margin-left: 2px; padding: 1px 6px; border: 1px solid var(--border-strong); border-radius: 6px;
+  color: var(--text-3); font: 500 11px/1.4 var(--mono);
+}
+@media (hover: none) { :is(.omni-row, .home-search-row).is-active::after { display: none; } }
 
 /* 弹窗底部的操作条贴住弹窗底边：内容再长，「保存 / 取消」也一直看得见；浅一档的底 + 一条细线，和正文分开。 */
 .modal > .modal-actions:last-child {

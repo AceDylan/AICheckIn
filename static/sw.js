@@ -24,7 +24,8 @@
 // v26：图标（favicon / PWA / 主屏）换成墨色方块 + 纸色书签，和侧栏品牌标一致。
 // v27：设置页分节（左标题右内容）、弹窗操作条贴底、按压 / 弹出动效。
 // v28：首页工具条收进一条胶囊、搜索下拉选中行改中性色。
-const CACHE_VERSION = 'bh-shell-v28';
+// v29：键盘选中行的回车提示、标题 / 说明文字的换行均衡。
+const CACHE_VERSION = 'bh-shell-v29';
 const SHELL = [
   '/',
   '/static/app-v3.css',
