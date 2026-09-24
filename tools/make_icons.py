@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """生成 PWA 图标 PNG（纯标准库，不引入 Pillow）。
 
-图形与页面 favicon 的内联 SVG 一致：圆角方块 + 薄荷→紫的对角渐变 + 深色书签。
+图形与页面 favicon 的内联 SVG、侧栏品牌标一致：墨色圆角方块（极淡的对角渐变）+ 纸色书签。
 改了配色或形状后重新运行：
 
     python3 tools/make_icons.py
@@ -19,9 +19,9 @@ from pathlib import Path
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "static"
 
-GRAD_FROM = (0x7E, 0xE0, 0xC3)   # --accent 薄荷
-GRAD_TO = (0x8D, 0x84, 0xFF)     # 品牌紫
-INK = (0x07, 0x1B, 0x15)         # --accent-ink 深墨
+GRAD_FROM = (0x33, 0x2E, 0x28)   # 墨色（左上略亮）
+GRAD_TO = (0x14, 0x12, 0x0F)     # --primary-ink 深墨
+INK = (0xF5, 0xF3, 0xF0)         # 纸色书签（深色主题的 --text）
 SS = 3                           # 超采样倍数：够抗锯齿，又不至于让纯 Python 跑太久
 
 

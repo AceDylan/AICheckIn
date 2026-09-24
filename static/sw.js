@@ -21,7 +21,8 @@
 // v23：设置页改成设置行、状态图标换成线条图标；外壳走 stale-while-revalidate，换号只是让部署后第一次打开就是新的。
 // v24：界面换成 v4 设计系统（中性色 + 靛蓝强调色、倒 L 画布、壁纸里的浮动玻璃侧栏、轻页头）。
 // v25：「纸与墨」配色（黑白界面 + 信号蓝、暖中性色）、网址面板化、手机浮动底栏。
-const CACHE_VERSION = 'bh-shell-v25';
+// v26：图标（favicon / PWA / 主屏）换成墨色方块 + 纸色书签，和侧栏品牌标一致。
+const CACHE_VERSION = 'bh-shell-v26';
 const SHELL = [
   '/',
   '/static/app-v3.css',
