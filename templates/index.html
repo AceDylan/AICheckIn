@@ -62,7 +62,7 @@
         <!-- AI 聊天：框里是自己的 HaloWebUI。解锁后、且部署配置了 HUB_CHAT_URL 才出现（见 syncAdminViews）。 -->
         <button class="tab" data-view="chat" title="AI 聊天" aria-label="AI 聊天" hidden>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.2a7.6 7.6 0 0 1-11.2 6.7L4 20.4l1.5-4.6A7.6 7.6 0 1 1 20 12.2z"/><path d="M9 10.8h6M9 13.9h3.6"/></svg>
-          <span class="tab-text">AI 聊天</span>
+          <span class="tab-text">AI 聊天</span><span class="dot chat-dot" id="chatDot" hidden></span>
         </button>
         <!-- 笔记：框里是自己的 WebObsidian。解锁后、且部署配置了 HUB_VAULT_URL + HUB_VAULT_EMBED_SECRET 才出现（见 syncAdminViews）。 -->
         <button class="tab" data-view="vault" title="笔记" aria-label="笔记" hidden>
@@ -1410,13 +1410,15 @@
       // const（TDZ ReferenceError），或者用错误的解锁状态发出请求。
       // 首次加载由 loadConfigs() 结束时的 refreshActiveView() 统一补上。
       if (STATE_LOADED) refreshActiveView(currentViewName());
-      syncDocTitle();
+      syncChatActivity();   // 回到聊天页就算看过了；顺带刷新标签页标题
       if (STATE_LOADED && ARRANGE.on && mainName !== 'bookmarks') leaveArrange();   // 先判 STATE_LOADED：脚本顶部的首次调用发生在 ARRANGE 声明之前
       applyLook();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     // 标签页标题跟着当前页走：多开几个标签、翻浏览器历史时能认出哪个是哪个（「服务配置 · 签到中心 · Bookmark Hub」）。
     const DOC_TITLES = { checkin: '签到中心', configs: '服务配置 · 签到中心', history: '运行记录 · 签到中心', settings: '系统设置', chat: 'AI 聊天', vault: '笔记' };
+    // 「AI 聊天」框里的回复状态（见下方「AI 聊天的回复状态」）。声明在这里，因为脚本顶部的 initRoute() 就会用到。
+    const CHAT_ACTIVITY = { state: 'idle', unseen: false };
     function syncDocTitle() {
       const view = currentViewName();
       let name = DOC_TITLES[view] || '';
@@ -1424,7 +1426,9 @@
         const g = typeof findGroup === 'function' && LIB.page !== '@home' && LIB.page !== 'monitor' ? findGroup(LIB.page) : null;
         name = LIB.page === 'monitor' ? '站点看板' : g ? g.name : '';
       }
-      document.title = name ? `${name} · Bookmark Hub` : 'Bookmark Hub · AI 服务工作台';
+      // 与 HaloWebUI 自己的标签页标题同一套记号：● 正在回复，✓ 有回复还没看。
+      const mark = CHAT_ACTIVITY.unseen ? '✓ ' : CHAT_ACTIVITY.state === 'running' ? '● ' : '';
+      document.title = mark + (name ? `${name} · Bookmark Hub` : 'Bookmark Hub · AI 服务工作台');
     }
     // 切到某个页面时它自己要拉的数据。集中在这里，免得 switchView 直接引用
     // 声明在文件更下方的函数与常量。
@@ -1946,6 +1950,12 @@
       const frame = chatFrame();
       if (frame) frame.remove();
       CHAT.src = '';
+      // 框没了，它报过的状态也就作废（锁定 / 会话过期 / 重新载入）。
+      if (CHAT_ACTIVITY.state !== 'idle' || CHAT_ACTIVITY.unseen) {
+        CHAT_ACTIVITY.state = 'idle';
+        CHAT_ACTIVITY.unseen = false;
+        syncChatActivity();
+      }
     }
     // queued：从别处「发送到 AI 聊天」排在这里的一句话。带着它进来就换一张新的框，
     // 哪怕框里已经有页面——那正是「问一个新问题」的意思。
@@ -1992,6 +2002,54 @@
       } finally { CHAT.busy = false; }
     }
     $('chatReload').addEventListener('click', () => openChat(true));
+
+    // ===== AI 聊天的回复状态 =====
+    // 切到别的页面时框只是藏起来、不卸载（见上），于是 HaloWebUI 认为有人在看、不推 Telegram，框里的弹窗和
+    // 未读点又跟着框一起藏着，浏览器标签页的标题还是本站的——回复跑完了什么信号都看不到。
+    // 所以框里的 HaloWebUI 每次回复状态变化都发一条消息过来（只发给它配置的 Hub 源，只带状态，不带对话内容）：
+    // running = 有回复在跑，done = 跑完了、框里还没人看，idle = 没事。本站在「AI 聊天」标签上点一个点——
+    // 不在聊天页时蓝点闪 = 正在回复，绿点 = 有回复还没看；回到聊天页（且本页在前台）就清掉。标题前缀见 syncDocTitle。
+    const CHAT_ACTIVITY_STATES = ['idle', 'running', 'done'];
+    function chatOrigin() {
+      try { return STATE.chat && STATE.chat.url ? new URL(STATE.chat.url).origin : ''; } catch (_) { return ''; }
+    }
+    // 人确实在看聊天页：停在这一页、本页在前台、窗口有焦点（焦点在框里也算）。
+    function chatWatched() {
+      const focused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+      return currentViewName() === 'chat' && !document.hidden && focused;
+    }
+    function syncChatActivity() {
+      if (CHAT_ACTIVITY.unseen && chatWatched()) CHAT_ACTIVITY.unseen = false;
+      const dot = $('chatDot');
+      const tab = document.querySelector('.tab[data-view="chat"]');
+      const mark = CHAT_ACTIVITY.unseen ? 'done'
+        : CHAT_ACTIVITY.state === 'running' && currentViewName() !== 'chat' ? 'running' : '';
+      if (dot) {
+        dot.hidden = !mark;
+        dot.classList.toggle('is-done', mark === 'done');
+        dot.classList.toggle('is-running', mark === 'running');
+      }
+      if (tab) tab.title = mark === 'done' ? 'AI 聊天：有新回复' : mark === 'running' ? 'AI 聊天：正在回复' : 'AI 聊天';
+      syncDocTitle();
+    }
+    function onChatActivity(state) {
+      const before = CHAT_ACTIVITY.state;
+      CHAT_ACTIVITY.state = state;
+      // 只在「刚跑完」那一下判断有没有人在看；之后再切走，看过的回复不会补上绿点。
+      if (state === 'done' && before !== 'done' && !chatWatched()) CHAT_ACTIVITY.unseen = true;
+      syncChatActivity();
+    }
+    // 只认当前这张聊天框、且来自配置的 HaloWebUI 源的消息；别的窗口（包括笔记框）发来的一概不理。
+    window.addEventListener('message', (e) => {
+      const frame = chatFrame();
+      if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== chatOrigin()) return;
+      const data = e.data;
+      if (!data || typeof data !== 'object' || data.source !== 'halowebui' || data.type !== 'activity') return;
+      if (!CHAT_ACTIVITY_STATES.includes(data.state)) return;
+      onChatActivity(data.state);
+    });
+    window.addEventListener('focus', syncChatActivity);
+    document.addEventListener('visibilitychange', syncChatActivity);
     $('chatNoteClose').addEventListener('click', () => {
       const key = $('chatNote').dataset.key;
       if (CHAT_NOTE_SEEN.includes(key)) writePref('bh_chat_note', key);

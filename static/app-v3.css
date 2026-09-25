@@ -191,6 +191,13 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 }
 .tab.active .nav-count { color: var(--text-2); }
 .tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--sidebar); }
+/* 「AI 聊天」标签上的回复状态（见 syncChatActivity）：蓝点闪 = 正在回复，绿点 = 有回复还没看。 */
+.tab .chat-dot { display: inline-block; flex: none; }
+.tab .chat-dot[hidden] { display: none; }
+.tab .chat-dot.is-done { background: var(--success); }
+.tab .chat-dot.is-running { animation: chat-dot-pulse 1.6s var(--ease-in-out) infinite; }
+@keyframes chat-dot-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .tab .chat-dot.is-running { animation: none; } }
 
 /* 收藏库子页面（侧栏嵌套树）。分组多到放不下时只有这一段滚动：下面的「签到中心 / 系统设置」不会被挤到折叠线以下。
    滚动条藏起来（图标栏只有 72px 宽），哪一端还有内容就在哪一端淡出（.fade-top / .fade-bottom 由脚本维护）。 */
