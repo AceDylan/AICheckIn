@@ -102,7 +102,7 @@
           <div class="view-header" id="libHeader">
             <div><div class="eyebrow" id="libEyebrow">收藏库</div><h1 id="libTitle">收藏首页</h1><p id="libDesc"></p></div>
             <div class="header-actions" id="libActionsMonitor" hidden><button class="btn ghost" id="refreshAllBm">刷新所有数据</button><button class="btn" id="addBm">＋ 添加站点</button></div>
-            <div class="header-actions" id="libActionsGroup" hidden><button class="btn ghost" id="checkLinksBtn" title="逐条探测本分组的网址是否还能打开">检查链接</button><button class="btn ghost" id="editGroupBtn">编辑分组</button><button class="btn" id="addLinkBtn">＋ 添加网址</button></div>
+            <div class="header-actions" id="libActionsGroup" hidden><button class="btn ghost" id="checkLinksBtn" title="逐条探测本分组的网址是否还能打开">检查链接</button><button class="btn ghost" id="editGroupBtn">编辑分组</button><button class="btn" id="addLinkBtn">＋ 添加网址</button><details class="action-menu lib-more" id="libMore" data-menu-dir="down"><summary class="btn ghost" title="更多操作" aria-label="分组的更多操作">···</summary><div class="menu-popover"><button type="button" data-lib-more="checkLinksBtn">检查链接</button><button type="button" data-lib-more="editGroupBtn">编辑分组</button></div></details></div>
           </div>
           <div class="toolbar" id="libToolbar">
             <label class="search-box" for="bmSearch">
@@ -2649,13 +2649,15 @@
       const g = isMonitor ? null : findGroup(LIB.page);
       const header = $('libHeader');
       header.className = 'view-header has-tone tone-' + (isMonitor ? 'mint' : (g ? g.color : 'mint'));
-      $('libEyebrow').innerHTML = isMonitor ? `${icon('pulse')} 收藏库 · 看板` : `${icon(g ? g.icon : 'folder')} 收藏库 · 分组`;
+      $('libEyebrow').innerHTML = isMonitor ? `${icon('pulse')}<span class="eyebrow-text">收藏库 · 看板</span>` : `${icon(g ? g.icon : 'folder')}<span class="eyebrow-text">收藏库 · 分组</span>`;
       $('libTitle').textContent = isMonitor ? '站点看板' : (g ? g.name : '收藏库');
       $('libDesc').textContent = isMonitor
         ? '带余额 / 到期时间等接口字段监控的站点，按需刷新数据。'
         : (g && g.desc) || '把常用网址收进来，一键直达。';
+      // 分组没写描述时这一句只是占位：手机上首屏寸土寸金，占位句不显示（电脑上留着撑起页头的版式）。
+      $('libDesc').classList.toggle('is-filler', !isMonitor && !(g && g.desc));
       if (isHome) {
-        $('libEyebrow').innerHTML = `${icon('star')} 收藏库 · 首页`;
+        $('libEyebrow').innerHTML = `${icon('star')}<span class="eyebrow-text">收藏库 · 首页</span>`;
         $('libTitle').textContent = '收藏首页';
         $('libDesc').textContent = '从各分组挑选常用网址，集中展示，一键直达。';
       }
@@ -4889,7 +4891,8 @@
       const limit = Math.min(window.innerHeight, navTop) - gap / 2;
       const above = rect.top - gap;
       const below = limit - rect.bottom - gap / 2;
-      const dropDown = pop.offsetHeight > above && below > above;
+      // 页头里的菜单（如手机分组页的「···」）默认向下长：向上会盖住顶上的分组标签条。
+      const dropDown = menu.dataset.menuDir === 'down' ? pop.offsetHeight <= below || below > above : pop.offsetHeight > above && below > above;
       pop.classList.toggle('drop-down', dropDown);
       pop.style.maxHeight = Math.max(120, Math.floor(dropDown ? below : above)) + 'px';
       const pr = pop.getBoundingClientRect();
@@ -5930,6 +5933,13 @@
     }
     function editLink(gid, lid) { openLinkModal(gid, lid, 'single'); }
     $('addLinkBtn').addEventListener('click', () => openLinkModal(LIB.page, null, 'single'));
+    // 手机上分组页只留「添加网址」一个主操作，「检查链接 / 编辑分组」收进「···」：点菜单项等于点原来那颗按钮。
+    $('libMore').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-lib-more]');
+      if (!b) return;
+      $('libMore').removeAttribute('open');
+      $(b.dataset.libMore).click();
+    });
     $('linkCancel').addEventListener('click', () => $('linkModal').classList.remove('show'));
     $('linkModeToggle').addEventListener('click', (e) => { const b = e.target.closest('button[data-mode]'); if (b) setLinkMode(b.dataset.mode); });
     // 批量预览：逐行标出「可导入 / 无效 / 已存在」，并在行内点明重复落在哪个分组。

@@ -209,6 +209,28 @@ def history_list(b):
     ctx.close()
 
 
+def mobile_group_header(b):
+    reset()
+    ctx, page = open_page(b, 390, 844, mobile=True, cookies={"bh_theme": "light"})
+    gid = page.evaluate("() => STATE.link_groups.find(g => !g.desc).id")
+    page.goto(BASE + "/#links/" + gid); page.reload(); page.wait_for_selector("#linkList .link-card"); page.wait_for_timeout(400)
+    st = page.evaluate("""() => ({ visible: [...document.querySelectorAll('#libActionsGroup > .btn, #libMore')].filter(e => e.offsetParent).map(e => e.id),
+        desc: !!document.getElementById('libDesc').offsetParent, top: Math.round(document.querySelector('#linkList .link-card').getBoundingClientRect().top) })""")
+    check("手机分组页：页头只剩「添加网址」和「···」，占位描述不显示", st["visible"] == ["addLinkBtn", "libMore"] and not st["desc"], st)
+    check("手机分组页：第一个网址在首屏上半部分", st["top"] < 330, st["top"])
+    page.locator("#libMore > summary").tap(); page.wait_for_timeout(300)
+    pop = page.evaluate("() => { const p = document.querySelector('#libMore .menu-popover'), s = document.querySelector('#libMore > summary'); return [Math.round(p.getBoundingClientRect().top), Math.round(s.getBoundingClientRect().bottom)]; }")
+    check("「···」菜单向下展开，不盖住顶上的分组标签条", pop[0] >= pop[1], pop)
+    page.locator('#libMore [data-lib-more="editGroupBtn"]').tap(); page.wait_for_timeout(400)
+    check("菜单里的「编辑分组」照常打开分组弹窗", page.locator("#groupModal.show").count() == 1)
+    ctx.close()
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light"})
+    page.goto(BASE + "/#links/" + gid); page.reload(); page.wait_for_timeout(500)
+    check("电脑上照旧三颗按钮、没有「···」、描述在", page.locator("#checkLinksBtn").is_visible() and page.locator("#editGroupBtn").is_visible()
+          and not page.locator("#libMore").is_visible() and page.locator("#libDesc").is_visible())
+    ctx.close()
+
+
 def home_toolbar(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -235,4 +257,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, home_toolbar, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, mobile_group_header, home_toolbar, home_widgets))
