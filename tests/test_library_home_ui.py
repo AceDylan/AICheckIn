@@ -176,7 +176,7 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.deepEqual([w.state, w.value], ['stale', '待刷新']);
             // 只有一个字段时，次要信息退回「字段名 · 更新时间」。
             w = siteWidgetParts(site([{ label: '余额', type: 'amount', value: '3', updated_at: '2026-01-02 03:04:05' }]));
-            assert.ok(w.sub.startsWith('余额 · 更新于 '));
+            assert.ok(w.sub.startsWith('余额 · ') && w.sub.endsWith('更新'));   // 「余额 · 3 天前更新」：新旧用相对时间说
             // 状态不能只靠颜色：状态点带文字标签；站点名、字段值一律转义。
             const html = homeSiteWidgetHtml({ name: '<i>x</i>', url: 'https://s.example', fields: [{ id: 'f', enabled: true, label: '余额', type: 'raw', value: '<script>' }] }, 3);
             assert.ok(html.includes('aria-label="状态：正常"'));

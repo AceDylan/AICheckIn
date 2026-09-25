@@ -93,6 +93,10 @@ class UxPolishJsTest(unittest.TestCase):
             assert.equal(agoText(stamp(5 * 86400000 + 60000)), '5 天前');
             assert.equal(agoText(stamp(3 * 3600000 + 60000)), '3 小时前');
             assert.equal(agoText('bogus'), '');
+            assert.equal(agoText(stamp(65 * 86400000)), '2 个月前');
+            // 取数 / 签到这类「多久以前」统一说相对时间，解析不了的原样退回短时间格式。
+            assert.equal(agoStamp(stamp(2 * 86400000 + 60000)), '2 天前');
+            assert.equal(agoStamp('昨天'), '昨天');
         """)
 
     def test_run_all_finish_toast_counts_everything(self):
