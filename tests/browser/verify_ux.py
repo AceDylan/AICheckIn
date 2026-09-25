@@ -59,7 +59,11 @@ def palette(b):
     check("浅色主题：浏览器顶栏颜色（theme-color）也是浅色", page.evaluate("() => [...document.querySelectorAll('meta[name=theme-color]')].map(m => m.content.slice(1))") == ["f5f2ee", "f5f2ee"])
     page.keyboard.press("Control+k"); page.wait_for_timeout(250)
     check("空查询不列命令（仍是置顶与最近添加）", page.locator(".omni-row .omni-kind", has_text="命令").count() == 0)
-    page.keyboard.type("运行记录"); page.wait_for_timeout(250)
+    HINTS = "() => [document.getElementById('omniEnterLabel').textContent, document.getElementById('omniShiftHint').hidden]"
+    page.keyboard.type("github"); page.wait_for_timeout(250)
+    check("选中网址：底部提示「Enter 打开 · ⇧+Enter 跳到所在分组」", page.evaluate(HINTS) == ["打开", False], page.evaluate(HINTS))
+    page.keyboard.press("Control+a"); page.keyboard.type("运行记录"); page.wait_for_timeout(250)
+    check("选中命令：底部提示「Enter 执行」，不显示不适用的 ⇧+Enter", page.evaluate(HINTS) == ["执行", True], page.evaluate(HINTS))
     check("输入页面名：命令排第一", page.locator(".omni-row").first.locator(".omni-title").text_content() == "运行记录")
     page.keyboard.press("Enter"); page.wait_for_timeout(500)
     v = page.evaluate(VIEW)
@@ -125,6 +129,12 @@ def drop_link(b):
       document.body.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
       const shown = !document.getElementById('dropHint').hidden; document.dispatchEvent(new DragEvent('dragend', { bubbles: true })); return shown; }""")
     check("页面自己的拖动（图标、网址行）不出这个提示", internal is False)
+    stuck = page.evaluate("""() => { const dt = new DataTransfer(); dt.setData('text/uri-list', 'https://y.example');
+      document.body.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      const shown = !document.getElementById('dropHint').hidden;
+      document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }));
+      return [shown, document.getElementById('dropHint').hidden]; }""")
+    check("拖拽被取消后动一下鼠标，提示层自己收起（不会卡在页面上）", stuck == [True, True], stuck)
     ctx.close()
     ctx, page = open_page(b, 1440, 900, unlocked=False)
     r = page.evaluate(DRAG, ["leave", ""])
@@ -279,6 +289,11 @@ def home_widgets(b):
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
     clipped = page.evaluate("() => [...document.querySelectorAll('.widget-value')].filter(v => v.scrollWidth > v.clientWidth + 1).map(v => v.textContent)")
     check("看板小组件的主数值都放得下（不再截成「已过期 16…」）", not clipped, clipped)
+    tick = page.evaluate("""() => { const el = document.querySelector('.widget-sub .ago'); if (!el) return null;
+      const d = new Date(Date.now() - 5 * 60000), p = (n) => String(n).padStart(2, '0');
+      el.dataset.ago = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:00`;
+      tickHeroClock(); return el.textContent; }""")
+    check("相对时间跟着首页时钟每分钟更新（不重绘卡片）", tick in ("5 分钟前", "4 分钟前"), tick)
     gaps = page.evaluate("""() => [...document.querySelectorAll('.home-section .section-fold')].map(f => {
         const c = f.parentElement.querySelector('.count'); return Math.round(f.getBoundingClientRect().left - c.getBoundingClientRect().right); })""")
     check("折叠按钮紧跟在分组计数后面（各组不再参差）", gaps and all(0 <= g <= 16 for g in gaps), gaps)

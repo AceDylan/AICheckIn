@@ -107,3 +107,15 @@ class UxPolishJsTest(unittest.TestCase):
             finishCheckinJob({ finished_at: '08:31', summary: { signed: 2, skipped: 0, failed: 0, quota_total: '0' } });
             assert.deepEqual(seen, [['签到完成：3 个成功，1 个今天已签过，1 个失败（原因见卡片），额度 +0.70', 'err'], ['签到完成：2 个成功', 'ok']]);
         """)
+
+    def test_relative_times_tick_with_the_clock_without_rerendering(self):
+        self.run_js("""
+            const pad = (n) => String(n).padStart(2, '0');
+            const d = new Date(Date.now() - 3 * 60000);
+            const raw = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+            assert.ok(agoSpan(raw).startsWith('<span class="ago" data-ago="'));
+            assert.ok(!agoSpan('<b>').includes('<b>'));
+            assert.ok(tickHeroClock.toString().includes('refreshAgo()'));
+            // 运行记录的明细行照常渲染说明（曾被一次批量替换误改成未定义的变量，整页记录加载失败）。
+            assert.ok(histResultHtml({ name: 'A', status: 'failed', status_label: '失败', color: 'red', message: 'HTTP <401>' }).includes('HTTP &lt;401&gt;'));
+        """)

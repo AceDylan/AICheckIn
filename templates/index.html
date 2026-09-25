@@ -593,8 +593,8 @@
       <div class="omni-list" id="omniList" role="listbox" aria-label="搜索结果"></div>
       <div class="omni-foot">
         <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
-        <span><kbd>Enter</kbd> 打开</span>
-        <span><kbd>⇧</kbd>+<kbd>Enter</kbd> 跳到所在分组</span>
+        <span id="omniEnterHint"><kbd>Enter</kbd> <span id="omniEnterLabel">打开</span></span>
+        <span id="omniShiftHint"><kbd>⇧</kbd>+<kbd>Enter</kbd> <span id="omniShiftLabel">跳到所在分组</span></span>
         <span class="omni-foot-meta"><span id="omniHint" class="omni-hint"></span><span id="omniCount"></span></span>
       </div>
     </div>
@@ -1597,13 +1597,14 @@
         : { label: '未签到', color: 'gray' };
       const msg = r ? r.message : (last.failedToday ? last.message : '');
       const lastLabel = { signed: '成功', skipped: '已签', failed: '失败' }[last.status] || '';
-      const note = msg || (last.at ? `最近签到 ${agoStamp(last.at)} · ${lastLabel}` : m.updated_at ? `${agoStamp(m.updated_at)}取过数` : '');
+      const note = msg || (last.at ? `最近签到 ${last.at} · ${lastLabel}` : m.updated_at ? `上次取数 ${m.updated_at}` : '');   // 悬停提示写完整时刻
+      const noteHtml = msg ? escapeHtml(msg) : last.at ? `最近签到 ${agoSpan(last.at)} · ${escapeHtml(lastLabel)}` : m.updated_at ? `${agoSpan(m.updated_at)}取过数` : '';
       const bal = m.wallet_balance != null && m.wallet_balance !== '' && m.wallet_balance !== '-' ? m.wallet_balance : '—';
       return `<div class="ck-row ${badge.color}" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
         <span class="ck-id">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}<span class="ck-text"><span class="card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>${ckHostLink(c.base_url)}</span></span>
         <span class="badge ${badge.color}">${escapeHtml(badge.label)}</span>
         <span class="ck-bal" title="钱包余额"><b>${escapeHtml(bal)}</b><small>余额</small></span>
-        <span class="ck-note${msg && badge.color === 'red' ? ' is-err' : ''}" title="${escapeHtml(note)}">${escapeHtml(note)}</span>
+        <span class="ck-note${msg && badge.color === 'red' ? ' is-err' : ''}" title="${escapeHtml(note)}">${noteHtml}</span>
         <span class="card-actions">
           <button class="btn sm" onclick="checkinOne(${i})">签到</button>
           <button class="btn sm ghost" onclick="testOne(${i})">测试</button>
@@ -1623,8 +1624,8 @@
       const msg = r ? r.message : (last.failedToday ? last.message : '');
       const lastLabel = { signed: '成功', skipped: '已签', failed: '失败' }[last.status] || '';
       const stamp = r ? '' : last.at
-        ? `<div class="stamp" title="最近签到 ${escapeHtml(last.at)}">最近签到 ${escapeHtml(agoStamp(last.at))} · ${escapeHtml(lastLabel)}${last.status === 'failed' && !last.failedToday && last.message ? '：' + escapeHtml(last.message) : ''}</div>`
-        : m.updated_at ? `<div class="stamp" title="上次取数 ${escapeHtml(m.updated_at)}">↻ ${escapeHtml(agoStamp(m.updated_at))}取过数</div>` : '';
+        ? `<div class="stamp" title="最近签到 ${escapeHtml(last.at)}">最近签到 ${agoSpan(last.at)} · ${escapeHtml(lastLabel)}${last.status === 'failed' && !last.failedToday && last.message ? '：' + escapeHtml(last.message) : ''}</div>`
+        : m.updated_at ? `<div class="stamp" title="上次取数 ${escapeHtml(m.updated_at)}">↻ ${agoSpan(m.updated_at)}取过数</div>` : '';
       // 四项指标只列有值的；一项都没有时给一句说明，不再摆四行「-」。
       const kv = [['签到奖励', m.quota_awarded], ['钱包余额', m.wallet_balance], ['已用额度', m.used_quota], ['请求数', m.request_count]]
         .filter(([, v]) => v != null && v !== '' && v !== '-');
@@ -1651,7 +1652,7 @@
     function disabledItemHtml(c, i) {
       const m = displayMetrics(i);
       const safe = safeUrl(c.base_url);
-      const stamp = m.updated_at ? ` · ↻ ${escapeHtml(agoStamp(m.updated_at))}取过数` : '';
+      const stamp = m.updated_at ? ` · ↻ ${agoSpan(m.updated_at)}取过数` : '';
       const goBtn = safe
         ? `<a class="btn sm" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">去签到 ↗</a>`
         : `<button class="btn sm" disabled>无网址</button>`;
@@ -2810,7 +2811,8 @@
       let sub;
       if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
       else sub = primary.updated_at ? `${primary.label} · ${agoStamp(primary.updated_at)}更新` : primary.label;
-      return { state, value, unit, sub, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
+      const ago = !secondary && primary.updated_at ? primary.updated_at : '';   // 渲染时换成会自己走的 agoSpan
+      return { state, value, unit, sub, ago, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
     }
     function homeSiteWidgetHtml(b, i) {
       const host = siteHost(b.url) || '未设置域名';
@@ -2823,7 +2825,7 @@
           <span class="widget-body">
             <span class="widget-head"><span class="widget-name">${escapeHtml(b.name)}</span><span class="widget-dot" role="img" aria-label="状态：${escapeHtml(st.label)}" title="${escapeHtml(st.label)}"></span></span>
             <span class="widget-value${w.valueCls}" title="${escapeHtml(w.label)}">${escapeHtml(w.value)}${w.unit ? `<small>${escapeHtml(w.unit)}</small>` : ''}</span>
-            <span class="widget-sub">${escapeHtml(w.sub)}</span>
+            <span class="widget-sub">${w.ago ? `${escapeHtml(w.label)} · ${agoSpan(w.ago)}更新` : escapeHtml(w.sub)}</span>
           </span>
         </a>
         ${tileExtrasHtml(o)}
@@ -4081,7 +4083,7 @@
       const plan = sch.enabled ? `每天 ${escapeHtml(sch.time || '')} 自动签到` + (sch.pending_today ? ` · ${Number(sch.pending_today)} 个等补签` : '') : '定时签到没开';
       box.innerHTML = `<div class="checkin-deck-top"><span class="checkin-deck-num"><b>${s.done}</b> / ${s.total}</span><span class="checkin-deck-label">今天已签到</span></div>
         <div class="checkin-deck-bar${s.done === s.total ? ' is-done' : ''}" role="img" aria-label="今天已签到 ${s.done} 个，共 ${s.total} 个"><i style="width:${pct}%"></i></div>
-        <div class="checkin-deck-foot"><span>${plan}${sch.last_run_time ? ` · 上次 ${escapeHtml(agoStamp(sch.last_run_time))}` : ''}</span><button type="button" class="deck-link" data-checkin-go>去签到中心</button></div>`;
+        <div class="checkin-deck-foot"><span>${plan}${sch.last_run_time ? ` · 上次 ${agoSpan(sch.last_run_time)}` : ''}</span><button type="button" class="deck-link" data-checkin-go>去签到中心</button></div>`;
     }
     $('deckCheckin').addEventListener('click', (e) => { if (e.target.closest('[data-checkin-go]')) switchView('checkin'); });
 
@@ -4940,6 +4942,14 @@
     // 「多久以前」这类时间（取数、签到、刷新）一律说相对时间，完整时刻放进悬停提示：
     // Cloudscape / HPE 设计系统的建议——只关心新旧时用相对时间，要精确时刻（运行记录、到期日）才写绝对时间。
     function agoStamp(s) { return agoText(s) || shortStamp(s); }
+    // 相对时间会过期：起始页一开就是半天，「刚刚更新」不能一直写着「刚刚」。页面里的相对时间都包一层
+    // <span class="ago" data-ago="原始时间">，跟着首页时钟每分钟（和回到页面时）只改这些字——不重绘卡片，
+    // 开着的菜单、悬停都不受影响；也不新开周期定时器（页面里刻意不出现周期定时器，见 scheduleHeroClock）。
+    function agoSpan(s) { return `<span class="ago" data-ago="${escapeHtml(s)}">${escapeHtml(agoStamp(s))}</span>`; }
+    function refreshAgo() {
+      document.querySelectorAll('.ago[data-ago]').forEach(el => { const t = agoStamp(el.dataset.ago); if (el.textContent !== t) el.textContent = t; });
+    }
+
     function shortStamp(s) {
       const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/.exec(String(s || ''));
       if (!m) return String(s || '');
@@ -4986,7 +4996,7 @@
     function fieldItemHtml(f, primary) {
       const type = f.type || 'amount';
       const old = !f.error && f.value != null && f.value !== '' && fieldOld(f);
-      let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? `较旧 · ${escapeHtml(agoStamp(f.updated_at))}` : escapeHtml(agoStamp(f.updated_at))}</span>` : '';
+      let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? `较旧 · ${agoSpan(f.updated_at)}` : agoSpan(f.updated_at)}</span>` : '';
       let value = '', valueCls = '', extra = '';
       if (f.error) {
         value = `<span class="field-error" title="${escapeHtml(f.error)}">${escapeHtml(f.error)}</span>`;
@@ -6601,9 +6611,21 @@
       </button>`;
     }
 
+    // 底部按键提示跟着当前选中的那一行走（像 Raycast 的 Action Panel：动作随选中项变）：
+    // 命令是「执行」、分组是「打开分组」、签到配置是「去服务配置」；只有网址和看板站点有 ⇧+Enter 的第二个动作。
+    const OMNI_ENTER_LABEL = { link: '打开', bookmark: '打开', group: '打开分组', config: '去服务配置', command: '执行' };
+    const OMNI_SHIFT_LABEL = { link: '跳到所在分组', bookmark: '去站点看板' };
+    function syncOmniHints(item) {
+      $('omniEnterHint').hidden = !item;
+      $('omniEnterLabel').textContent = item ? OMNI_ENTER_LABEL[item.kind] || '打开' : '';
+      const shift = item && OMNI_SHIFT_LABEL[item.kind];
+      $('omniShiftHint').hidden = !shift;
+      $('omniShiftLabel').textContent = shift || '';
+    }
     function renderOmni() {
       const list = $('omniList');
       if (!omniResults.length) {
+        syncOmniHints(null);
         const q = $('omniInput').value.trim();
         list.innerHTML = `<div class="omni-empty">${q ? '没有匹配的收藏，换个关键词试试。' : '输入关键词开始搜索，或用 #标签 按标签筛选。'}</div>`;
         $('omniHint').textContent = '';
@@ -6611,6 +6633,7 @@
         return;
       }
       list.innerHTML = omniResults.map(omniRowHtml).join('');
+      syncOmniHints(omniResults[omniActive]);
       $('omniCount').textContent = `${omniResults.length}${omniResults.length >= OMNI_LIMIT ? '+' : ''} 条结果`;
       // 空查询下列的是「置顶 + 最近添加」，说清楚免得被当成全部收藏。
       $('omniHint').textContent = $('omniInput').value.trim() ? '' : '置顶与最近添加';
@@ -6937,6 +6960,7 @@
       $('heroDate').textContent = `${now.getMonth() + 1}月${now.getDate()}日`;
       $('heroWeekday').textContent = WEEKDAYS[now.getDay()];
       deckTick();   // 过了零点，日历 / 倒数日跟着换一天
+      refreshAgo();   // 「3 分钟前」这类相对时间跟着走
     }
     // 对准下一个整分再响一次，而不是固定周期轮询：一分钟只醒一次，分钟一跳就更新。
     // （页面里刻意不出现周期定时器——死链检查的测试把它当作「没有后台自动探测」的护栏。）
@@ -7334,6 +7358,8 @@
       $('dropHint').hidden = false;
     });
     $('dropHint').addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    // 保险：拖拽进行中浏览器不发指针移动事件；拖拽被取消（比如按了 Esc）后第一次动鼠标，提示层若还在就收起。
+    document.addEventListener('pointermove', () => { if (!$('dropHint').hidden) $('dropHint').hidden = true; }, { passive: true });
     $('dropHint').addEventListener('dragleave', (e) => { if (e.target === $('dropHint')) $('dropHint').hidden = true; });
     $('dropHint').addEventListener('drop', (e) => {
       e.preventDefault();
