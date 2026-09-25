@@ -231,6 +231,35 @@ def mobile_group_header(b):
     ctx.close()
 
 
+def settings_toc(b):
+    reset()
+    TOC = "() => [...document.querySelectorAll('#settingsToc [data-toc]')].map(a => [a.textContent, a.getAttribute('aria-current')])"
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
+    page.goto(BASE + "/#settings"); page.reload(); page.wait_for_selector("#settingsToc [data-toc]"); page.wait_for_timeout(400)
+    toc = page.evaluate(TOC)
+    box = page.locator("#settingsToc").bounding_box()
+    grid = page.locator("#settingsGrid").bounding_box()
+    check("电脑：设置页右侧有「本页」导航，列出各节、第一节是当前", len(toc) >= 8 and toc[0][1] == "true" and box["x"] > grid["x"] + grid["width"], (toc[:2], box, grid))
+    page.locator('#settingsToc [data-toc]', has_text="配置恢复").click(); page.wait_for_timeout(1300)
+    st = page.evaluate("() => { const a = document.querySelector('#settingsToc [aria-current]'), p = document.getElementById(a.dataset.toc); return [a.textContent, Math.round(p.getBoundingClientRect().top), Math.round(document.getElementById('settingsToc').getBoundingClientRect().top)]; }")
+    check("点「配置恢复」：滚到那一节、高亮它、导航随页面吸顶", st[0] == "配置恢复" and 0 <= st[1] < 80 and 0 <= st[2] < 60, st)
+    check("点导航不改地址栏里设置页的路由", page.evaluate("() => location.hash.slice(1)") == "settings")
+    ctx.close()
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_wallpaper": "aurora"})
+    page.goto(BASE + "/#settings"); page.reload(); page.wait_for_timeout(600)
+    check("开壁纸（双列玻璃卡片）时电脑上不显示导航", not page.locator("#settingsToc").is_visible())
+    ctx.close()
+    ctx, page = open_page(b, 390, 844, mobile=True, cookies={"bh_theme": "light"})
+    page.goto(BASE + "/#settings"); page.reload(); page.wait_for_selector("#settingsToc [data-toc]"); page.wait_for_timeout(400)
+    st = page.evaluate("() => { const n = document.getElementById('settingsToc'), r = n.getBoundingClientRect(); return [getComputedStyle(n).display, Math.round(r.top), document.documentElement.scrollWidth <= innerWidth]; }")
+    check("手机：页头下一行可横滑的跳转标签，页面不横向溢出", st[0] == "flex" and st[1] < 260 and st[2], st)
+    ctx.close()
+    ctx, page = open_page(b, 1440, 900, unlocked=False, cookies={"bh_wallpaper": "off"})
+    page.goto(BASE + "/#settings"); page.reload(); page.wait_for_selector("#settingsToc [data-toc]"); page.wait_for_timeout(400)
+    check("未解锁：导航第一项也是「管理密码」", page.evaluate(TOC)[0][0] == "管理密码")
+    ctx.close()
+
+
 def home_toolbar(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -257,4 +286,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, mobile_group_header, home_toolbar, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, mobile_group_header, settings_toc, home_toolbar, home_widgets))

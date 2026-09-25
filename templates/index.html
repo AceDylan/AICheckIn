@@ -388,6 +388,9 @@
         <!-- ===== 设置 ===== -->
         <section class="view" id="view-settings">
           <div class="view-header"><div><div class="eyebrow">偏好</div><h1>系统设置</h1><p>自动签到、全局代理、管理权限与外观。</p></div></div>
+          <!-- 本页导航：设置页有九节、电脑上约 2.5 屏高、手机上四屏多。电脑（未开壁纸、够宽）时贴在右侧并随滚动高亮当前一节，
+               手机上是页头下一行可横滑的跳转标签（参考 USWDS 的 in-page navigation）。内容由 renderSettingsToc() 按当前可见的节生成。 -->
+          <nav class="settings-toc" id="settingsToc" aria-label="本页"></nav>
           <div class="settings-grid" id="settingsGrid">
             <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote" hidden></div>
               <div class="set-rows">
@@ -1427,6 +1430,7 @@
     // 声明在文件更下方的函数与常量。
     function refreshActiveView(name) {
       syncAdminPwd();   // 离开系统设置就把密码框摘掉，进入且未解锁才挂上
+      if (name === 'settings') renderSettingsToc();   // 按当前可见的节生成「本页」导航
       if (name === 'history') loadHistory();
       else if (name === 'settings') loadDiagnostics();
       else if (name === 'chat') openChat();
@@ -1901,6 +1905,7 @@
       const locked = libraryLocked();
       // 没解锁时设置页里能做的只有「解锁」：把管理密码这一节提到最前面，不用翻过三节改不了的设置去找密码框。
       $('settingsGrid').classList.toggle('is-locked', !show);
+      if (STATE_LOADED) renderSettingsToc();   // 首次加载前常量还没初始化（见 switchView 的说明），数据到了再生成
       const libTab = document.querySelector('.tab[data-view="bookmarks"]');
       if (libTab) libTab.hidden = locked;
       LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && currentViewName() !== 'bookmarks'); });
@@ -6516,6 +6521,53 @@
       add(true, '键盘快捷键', '帮助', 'book', 'keyboard shortcuts keys 快捷键 帮助 help', openKeysModal);
       return cmds;
     }
+    // ----- 设置页「本页」导航 -----
+    const SETTINGS_TOC = { observer: null, current: '' };
+    function settingsPanels() {
+      const panels = [...document.querySelectorAll('#settingsGrid > .panel')].filter(p => p.style.display !== 'none' && !p.hidden);
+      // 未解锁时「管理密码」被 CSS 排到最前（order: -1），导航也跟着排。
+      if ($('settingsGrid').classList.contains('is-locked')) panels.sort((a, b) => (b.id === 'adminPanel') - (a.id === 'adminPanel'));
+      return panels;
+    }
+    function renderSettingsToc() {
+      const toc = $('settingsToc');
+      const panels = settingsPanels();
+      panels.forEach((p, i) => { if (!p.id) p.id = 'set-' + i; });
+      const title = (p) => { const t = p.querySelector('.panel-title'); return t && t.firstChild ? t.firstChild.textContent.trim() : ''; };
+      toc.innerHTML = `<div class="settings-toc-head">本页</div>` + panels.map(p =>
+        `<a class="settings-toc-link chip" href="#${escapeHtml(p.id)}" data-toc="${escapeHtml(p.id)}">${escapeHtml(title(p))}</a>`).join('');
+      if (SETTINGS_TOC.observer) SETTINGS_TOC.observer.disconnect();
+      if (typeof IntersectionObserver !== 'function') return;
+      // 有节进出视口上方 30% 这条线时重算一次「当前」：线以上最后一个开头的那一节。
+      // 只看回调里变化的那几项会漏掉「一直在视口里」的节（点了「配置恢复」却亮成下一节）；刚点过的一秒内以点的为准。
+      SETTINGS_TOC.observer = new IntersectionObserver(() => {
+        if (Date.now() < (SETTINGS_TOC.lockUntil || 0)) return;
+        const line = window.innerHeight * 0.3;
+        let cur = panels[0];
+        for (const p of panels) if (p.getBoundingClientRect().top <= line) cur = p;
+        if (cur) markSettingsToc(cur.id);
+      }, { rootMargin: '0px 0px -70% 0px' });
+      panels.forEach(p => SETTINGS_TOC.observer.observe(p));
+      markSettingsToc(SETTINGS_TOC.current || (panels[0] && panels[0].id));
+    }
+    function markSettingsToc(id) {
+      SETTINGS_TOC.current = id;
+      document.querySelectorAll('#settingsToc [data-toc]').forEach(a => {
+        const on = a.dataset.toc === id;
+        a.classList.toggle('active', on);
+        if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+      });
+    }
+    $('settingsToc').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-toc]');
+      if (!a) return;
+      e.preventDefault();   // 不改地址栏的 #settings（那是路由），只滚动
+      const panel = $(a.dataset.toc);
+      if (!panel) return;
+      SETTINGS_TOC.lockUntil = Date.now() + 1000;
+      panel.scrollIntoView({ block: 'start' });
+      markSettingsToc(panel.id);
+    });
     function goSettingsSection(anchorId) {
       switchView('settings');
       requestAnimationFrame(() => {
