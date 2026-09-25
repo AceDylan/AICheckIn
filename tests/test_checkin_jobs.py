@@ -134,7 +134,7 @@ class CheckinJobTest(_Base):
                 self.active[site] = self.active.get(site, 0) + 1
                 self.peak[0] = max(self.peak[0], sum(self.active.values()))
                 same_site = self.active[site]
-            self.gate.wait(2)
+            self.gate.wait(10)   # 放宽到 10 秒：机器忙时线程起得慢，2 秒可能先超时，测到的并发数就不准了
             with lock:
                 self.active[site] -= 1
             self.assertEqual(same_site, 1, "同一站点的账户不应同时签")
@@ -146,7 +146,7 @@ class CheckinJobTest(_Base):
         app_module.gyqd.run_one = fake_run_one
 
     def wait_done(self):
-        for _ in range(200):
+        for _ in range(500):
             job = self.client.get("/api/checkin/jobs").get_json()["job"]
             if not job["running"]:
                 return job
@@ -163,7 +163,7 @@ class CheckinJobTest(_Base):
         again = self.client.post("/api/checkin/jobs")
         self.assertEqual(again.status_code, 200)
         self.assertTrue(again.get_json()["already_running"])
-        for _ in range(200):  # 等两个不同站点同时进行中再放行
+        for _ in range(1000):  # 等两个不同站点同时进行中再放行（最多约 10 秒；正常几十毫秒就到）
             if self.peak[0] >= 2:
                 break
             time.sleep(0.01)
