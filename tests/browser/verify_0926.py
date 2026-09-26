@@ -271,5 +271,71 @@ def short_screen(b):
     ctx.close()
 
 
+def todo_fade(b):
+    reset()
+    ctx, page = open_page(b, 390, 844, mobile=True, cookies={"bh_theme": "dark"})
+    for i in range(14):
+        api(ctx, "POST", "/api/todos", {"text": "待办第 %d 条：把这件事做完" % (i + 1)})
+    page.reload(); page.wait_for_timeout(900)
+    page.locator(".deck-tab", has_text="待办").first.tap(); page.wait_for_timeout(500)
+    st = page.evaluate("() => { const l = document.getElementById('todoList'); return [l.scrollHeight > l.clientHeight, l.className]; }")
+    check("待办多于一屏：列表底部淡出，看得出下面还有", st[0] and "fade-bottom" in st[1] and "fade-top" not in st[1], st)
+    page.evaluate("() => { const l = document.getElementById('todoList'); l.scrollTop = l.scrollHeight; l.dispatchEvent(new Event('scroll')); }"); page.wait_for_timeout(200)
+    cls = page.evaluate("() => document.getElementById('todoList').className")
+    check("滚到底：底部淡出去掉、顶部淡出出现", "fade-top" in cls and "fade-bottom" not in cls, cls)
+    shot(page, "0926b-todo-fade")
+    ctx.close()
+
+
+def shell_update(b):
+    reset()
+    ctx, page = open_page(b, 1280, 800, cookies={"bh_theme": "dark"})
+    page.evaluate("() => navigator.serviceWorker.ready.then(() => true)")
+    page.reload(); page.wait_for_timeout(800)
+    controlled = page.evaluate("() => !!navigator.serviceWorker.controller")
+    check("外壳由 Service Worker 接管（第二次打开）", controlled)
+    toasts = lambda: page.evaluate("() => [...document.querySelectorAll('.toast')].map(t => t.innerText).join(' | ')")
+    check("外壳没变：不提示新版本", "有新版本" not in toasts(), toasts())
+    ok = page.evaluate("""async () => { const keys = await caches.keys(); const c = await caches.open(keys.find(k => k.startsWith('bh-shell')));
+        const r = await c.match('/'); if (!r) return false; const h = new Headers(r.headers); h.set('ETag', '"shell-before-deploy"');
+        await c.put('/', new Response(await r.blob(), { status: 200, headers: h })); return true; }""")
+    check("模拟部署：把缓存里的外壳标成旧版本", ok)
+    page.reload(); page.wait_for_timeout(1500)
+    check("部署后第一次打开：提示「有新版本」并给「刷新」", "有新版本" in toasts() and page.locator(".toast .toast-action", has_text="刷新").count() == 1, toasts())
+    shot(page, "0926b-shell-update")
+    page.locator(".toast .toast-action", has_text="刷新").click(); page.wait_for_timeout(1500)
+    check("点「刷新」之后：已是新版本，不再提示", "有新版本" not in toasts(), toasts())
+    ctx.close()
+
+
+def quiet_shortcut(b):
+    reset()
+    def mutate(store):
+        seed_dashboard(store)
+        for f in store["bookmarks"][0]["fields"]:
+            if f["id"] == "reset":
+                f.pop("warn_days", None)
+    write_store(mutate)
+    ctx, page = open_at(b, 1440, 900, "/#links/monitor", cookies={"bh_theme": "dark", "bh_wallpaper": "off"})
+    meta = page.locator("#bmVisibleCount").inner_text()
+    check("看板工具条写明自动刷新的节奏（或没开）", "自动刷新" in meta, meta)
+    notice_before = page.evaluate("() => bookmarkAlert(STATE.bookmarks[0])")
+    btn = page.locator('#bmList [data-bm-index="0"]').get_by_role("button", name="不再提醒…")
+    check("重置时间还按到期提醒时：卡片上有「不再提醒…」", notice_before == "soon" and btn.count() == 1, notice_before)
+    btn.click(); page.wait_for_timeout(700)
+    st = page.evaluate("() => { const a = document.activeElement; return [document.getElementById('bmModal').classList.contains('show'), a && a.dataset ? a.dataset.k : null, a ? a.value : null]; }")
+    check("点了：编辑弹窗定位到这个字段，提醒天数已填 0、光标在那一格", st == [True, "warn_days", "0"], st)
+    page.click("#bmSave"); page.wait_for_timeout(900)
+    exported = ctx.request.get(BASE + "/api/configs/export").json()
+    f = next(x for x in exported["bookmarks"][0]["fields"] if x["id"] == "reset")
+    after = page.evaluate("() => bookmarkAlert(STATE.bookmarks[0])")
+    check("保存后：落盘为 0，这个站点不再算快到期", f.get("warn_days") == 0 and after == "", (f.get("warn_days"), after))
+    ctx.close()
+    ctx, page = open_at(b, 390, 844, "/#links/monitor", mobile=True, cookies={"bh_theme": "dark"})
+    check("手机：工具条多了刷新节奏也不撑宽", page.evaluate("() => document.documentElement.scrollWidth") <= 390)
+    shot(page, "0926b-monitor-mobile")
+    ctx.close()
+
+
 if __name__ == "__main__":
-    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen))
+    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut))

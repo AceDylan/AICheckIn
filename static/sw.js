@@ -28,7 +28,9 @@
 // v30：分组 / 看板页头左侧的分组图标块。
 // v31：签到中心分段标签与列表视图、命令面板命令、拖链接收藏、运行记录与设置页整理（0925 体验打磨）。
 // v32：「AI 聊天」标签上的回复状态点（正在回复 / 有回复还没看）与标签页标题前缀。
-const CACHE_VERSION = 'bh-shell-v33';
+// v33：上传图标独立缓存、加载 / 断网状态、看板提醒与列表视图、锁定时的首页（0926 体验评估）。
+// v34：部署后第一次打开时提示「有新版本 · 刷新」、待办列表淡出提示、看板显示自动刷新节奏。
+const CACHE_VERSION = 'bh-shell-v34';
 const SHELL = [
   '/',
   '/static/app-v3.css',
@@ -72,6 +74,17 @@ function isWallpaperRequest(url) {
   return url.pathname.startsWith('/static/wallpapers/');
 }
 
+// 外壳先给缓存、后台再更新，所以部署后的第一次打开看到的仍是旧界面。导航请求取回的外壳和缓存里的
+// ETag 不一样（部署过），就告诉发起这次导航的页面，由它提示「有新版本 · 刷新」。只比 ETag，不比正文。
+function etagOf(response) {
+  return String((response && response.headers.get('ETag')) || '').replace(/^W\//, '');
+}
+function notifyShellUpdated(event) {
+  const id = event.resultingClientId || event.clientId;
+  if (!id) return Promise.resolve();
+  return self.clients.get(id).then((client) => { if (client) client.postMessage({ type: 'bh-shell-updated' }); });
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
@@ -101,14 +114,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // 有缓存先给缓存（秒开），同时后台刷新；没缓存就等网络。后台那一趟（写缓存、发通知）要让 SW 活到它做完。
+  let finish = () => {};
+  event.waitUntil(new Promise((resolve) => { finish = resolve; }));
   event.respondWith(
     caches.open(CACHE_VERSION).then((cache) => cache.match(request).then((cached) => {
       const network = fetch(request).then((response) => {
-        if (response && response.ok && response.type === 'basic') cache.put(request, response.clone());
+        if (response && response.ok && response.type === 'basic') {
+          const changed = !!cached && request.mode === 'navigate' && !!etagOf(cached) && !!etagOf(response) && etagOf(cached) !== etagOf(response);
+          Promise.all([cache.put(request, response.clone()), changed ? notifyShellUpdated(event) : null]).then(finish, finish);
+        } else {
+          finish();
+        }
         return response;
-      }).catch(() => cached || offlineResponse());
-      // 有缓存先给缓存（秒开），同时后台刷新；没缓存就等网络。
+      }).catch(() => { finish(); return cached || offlineResponse(); });
       return cached || network;
-    }))
+    })).catch((err) => { finish(); throw err; })
   );
 });

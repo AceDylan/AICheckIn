@@ -1306,6 +1306,26 @@
       el.querySelector('button').addEventListener('click', () => { close(); onUndo(); });
       return close;
     }
+    // 带一个操作按钮的提示条（不是撤销）：停留更久，指上去不消失。
+    function toastAction(msg, label, onAct, ms) {
+      const el = document.createElement('div');
+      el.className = 'toast has-action';
+      el.setAttribute('role', 'status');
+      el.innerHTML = `<span class="toast-text">${escapeHtml(msg)}</span><button type="button" class="toast-action">${escapeHtml(label)}</button>`;
+      $('toasts').appendChild(el);
+      let closed = false, timer = 0;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        clearTimeout(timer);
+        el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300);
+      };
+      timer = setTimeout(close, ms || 12000);
+      el.addEventListener('mouseenter', () => clearTimeout(timer));
+      el.addEventListener('mouseleave', () => { clearTimeout(timer); timer = setTimeout(close, 3000); });
+      el.querySelector('button').addEventListener('click', () => { close(); onAct(); });
+      return close;
+    }
     async function flushPendingDelete(keepalive) {
       const p = UNDO.pending;
       if (!p) return;
@@ -3134,7 +3154,7 @@
       renderDeck();
       measureHomeGrid();
       if (!STATE_LOADED) { $('homeAddLink').hidden = $('homeEditBtn').hidden = true; renderBootPending($('homeList'), $('homeEmpty'), 'tiles'); return; }
-      $('homeDeckBtn').hidden = libraryLocked();
+      $('homeDeckBtn').hidden = $('homeViewToggle').hidden = libraryLocked();
       if (libraryLocked()) {
         $('homeList').innerHTML = '';
         showEmpty($('homeEmpty'), { icon: 'lock', title: '收藏已锁定', text: '私密模式：输入管理密码后才显示收藏、看板和首页组件。上面的搜索框照常能用网页搜索。', actions: [{ label: '输入密码解锁', onclick: 'unlockFromHome()' }] });
@@ -4244,7 +4264,16 @@
       $('todoDoneLabel').textContent = `已完成 ${done.length}`;
       if (TODO.clearTimer && done.length !== TODO.clearCount) resetTodoClear();
       $('todoDoneList').innerHTML = done.map(t => todoItemHtml(t, false)).join('');
+      syncScrollFade($('todoList'));
+      syncScrollFade($('todoDoneList'));
     }
+    // 列表限高、在卡片里滚动（手机上一屏只露四五条）：哪一端还有内容就在哪一端淡出，不然看不出下面还有。
+    function syncScrollFade(el) {
+      if (!el) return;
+      el.classList.toggle('fade-top', el.scrollTop > 2);
+      el.classList.toggle('fade-bottom', el.scrollTop + el.clientHeight < el.scrollHeight - 2);
+    }
+    ['todoList', 'todoDoneList'].forEach(id => $(id).addEventListener('scroll', () => syncScrollFade($(id)), { passive: true }));
     // 重绘会把焦点丢回 <body>：键盘用户每勾一条就得从页头重新 Tab 过来。这里把焦点放回同一条（或相邻的一条）。
     function focusTodo(id, selector) {
       const row = id && $('homeTodo').querySelector(`[data-todo="${CSS.escape(id)}"]`);
@@ -5094,6 +5123,7 @@
       const limit = r.enabled ? 2 * (Number(r.interval_minutes) || 60) * 60000 : 2 * 86400000;
       return Date.now() - at > limit;
     }
+    const RESET_LABEL_RE = /刷新|重置|恢复|周期|下次|reset|refresh|renew|next/i;
     // 金额统一成首页小组件那样：千分位、最多两位小数；完整原值放在悬停提示里。
     function amountText(v) {
       const text = String(v == null ? '' : v).trim();
@@ -5116,6 +5146,11 @@
         value = '<span class="field-pending">等待首次刷新</span>';
       } else if (type === 'time') {
         const rel = relativeTime(f.raw, timeFieldQuiet(f));
+        // 看名字像「重置 / 刷新时间」又还按到期在提醒的：给一个直达入口，把「提前几天提醒」设成 0。
+        const alertKind = fieldAlert(f);
+        if (bi != null && canEdit() && (alertKind === 'soon' || alertKind === 'expired') && RESET_LABEL_RE.test(String(f.label || ''))) {
+          extra = `<div class="field-fix"><span>这是会反复到来的重置时间？</span><button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(f.id || '')}" onclick="fixBmField(${Number(bi)}, this.dataset.fixField, 'quiet')" title="打开编辑，把「提前几天提醒」填成 0：只显示倒计时，不再算快到期">不再提醒…</button></div>`;
+        }
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(expiryDateText(f.raw, f.value))}</span>`;
         valueCls = rel.cls;
         if (rel.text) head = `<span class="field-badge ${rel.cls}" title="上次更新 ${escapeHtml(f.updated_at || '')}">${escapeHtml(rel.text)}</span>`;
@@ -5253,6 +5288,13 @@
             </details></span>
         </article>`;
     }
+    // 看板数据多新、要不要手点「刷新」：工具条上写明后台自动刷新的节奏和上次时间（没开就给个去设置的入口）。
+    function bmRefreshMetaHtml() {
+      const r = STATE.refresh || {};
+      if (!canEdit()) return '';
+      if (!r.enabled) return ` · <a class="meta-link" href="#settings" onclick="event.preventDefault(); goSettingsSection('refreshEnabled')">没开自动刷新</a>`;
+      return ` · <span title="系统设置 → 站点数据自动刷新">每 ${escapeHtml(intervalLabel(r.interval_minutes))}自动刷新${r.last_run_time ? `，上次 ${agoSpan(r.last_run_time)}` : ''}</span>`;
+    }
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
       if (!STATE_LOADED) { renderBootPending(list, empty, 'cards'); return; }
@@ -5268,7 +5310,7 @@
         (!query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)} ${(b.fields || []).map(f => f.label || '').join(' ')}`.toLowerCase().includes(query) || pinyinHit(b.name, query))
         && (!bmAlertFilter || bookmarkAlert(b) === bmAlertFilter));
       const filtering = !!(query || bmAlertFilter);
-      $('bmVisibleCount').textContent = filtering ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`;
+      $('bmVisibleCount').innerHTML = escapeHtml(filtering ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`) + bmRefreshMetaHtml();
       if (!visible.length) {
         list.innerHTML = '';
         if (bms.length) showEmpty(empty, { icon: 'search', title: '没有匹配的站点', text: bmAlertFilter ? '再点一次上方的预警标签即可取消筛选。' : '换个关键词试试，或清空搜索框。' });
@@ -5604,17 +5646,20 @@
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
     // 看板卡片上「更新 cURL / 检查字段」：打开编辑弹窗，只展开出问题的那个字段，光标放进 cURL 输入框。
-    async function fixBmField(i, fid) {
+    // mode = 'quiet'（「不再提醒…」）：同样定位到那个字段，把「提前几天提醒」预填成 0，光标放在那一格，点「保存」才生效。
+    async function fixBmField(i, fid, mode) {
       if (!guardAdmin()) return;
       await openBmModal(i);
       if (!$('bmModal').classList.contains('show')) return;
       const target = bmDraftFields.find(d => d.id === fid);
       if (!target) return;
       bmDraftFields.forEach(d => { d._open = d === target; });
+      if (mode === 'quiet') target.warn_days = '0';
       renderFieldEditor();
       const item = [...$('bmFieldList').querySelectorAll('details.field-editor-item')].find(det => det.dataset.key === target._key);
-      const box = item && item.querySelector('[data-k="_curl_text"]');
+      const box = item && item.querySelector(mode === 'quiet' ? '[data-k="warn_days"]' : '[data-k="_curl_text"]');
       if (box) { box.focus(); if (typeof box.select === 'function') box.select(); }
+      if (mode === 'quiet') toast('已填好 0（不提醒），点「保存」生效', 'ok');
     }
     $('addBm').addEventListener('click', () => { if (guardAdmin()) openBmModal(-1); });
     $('bmCancel').addEventListener('click', () => $('bmModal').classList.remove('show'));
@@ -7529,6 +7574,14 @@
     if ('serviceWorker' in navigator && SECURE_CONTEXT) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+      // 外壳先用缓存秒开、后台再更新：部署后的第一次打开看到的还是旧界面。SW 发现缓存里的外壳和刚取到的
+      // 不是同一版时会通知这里——提示一下，点「刷新」立刻换上（不自动刷新：人可能已经在搜索框里打字了）。
+      let shellNoticeShown = false;
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (!e.data || e.data.type !== 'bh-shell-updated' || shellNoticeShown) return;
+        shellNoticeShown = true;
+        toastAction('Bookmark Hub 有新版本', '刷新', () => location.reload(), 20000);
       });
     }
     // 安装提示：浏览器判定可安装时才出现，点过或装过就不再打扰（记在 Cookie 里）。

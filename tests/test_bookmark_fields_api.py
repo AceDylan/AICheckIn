@@ -64,6 +64,23 @@ class BookmarkFieldsApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(store["bookmarks"][0]["fields"][0]["value"], "9.99")
         self.assertEqual(store["bookmarks"][0]["balance"], "9.99")
 
+    def test_changing_only_the_reminder_keeps_the_values(self):
+        # 「不再提醒…」→ 保存：只改了提醒天数，请求配置没变，已取到的数值不能被清成「等待首次刷新」。
+        curl = "curl 'https://api.example.com/v1/quota' -H 'Authorization: Bearer x'"
+        self.client.post("/api/bookmarks", json={"name": "r5", "url": "https://r5.example", "fields": [
+            {"label": "刷新时间", "type": "time", "curl": curl, "json_path": "data.reset"}]})
+        store = app_module.read_store()
+        idx = len(store["bookmarks"]) - 1
+        store["bookmarks"][idx]["fields"][0].update(value="2026-09-26 15:11:40", raw=1790406700, updated_at="2026-09-26 10:00:00")
+        app_module.write_store(store)
+        f = self.client.get("/api/bookmarks/%d/secret" % idx).get_json()["bookmark"]["fields"][0]
+        payload = {"id": f["id"], "label": f["label"], "type": "time", "enabled": True, "json_path": f["json_path"],
+                   "curl": f["curl"], "warn_days": 0}
+        up = self.client.put("/api/bookmarks/%d" % idx, json={"name": "r5", "url": "https://r5.example", "fields": [payload]}).get_json()
+        self.assertTrue(up["ok"], up)
+        saved = app_module.read_store()["bookmarks"][idx]["fields"][0]
+        self.assertEqual((saved["warn_days"], saved.get("value"), saved.get("raw")), (0, "2026-09-26 15:11:40", 1790406700))
+
     def test_full_flow(self):
         base = "http://127.0.0.1:%d" % self.port
         c = self.client

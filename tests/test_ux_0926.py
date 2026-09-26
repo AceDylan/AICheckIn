@@ -200,6 +200,30 @@ class DashboardDisplayTest(unittest.TestCase):
             assert.deepEqual(bmDraftFields.map(d => d._open), [false, true]);
         """)
 
+    def test_reset_like_time_field_offers_a_quiet_shortcut(self):
+        self.check("""
+            // 名字像「刷新 / 重置时间」、还按到期在提醒的字段：给「不再提醒…」；真正的到期字段（VPS）不给。
+            const reset = Object.assign({}, STATE.bookmarks[0].fields[1], { warn_days: '' });
+            const html = fieldItemHtml(reset, false, 0);
+            assert.ok(html.includes('不再提醒…') && html.includes("fixBmField(0, this.dataset.fixField, 'quiet')"), html);
+            assert.ok(!fieldItemHtml(STATE.bookmarks[2].fields[0], true, 2).includes('不再提醒'));
+            assert.ok(!fieldItemHtml(STATE.bookmarks[0].fields[1], false, 0).includes('不再提醒'), '已经是不提醒的就不再给');
+            // 点了：打开编辑、定位到这个字段、提醒天数预填 0（保存才生效）。
+            STATE.bookmarks[1].fields[0] = Object.assign({}, STATE.bookmarks[1].fields[0], { error: '' });
+            await fixBmField(1, 'bal', 'quiet');
+            const d = bmDraftFields.find(x => x.id === 'bal');
+            assert.equal(d.warn_days, '0');
+            assert.deepEqual(bmDraftFields.map(x => x._open), [false, true]);
+        """)
+
+    def test_dashboard_meta_shows_the_refresh_cadence(self):
+        self.check("""
+            STATE.refresh = { enabled: true, interval_minutes: 360, last_run_time: '2026-09-26 06:00:00' };
+            assert.ok(bmRefreshMetaHtml().includes('每 6 小时自动刷新') && bmRefreshMetaHtml().includes('上次'), bmRefreshMetaHtml());
+            STATE.refresh = { enabled: false, interval_minutes: 360 };
+            assert.ok(bmRefreshMetaHtml().includes('没开自动刷新') && bmRefreshMetaHtml().includes("goSettingsSection('refreshEnabled')"));
+        """)
+
     def test_quiet_value_accepted_by_editor_validation(self):
         self.check("""
             const d = draftFromField({ id: 'r', label: '重置', type: 'time', curl: "curl 'https://x.example'", json_path: 'a', warn_days: 0 });

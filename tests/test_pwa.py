@@ -112,6 +112,13 @@ class ServiceWorkerTest(unittest.TestCase):
         self.assertIn("cached || offlineResponse()", self.source)
         self.assertIn("r || offlineResponse()", self.source)
 
+    def test_new_shell_is_announced_to_the_page(self):
+        # 外壳先给缓存：部署后第一次打开是旧界面。导航取回的外壳 ETag 变了就通知页面提示刷新。
+        self.assertIn("request.mode === 'navigate'", self.source)
+        self.assertIn("etagOf(cached) !== etagOf(response)", self.source)
+        self.assertIn("postMessage({ type: 'bh-shell-updated' })", self.source)
+        self.assertIn("event.waitUntil(", self.source)
+
     @unittest.skipIf(NODE is None, "未安装 node，跳过语法检查")
     def test_parses(self):
         proc = subprocess.run([NODE, "--check", SW_PATH], capture_output=True, text=True)
@@ -133,6 +140,10 @@ class RegistrationTest(unittest.TestCase):
         self.assertIn("location.protocol === 'https:'", self.html)
         for host in ("'localhost'", "'127.0.0.1'", "'[::1]'"):
             self.assertIn(host, self.html)
+
+    def test_page_offers_a_refresh_when_the_shell_changed(self):
+        self.assertIn("e.data.type !== 'bh-shell-updated'", self.html)
+        self.assertIn("toastAction('Bookmark Hub 有新版本', '刷新', () => location.reload()", self.html)
 
     def test_install_prompt_is_opt_in_and_remembered(self):
         self.assertIn("beforeinstallprompt", self.html)

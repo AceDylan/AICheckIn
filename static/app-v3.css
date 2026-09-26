@@ -2432,3 +2432,13 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   .home-notice { margin-top: 12px; }
   .home-body { margin-top: 20px; }
 }
+
+/* 待办等限高列表：哪一端还有内容就在哪一端淡出（.fade-top / .fade-bottom 由脚本维护，同侧栏分组导航）。 */
+.todo-list.fade-top { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px); mask-image: linear-gradient(180deg, transparent 0, #000 24px); }
+.todo-list.fade-bottom { -webkit-mask-image: linear-gradient(0deg, transparent 0, #000 28px); mask-image: linear-gradient(0deg, transparent 0, #000 28px); }
+.todo-list.fade-top.fade-bottom { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 28px), transparent 100%); mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 28px), transparent 100%); }
+
+/* 看板工具条上的「没开自动刷新」：链接色、不加下划线，指上去才有。 */
+.toolbar-meta .meta-link { color: var(--accent); text-decoration: none; }
+.toolbar-meta .meta-link:hover, .toolbar-meta .meta-link:focus-visible { text-decoration: underline; }
+@media (width <= 760px) { #libToolbar .toolbar-meta { flex: 1 1 0; min-width: 0; white-space: normal; line-height: 1.5; } }
