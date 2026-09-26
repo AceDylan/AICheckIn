@@ -162,6 +162,38 @@ class OmniSearchRankingTest(unittest.TestCase):
     def test_no_match_returns_empty(self):
         self.assertEqual(self.search("zzz-nothing-here"), [])
 
+    def run_logic(self, expr):
+        script = (HARNESS_PRELUDE.replace("__STATE__", json.dumps(FIXTURE, ensure_ascii=False))
+                  + self.logic + "\nconsole.log(JSON.stringify(%s));" % expr)
+        with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False, encoding="utf-8") as fh:
+            fh.write(script)
+            path = fh.name
+        try:
+            proc = subprocess.run([NODE, path], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            return json.loads(proc.stdout.strip())
+        finally:
+            os.unlink(path)
+
+    def test_pinyin_initials_find_chinese_names(self):
+        # 不切输入法：「wdz」→ 文档站，「cywz」→ 分组「常用网站」。
+        self.assertEqual(self.search("wdz")[0], ["link", "文档站"])
+        self.assertIn(["group", "常用网站"], self.search("cywz"))
+        # 首字母在名字中间也算（分数低于前缀）。
+        self.assertIn(["link", "文档站"], self.search("dz"))
+
+    def test_pinyin_initials_table(self):
+        # 边界字表按 Chromium 的拼音排序推出、用 pypinyin 核对过；这里锁住几处容易错的档（路 / 流 曾被算成 m）。
+        out = self.run_logic("['路由刷机教程', '分流测试', '临时邮箱', '欧洲', 'IP检测', 'seldom文档', 'Grafana', '中文 abc 123']"
+                             ".map(pinyinInitials)")
+        self.assertEqual(out, ["lysjjc", "flcs", "lsyx", "oz", "ipjc", "seldomwd", "", "zwabc123"])
+
+    def test_pinyin_does_not_hijack_latin_or_mixed_queries(self):
+        # 名字 / 域名能直接命中时照旧排在前面；带汉字或符号的查询不走拼音。
+        self.assertEqual(self.search("grafana")[0][1], "Grafana")
+        self.assertEqual(self.run_logic("[pinyinQuery('lsyx'), pinyinQuery('邮箱'), pinyinQuery('a-b'), pinyinQuery('123')]"),
+                         [True, False, False, False])
+
     def test_empty_query_lists_pinned_first(self):
         self.assertEqual(self.search("")[0], ["link", "Grafana"])
 

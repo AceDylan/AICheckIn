@@ -253,7 +253,12 @@ class FieldThresholdTest(_Base):
                                     "warn_days": "30"})
         self.assertEqual(t["warn_days"], 30)
         self.assertEqual(app_module.public_field(t)["warn_days"], 30)
-        for bad in ({"type": "amount", "warn_below": "abc"}, {"type": "time", "warn_days": "0"}, {"type": "time", "warn_days": "400"}):
+        # 0 = 不提醒（额度重置时间这类只看倒计时的字段）
+        quiet = app_module.clean_field({"label": "重置", "type": "time", "curl": "curl https://x.example/api", "json_path": "a",
+                                        "warn_days": "0"})
+        self.assertEqual(quiet["warn_days"], 0)
+        self.assertEqual(app_module.public_field(quiet)["warn_days"], 0)
+        for bad in ({"type": "amount", "warn_below": "abc"}, {"type": "time", "warn_days": "-1"}, {"type": "time", "warn_days": "400"}):
             with self.assertRaises(ValueError):
                 app_module.clean_field(dict({"label": "x", "curl": "curl https://x.example/api", "json_path": "a"}, **bad))
 

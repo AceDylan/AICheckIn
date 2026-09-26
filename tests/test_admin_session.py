@@ -99,6 +99,36 @@ class AdminSessionTest(unittest.TestCase):
         signature = hmac.new(app_module._session_key(), expired.encode(), hashlib.sha256).hexdigest()
         self.assertFalse(app_module._session_token_ok(expired + "." + signature))
 
+    def _token_expiring_in(self, seconds):
+        exp = str(int(time.time()) + seconds)
+        return exp + "." + hmac.new(app_module._session_key(), exp.encode(), hashlib.sha256).hexdigest()
+
+    def test_opening_the_page_slides_an_older_session_forward(self):
+        # 签发已超过一天的令牌：打开首页就换一张新的 30 天令牌，天天用就不会到期。
+        old = self._token_expiring_in(app_module.SESSION_MAX_AGE - 2 * 86400)
+        response = self._browser(old).get("/api/configs", headers={"X-Forwarded-Proto": "https"})
+        self.assertTrue(response.get_json()["admin_unlocked"])
+        raw = next(h for h in response.headers.getlist("Set-Cookie") if h.startswith(app_module.SESSION_COOKIE + "="))
+        fresh = raw.split("=", 1)[1].split(";")[0]
+        self.assertGreater(app_module._session_token_exp(fresh), app_module._session_token_exp(old) + 86400)
+        for flag in ("HttpOnly", "SameSite=Lax", "Secure"):
+            self.assertIn(flag, raw)
+
+    def test_fresh_session_is_not_reissued_on_every_request(self):
+        _, token = self._unlock()
+        response = self._browser(token).get("/api/configs")
+        self.assertEqual(response.headers.getlist("Set-Cookie"), [])
+
+    def test_invalid_or_header_only_auth_is_never_renewed(self):
+        for client in (self._browser("9999999999.deadbeef"), self._browser()):
+            self.assertEqual(client.get("/api/configs").headers.getlist("Set-Cookie"), [])
+        header_only = app.test_client().get("/api/configs", headers={"X-Admin-Password": PASSWORD})
+        self.assertEqual(header_only.headers.getlist("Set-Cookie"), [])
+        # 改过密码的旧令牌也不会被续上。
+        old = self._token_expiring_in(app_module.SESSION_MAX_AGE - 2 * 86400)
+        app_module.ADMIN_PASSWORD = "rotated-password"
+        self.assertEqual(self._browser(old).get("/api/configs").headers.getlist("Set-Cookie"), [])
+
     def test_password_change_invalidates_old_cookies(self):
         _, token = self._unlock()
         app_module.ADMIN_PASSWORD = "rotated-password"

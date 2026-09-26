@@ -67,6 +67,17 @@ class AlertClassificationTest(unittest.TestCase):
         self.assertEqual(out["fields"], ["low", "", "soon"])
         self.assertEqual(out["bookmark"], "low")
 
+    def test_quiet_time_field_never_alerts(self):
+        # 「提前几天提醒」填 0：额度重置时间这类倒计时，快到了、刚过了都不算预警。
+        out = self.classify([{"id": "a", "type": "time", "raw": time.time() + 3600, "warn_days": 0},
+                             {"id": "b", "type": "time", "raw": time.time() - 3600, "warn_days": 0},
+                             {"id": "c", "type": "time", "raw": time.time() + 3600, "warn_days": "0"}])
+        self.assertEqual(out["fields"], ["", "", ""])
+        self.assertEqual(out["bookmark"], "")
+        # 取数失败照样算失败。
+        out = self.classify([{"id": "a", "type": "time", "error": "HTTP 401", "warn_days": 0}])
+        self.assertEqual(out["bookmark"], "error")
+
     def test_past_expiry_is_expired(self):
         out = self.classify([{"id": "a", "type": "time", "raw": time.time() - DAY}])
         self.assertEqual(out["bookmark"], "expired")

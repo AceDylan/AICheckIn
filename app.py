@@ -970,14 +970,15 @@ def clean_field(raw, existing=None, taken=()):
             errors.append(str(exc))
         field["tz"] = tz
         # 到期前几天开始提醒（可选，默认 7 天）：VPS、域名续费往往要提前更久。
+        # 0 = 不提醒，只显示倒计时：「额度重置时间」这类每天 / 每月都会到的时间，按到期算会永远「快到期」。
         days_raw = raw.get("warn_days")
         if days_raw is not None and str(days_raw).strip() != "":
             try:
                 warn_days = int(str(days_raw).strip())
             except (TypeError, ValueError):
-                warn_days = 0
-            if not 1 <= warn_days <= 365:
-                errors.append("到期提醒天数需为 1–365 的整数")
+                warn_days = -1
+            if not 0 <= warn_days <= 365:
+                errors.append("到期提醒天数需为 0–365 的整数（0 = 不提醒）")
             else:
                 field["warn_days"] = warn_days
 
@@ -1596,14 +1597,34 @@ def _issue_session_token(max_age=SESSION_MAX_AGE):
     return exp + "." + hmac.new(_session_key(), exp.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def _session_token_ok(token):
+def _session_token_exp(token):
+    """有效令牌的到期时间戳；无效 / 过期返回 0。"""
     exp, sep, sig = str(token or "").partition(".")
     if not sep or not exp.isdigit():
-        return False
+        return 0
     expected = hmac.new(_session_key(), exp.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(sig, expected):
-        return False
-    return int(exp) > time.time()
+        return 0
+    return int(exp) if int(exp) > time.time() else 0
+
+
+def _session_token_ok(token):
+    return bool(_session_token_exp(token))
+
+
+# 滑动续期：起始页每天都会打开，固定 30 天到期的话，每个浏览器每月都要被踢出来重输一次密码。
+# 已登录的人打开首页（GET /api/configs）时，令牌签发超过一天就换一张新的 30 天令牌——
+# 于是只有 30 天没打开过才需要重新解锁。改管理密码仍然让全部旧令牌立刻失效。
+SESSION_RENEW_AFTER = 24 * 3600
+
+
+def _maybe_renew_session(resp):
+    if not ADMIN_PASSWORD:
+        return resp
+    exp = _session_token_exp(request.cookies.get(SESSION_COOKIE, ""))
+    if exp and exp - time.time() < SESSION_MAX_AGE - SESSION_RENEW_AFTER:
+        _set_session_cookie(resp)
+    return resp
 
 
 def _request_is_https():
@@ -3169,7 +3190,7 @@ def api_configs():
         holidays = {"plans": read_holidays()}
     except RuntimeError as exc:
         holidays = {"plans": {}, "error": str(exc)}
-    return jsonify({
+    return _maybe_renew_session(jsonify({
         "ok": True,
         "configs": [] if configs_hidden else configs_out,
         "configs_hidden": configs_hidden,
@@ -3214,7 +3235,7 @@ def api_configs():
         "vault": {"url": VAULT_URL, "inbox": VAULT_INBOX} if vault_enabled() and unlocked else None,
         # 「笔记」标签页：同样只给已解锁的人。框里放的是本站的 /vault/open，票据不经过这里。
         "vault_embed": public_vault_embed() if vault_embed_enabled() and unlocked else None,
-    })
+    }))
 
 
 @app.get("/api/configs/<int:idx>/secret")

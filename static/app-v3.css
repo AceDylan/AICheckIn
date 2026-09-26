@@ -2373,3 +2373,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .boot-skeleton :is(i, b) { display: block; background: var(--surface-hover); animation: sk-pulse 1.4s ease-in-out infinite; }
 @keyframes sk-pulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .boot-skeleton :is(i, b) { animation: none; } }
+
+/* 看板字段取数失败时的修复入口：一句原因 + 「更新 cURL」，按钮直达编辑弹窗里那个字段。 */
+.field-fix { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; color: var(--text-2); font-size: 12px; line-height: 1.45; }
+.field-fix .btn { flex: none; }

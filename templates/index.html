@@ -392,17 +392,17 @@
                手机上是页头下一行可横滑的跳转标签（参考 USWDS 的 in-page navigation）。内容由 renderSettingsToc() 按当前可见的节生成。 -->
           <nav class="settings-toc" id="settingsToc" aria-label="本页"></nav>
           <div class="settings-grid" id="settingsGrid">
-            <div class="panel"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote" hidden></div>
+            <div class="panel needs-unlock"><div class="panel-title">定时自动签到</div><div class="warn-banner" id="schedTzNote" hidden></div>
               <div class="set-rows">
                 <label class="set-row"><span class="set-text"><b>每天自动签到</b><span>到点把启用的账户全部签一遍，没签成的会自动补签</span></span><span class="switch" title="启用定时签到"><input type="checkbox" id="schedEnabled"><span class="slider"></span></span></label>
                 <div class="set-row"><label class="set-text" for="schedTime"><b>执行时间</b><span id="schedClock">每天这个时刻（服务器时间）</span></label><div class="set-ctrl"><input class="input" type="time" id="schedTime" value="08:30"></div></div>
               </div><div class="note" id="schedStatus"></div></div>
-            <div class="panel"><div class="panel-title">站点数据自动刷新</div>
+            <div class="panel needs-unlock"><div class="panel-title">站点数据自动刷新</div>
               <div class="set-rows">
                 <label class="set-row"><span class="set-text"><b>后台自动刷新</b><span>让站点看板的余额 / 到期时间不必手点也保持新鲜；只刷新配置了接口字段的站点</span></span><span class="switch" title="启用自动刷新"><input type="checkbox" id="refreshEnabled"><span class="slider"></span></span></label>
                 <div class="set-row"><label class="set-text" for="refreshInterval"><b>刷新间隔</b><span>两次后台取数之间隔多久</span></label><div class="set-ctrl"><select class="input" id="refreshInterval"></select></div></div>
               </div><div class="note" id="refreshStatus"></div></div>
-            <div class="panel"><div class="panel-title">全局代理</div>
+            <div class="panel needs-unlock"><div class="panel-title">全局代理</div>
               <div class="set-rows">
                 <div class="set-row"><label class="set-text" for="proxyUrl"><b>代理地址</b><span>留空直连，支持 http / https / socks5；签到和看板取数都走它</span></label><div class="set-ctrl set-ctrl-wide"><input class="input" id="proxyUrl" placeholder="例如 socks5://127.0.0.1:7890"><button class="btn sm" id="saveProxy">保存</button></div></div>
               </div></div>
@@ -417,8 +417,8 @@
                 </form>
                 <button type="button" class="btn sm ghost" id="lockBtn" style="display:none">锁定</button>
               </div></div>
-            <div class="panel"><div class="panel-title">部署自检<span class="spacer"></span><button class="btn sm ghost" id="runDiag">重新检查</button></div><div class="note panel-lead">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
-            <div class="panel"><div class="panel-title">配置恢复<span class="spacer"></span><button class="btn sm ghost" id="loadBackups">查看备份</button></div><div class="note panel-lead">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
+            <div class="panel needs-unlock"><div class="panel-title">部署自检<span class="spacer"></span><button class="btn sm ghost" id="runDiag">重新检查</button></div><div class="note panel-lead">部署或改配置后点一下，确认「装好了没有、会不会按时跑」。</div><div class="diag-list" id="diagList"></div></div>
+            <div class="panel needs-unlock"><div class="panel-title">配置恢复<span class="spacer"></span><button class="btn sm ghost" id="loadBackups">查看备份</button></div><div class="note panel-lead">config.json 每次写入前都会留备份，每天首次改动另存一份。误删了分组、或配置文件损坏时可从这里回退。<b>恢复会覆盖当前配置</b>，被覆盖的那份会另存为 .corrupt-&lt;时间戳&gt;。</div><div class="backup-list" id="backupList"></div></div>
             <div class="panel"><div class="panel-title">快速收藏</div><div class="note panel-lead">把下面这个按钮拖到浏览器书签栏；在任意网页上点它，就会带着当前网址和标题打开收藏弹窗。手机上装成应用后，系统「分享」菜单里也会出现 Bookmark Hub。</div><div class="controls" style="margin-top:10px"><a class="btn sm ghost bookmarklet" id="bookmarkletLink" href="#" onclick="return false;" draggable="true" title="拖到书签栏">＋ 收藏到 Bookmark Hub</a></div></div>
             <div class="panel"><div class="panel-title">首页与起始页</div>
               <div class="note panel-lead">把本页设为浏览器的「主页 / 启动时打开的网页」，打开浏览器就是你的收藏首页：光标自动落在搜索框，直接打字即可找收藏或搜索网页。</div>
@@ -722,6 +722,7 @@
     // ===== 全局状态 =====
     let STATE = { configs: [], bookmarks: [], link_groups: [], proxy_url: '', schedule: {}, admin_required: false, admin_unlocked: true };
     let PRIVATE_PROMPTED = false;   // 私密模式的解锁引导每次加载只跳一次，别反复抢焦点
+    let UNLOCK_RETURN = false;      // 从首页的「已锁定」卡片去解锁：解锁成功后回到首页
     let SHARE_HANDLED = false;      // 分享参数每次加载只消费一次
     let STATE_LOADED = false;
     let BOOT_FAILED = false;   // 第一次取数没成功（多半是网络）：收藏页显示「连不上」而不是「从第一个网址开始」
@@ -1372,8 +1373,9 @@
       if (section && !CHECKIN_PAGES.includes(section)) return;
       const mainName = section ? 'checkin' : name;
       if (!MAIN_VIEWS.includes(mainName)) return;
-      // 私密模式未解锁：收藏、聊天、签到的入口都收起来了，地址栏里手敲 #bookmarks 也一样只到解锁面板。
-      if (STATE_LOADED && libraryLocked() && mainName !== 'settings') { switchView('settings', updateHash); return; }
+      // 私密模式未解锁：收藏、聊天、签到的入口都收起来了。只剩首页（时钟 + 搜索框 + 一张解锁卡片，不含任何收藏数据）
+      // 和系统设置里的解锁面板——起始页被锁上时（会话过期 / 新设备）搜索框照样能用。
+      if (STATE_LOADED && libraryLocked() && mainName !== 'settings' && mainName !== 'bookmarks') { switchView('bookmarks', updateHash); return; }
       if (mainName === 'checkin' && STATE_LOADED && !canEdit()) { switchView('bookmarks'); return; }
       if (mainName === 'chat' && STATE_LOADED && !chatAvailable()) { switchView('bookmarks'); return; }
       if (mainName === 'vault' && STATE_LOADED && !vaultEmbedAvailable()) { switchView('bookmarks'); return; }
@@ -1879,12 +1881,12 @@
         STATE.link_groups = Array.isArray(STATE.link_groups) ? STATE.link_groups : [];
         STATE_LOADED = true;
         BOOT_FAILED = false;
-        // 私密模式未解锁：后端只回了个空壳，把人直接带到解锁入口，别让他对着空页面发呆。
+        // 私密模式未解锁：后端只回了个空壳。首页换成「已锁定」卡片（见 renderHome），搜索框照常能用；
+        // 地址本来就是 #settings 时直接把光标放进密码框。
         if (STATE.private && STATE.locked) {
             if (!PRIVATE_PROMPTED) {
                 PRIVATE_PROMPTED = true;
-                switchView('settings');
-                ADMIN_PWD.focus();   // switchView 已经把密码框挂回文档
+                if (currentViewName() === 'settings') ADMIN_PWD.focus();   // switchView 已经把密码框挂回文档
             }
         } else {
             PRIVATE_PROMPTED = false;
@@ -1933,8 +1935,10 @@
       // 没解锁时设置页里能做的只有「解锁」：把管理密码这一节提到最前面，不用翻过三节改不了的设置去找密码框。
       $('settingsGrid').classList.toggle('is-locked', !show);
       if (STATE_LOADED) renderSettingsToc();   // 首次加载前常量还没初始化（见 switchView 的说明），数据到了再生成
+      // 锁定时「收藏库」入口留着（点进去只有时钟、搜索框和解锁卡片），分组、全局搜索这些带数据的入口收起。
       const libTab = document.querySelector('.tab[data-view="bookmarks"]');
-      if (libTab) libTab.hidden = locked;
+      if (libTab) libTab.hidden = false;
+      document.querySelectorAll('#settingsGrid > .panel.needs-unlock').forEach(p => { p.hidden = locked; });
       LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && currentViewName() !== 'bookmarks'); });
       const chatTab = document.querySelector('.tab[data-view="chat"]');
       if (chatTab) chatTab.hidden = !chatAvailable();
@@ -1947,9 +1951,9 @@
       const vaultTab = document.querySelector('.tab[data-view="vault"]');
       if (vaultTab) vaultTab.hidden = !vaultEmbedAvailable();
       if (!vaultEmbedAvailable()) closeVault(true);   // 同上，并请 WebObsidian 结束由本站登录的会话
-      // 正停在被收起的页面上（比如会话刚过期）时，退回收藏库；连收藏库也收起来了就去解锁面板。
+      // 正停在被收起的页面上（比如会话刚过期）时，退回收藏首页（锁定时那里是解锁卡片）。
       const here = currentViewName();
-      if (locked && here !== 'settings') switchView('settings');
+      if (locked && here !== 'settings' && here !== 'bookmarks') switchView('bookmarks');
       else if (!show && ADMIN_VIEWS.includes(here)) switchView('bookmarks');
       else if (here === 'chat' && !chatAvailable()) switchView('bookmarks');
       else if (here === 'vault' && !vaultEmbedAvailable()) switchView('bookmarks');
@@ -2728,6 +2732,7 @@
     function renderLibrary() {
       if (ARRANGE.on && LIB.page !== '@home') leaveArrange();
       if (!['@home', 'monitor'].includes(LIB.page) && STATE_LOADED && !findGroup(LIB.page)) { LIB.page = '@home'; history.replaceState(null, '', libHash()); }
+      if (STATE_LOADED && libraryLocked() && LIB.page !== '@home') { LIB.page = '@home'; history.replaceState(null, '', libHash()); }
       renderLibNav();
       syncDocTitle();
       const isHome = LIB.page === '@home';
@@ -2790,7 +2795,7 @@
     // 图标下那一小条指标：取首个启用字段，压成 4 列手机宽度（约 80px）也放得下的长度。
     function compactFieldValue(f) {
       const type = f.type || 'amount';
-      if (type === 'time') return relativeTime(f.raw).text || String(f.value);
+      if (type === 'time') return relativeTime(f.raw, timeFieldQuiet(f)).text || String(f.value);
       if (type !== 'amount') return String(f.value);
       const text = String(f.value).trim();
       const num = /^-?[\d,]*\.?\d+$/.test(text) ? fmtNum(parseNum(text)) : text;
@@ -2885,8 +2890,10 @@
       } else if ((primary.type || 'amount') === 'time') {
         // 小组件只有一百来像素宽，「已过期 16 小时」「还有 2 个月」整句放大号字会被截成「已过期 16…」：
         // 大字只放数字，单位和「前过期 / 后到期」用小字跟在后面。
-        const text = compactFieldValue(primary), m = /^(已过期|还有) (\d+) (.+)$/.exec(text);
-        if (m) { value = m[2]; unit = m[3] + (m[1] === '已过期' ? '前过期' : '后到期'); past = m[1] === '已过期'; } else value = text;
+        const quiet = timeFieldQuiet(primary);
+        const text = compactFieldValue(primary), m = /^(已过期|已过|还有) (\d+) (.+)$/.exec(text);
+        if (m && quiet) { value = m[2]; unit = m[3] + (m[1] === '还有' ? '后' : '前'); }
+        else if (m) { value = m[2]; unit = m[3] + (m[1] === '已过期' ? '前过期' : '后到期'); past = m[1] === '已过期'; } else value = text;
       } else value = compactFieldValue(primary);
       let sub;
       if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
@@ -3123,6 +3130,12 @@
       renderDeck();
       measureHomeGrid();
       if (!STATE_LOADED) { $('homeAddLink').hidden = $('homeEditBtn').hidden = true; renderBootPending($('homeList'), $('homeEmpty'), 'tiles'); return; }
+      $('homeDeckBtn').hidden = libraryLocked();
+      if (libraryLocked()) {
+        $('homeList').innerHTML = '';
+        showEmpty($('homeEmpty'), { icon: 'lock', title: '收藏已锁定', text: '私密模式：输入管理密码后才显示收藏、看板和首页组件。上面的搜索框照常能用网页搜索。', actions: [{ label: '输入密码解锁', onclick: 'unlockFromHome()' }] });
+        return;
+      }
       // 与侧栏顺序一致：站点看板在前，其后按分组顺序。最前面是「常用」一行（图标视图、没在编辑、没在筛选时）。
       const folds = minimal ? [] : homeFolds();
       const sections = [];
@@ -4113,7 +4126,7 @@
     function expiryRows() {
       const rows = [];
       (STATE.bookmarks || []).forEach((b, i) => {
-        const times = enabledFields(b).filter(f => (f.type || 'amount') === 'time' && !f.error && isFinite(Number(f.raw)) && Number(f.raw) > 0);
+        const times = enabledFields(b).filter(f => (f.type || 'amount') === 'time' && !timeFieldQuiet(f) && !f.error && isFinite(Number(f.raw)) && Number(f.raw) > 0);
         if (!times.length) return;
         const f = times.reduce((a, c) => (Number(c.raw) < Number(a.raw) ? c : a));
         rows.push({ b, i, f, raw: Number(f.raw), kind: fieldAlert(f) });
@@ -5042,16 +5055,19 @@
     function dayStamp(s) { const t = shortStamp(s); return /^\d{2}-\d{2} \d{2}:\d{2}$/.test(t) ? t.slice(0, 5) : t; }
     // 相对时间（raw 为 epoch 秒）：看板的时间字段几乎都是「到期 / 续费」，所以说「已过期 14 小时」「还有 68 天」，
     // 不说看不出主语的「14 小时前」「68 天后」。已过去标红，3 天内标黄。
-    function relativeTime(raw) {
+    // quiet：设成「不提醒」的时间字段（额度重置时间之类），只说还有多久 / 过了多久，不说「到期」、不上色。
+    function relativeTime(raw, quiet) {
       const t = Number(raw);
       if (!isFinite(t) || t <= 0) return { text: '', cls: '' };
       const diff = t - Date.now() / 1000;
       const abs = Math.abs(diff);
       const units = [[31536000, '年'], [2592000, '个月'], [86400, '天'], [3600, '小时'], [60, '分钟']];
-      let text = diff < 0 ? '刚过期' : '即将到期';
+      const pastWord = quiet ? '已过' : '已过期';
+      let text = diff < 0 ? (quiet ? '刚过' : '刚过期') : (quiet ? '马上到' : '即将到期');
       for (const [sec, name] of units) {
-        if (abs >= sec) { text = diff < 0 ? `已过期 ${Math.floor(abs / sec)} ${name}` : `还有 ${Math.floor(abs / sec)} ${name}`; break; }
+        if (abs >= sec) { text = diff < 0 ? `${pastWord} ${Math.floor(abs / sec)} ${name}` : `还有 ${Math.floor(abs / sec)} ${name}`; break; }
       }
+      if (quiet) return { text, cls: '' };
       return { text, cls: diff < 0 ? 'is-past' : (abs < 3 * 86400 ? 'is-soon' : '') };
     }
     // 到期日期写成「12月1日」（跨年带年份，不是零点再带时刻），完整原值放在 title 里。
@@ -5074,23 +5090,33 @@
       const limit = r.enabled ? 2 * (Number(r.interval_minutes) || 60) * 60000 : 2 * 86400000;
       return Date.now() - at > limit;
     }
-    function fieldItemHtml(f, primary) {
+    // 金额统一成首页小组件那样：千分位、最多两位小数；完整原值放在悬停提示里。
+    function amountText(v) {
+      const text = String(v == null ? '' : v).trim();
+      return /^-?[\d,]*\.?\d+$/.test(text) ? fmtNum(parseNum(text)) : text;
+    }
+    function fieldItemHtml(f, primary, bi) {
       const type = f.type || 'amount';
       const old = !f.error && f.value != null && f.value !== '' && fieldOld(f);
       let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? `较旧 · ${agoSpan(f.updated_at)}` : agoSpan(f.updated_at)}</span>` : '';
       let value = '', valueCls = '', extra = '';
       if (f.error) {
         value = `<span class="field-error" title="${escapeHtml(f.error)}">${escapeHtml(f.error)}</span>`;
-        if (f.value != null && f.value !== '') extra = `<span class="field-last">上次成功：${escapeHtml(f.value)}</span>`;
+        if (f.value != null && f.value !== '') extra = `<span class="field-last" title="${escapeHtml(f.value)}">上次成功：${escapeHtml(type === 'amount' ? amountText(f.value) : f.value)}</span>`;
+        // 最常见的失败是登录凭据过期（401 / 403）：直接说原因，并给一个按钮直达这个字段的 cURL 输入框。
+        if (bi != null && canEdit()) {
+          const auth = /\b40[13]\b/.test(String(f.error));
+          extra += `<div class="field-fix">${auth ? '<span>登录凭据可能过期了：重新复制一份 cURL 粘贴即可</span>' : ''}<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(f.id || '')}" onclick="fixBmField(${Number(bi)}, this.dataset.fixField)">${auth ? '更新 cURL' : '检查字段'}</button></div>`;
+        }
       } else if (f.value == null || f.value === '') {
         value = '<span class="field-pending">等待首次刷新</span>';
       } else if (type === 'time') {
-        const rel = relativeTime(f.raw);
+        const rel = relativeTime(f.raw, timeFieldQuiet(f));
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(expiryDateText(f.raw, f.value))}</span>`;
         valueCls = rel.cls;
         if (rel.text) head = `<span class="field-badge ${rel.cls}" title="上次更新 ${escapeHtml(f.updated_at || '')}">${escapeHtml(rel.text)}</span>`;
       } else if (type === 'amount') {
-        value = escapeHtml(f.value) + (f.unit ? `<span class="field-unit">${escapeHtml(f.unit)}</span>` : '');
+        value = `<span title="${escapeHtml(f.value)}">${escapeHtml(amountText(f.value))}</span>` + (f.unit ? `<span class="field-unit">${escapeHtml(f.unit)}</span>` : '');
         if (fieldAlert(f) === 'low') { valueCls = 'is-soon'; head = `<span class="field-badge is-soon" title="低于提醒阈值 ${escapeHtml(String(f.warn_below))}">余额偏低</span>`; }
       } else {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(f.value)}</span>`;
@@ -5101,12 +5127,12 @@
           </div>`;
     }
     // 卡片字段区：仅展示启用字段；首个为主字段（通栏大字），其余双列；超过上限折叠为「+N 项」。
-    function fieldsBlockHtml(b) {
+    function fieldsBlockHtml(b, bi) {
       const fields = enabledFields(b);
       if (!fields.length) return '<div class="bm-fields-block is-empty"><div class="fields-empty-text">暂无监控字段，在「···」→「编辑」中添加。</div></div>';
       const head = fields.slice(0, CARD_FIELD_LIMIT), rest = fields.slice(CARD_FIELD_LIMIT);
-      let html = head.map((f, k) => fieldItemHtml(f, k === 0)).join('');
-      if (rest.length) html += `<details class="fields-more"><summary>+${rest.length} 项 ▾</summary><div class="fields-more-grid">${rest.map(f => fieldItemHtml(f, false)).join('')}</div></details>`;
+      let html = head.map((f, k) => fieldItemHtml(f, k === 0, bi)).join('');
+      if (rest.length) html += `<details class="fields-more"><summary>+${rest.length} 项 ▾</summary><div class="fields-more-grid">${rest.map(f => fieldItemHtml(f, false, bi)).join('')}</div></details>`;
       return `<div class="bm-fields-block">${html}</div>`;
     }
 
@@ -5124,7 +5150,7 @@
         const n = Number(String(f.value).replace(/[^\d.-]/g, ''));
         return isFinite(n) && String(f.value).trim() !== '' && n < Number(f.warn_below) ? 'low' : '';
       }
-      if (type !== 'time') return '';
+      if (type !== 'time' || timeFieldQuiet(f)) return '';
       const t = Number(f.raw);
       if (!isFinite(t) || t <= 0) return '';
       const diff = t - Date.now() / 1000;
@@ -5133,6 +5159,8 @@
       if (diff < days * 86400) return 'soon';
       return '';
     }
+    // 「提前几天提醒」填 0 = 不提醒：这个时间只是倒计时（额度重置、下次刷新），不是到期日。
+    function timeFieldQuiet(f) { return (f.type || 'amount') === 'time' && f.warn_days !== '' && f.warn_days != null && Number(f.warn_days) === 0; }
     // 一个站点归到哪一类：按严重程度取最高的那类（失败 > 已过期 > 余额偏低 > 即将到期）。
     function bookmarkAlert(b) {
       const kinds = enabledFields(b).map(fieldAlert);
@@ -5176,7 +5204,7 @@
       if (bmAlertFilter && !counts[bmAlertFilter]) bmAlertFilter = '';
       renderBmAlerts(counts);
       const visible = bms.map((b, i) => ({ b, i })).filter(({ b }) =>
-        (!query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)} ${(b.fields || []).map(f => f.label || '').join(' ')}`.toLowerCase().includes(query))
+        (!query || `${b.name || ''} ${b.url || ''} ${siteHost(b.url)} ${(b.fields || []).map(f => f.label || '').join(' ')}`.toLowerCase().includes(query) || pinyinHit(b.name, query))
         && (!bmAlertFilter || bookmarkAlert(b) === bmAlertFilter));
       const filtering = !!(query || bmAlertFilter);
       $('bmVisibleCount').textContent = filtering ? `${visible.length} / ${bms.length} 个站点` : `${bms.length} 个站点`;
@@ -5209,7 +5237,7 @@
             <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
             <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${o.filtering || o.home ? ' disabled' : ''}>${icon('grip')}</button>
           </div>
-          ${fieldsBlockHtml(b)}
+          ${fieldsBlockHtml(b, i)}
           <div class="bookmark-actions">
             ${safe ? `<a class="btn sm open" href="${escapeHtml(safe)}" ${linkTargetAttrs()}>打开站点 ↗</a>` : `<button class="btn sm open" disabled>网址不可用</button>`}
             ${hasFields ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新全部启用字段" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
@@ -5342,7 +5370,7 @@
       if (d.type === 'amount' && String(d.warn_below || '').trim() && !isFinite(Number(d.warn_below))) return '余额提醒阈值需为数字';
       if (d.type === 'time' && String(d.warn_days || '').trim()) {
         const n = Number(d.warn_days);
-        if (!Number.isInteger(n) || n < 1 || n > 365) return '到期提醒天数需为 1–365 的整数';
+        if (!Number.isInteger(n) || n < 0 || n > 365) return '到期提醒天数需为 0–365 的整数（0 = 不提醒）';
       }
       return '';
     }
@@ -5381,7 +5409,7 @@
               <div class="field"${hide('time')}><label>时间戳单位</label><select class="input" data-k="ts_unit">${['auto', 's', 'ms'].map(u => `<option value="${u}"${(d.ts_unit || 'auto') === u ? ' selected' : ''}>${TS_UNIT_LABELS[u]}</option>`).join('')}</select></div>
             </div>
             <div class="row-2 field-row"${hide('amount')}><div class="field"><label>单位后缀（可选）</label><input class="input" data-k="unit" value="${escapeHtml(d.unit || '')}" placeholder="如 USD、¥、积分" maxlength="12"></div><div class="field"><label>低于多少时提醒（可选）</label><input class="input" data-k="warn_below" type="number" step="any" value="${escapeHtml(d.warn_below || '')}" placeholder="如 5，看板标「余额偏低」"></div></div>
-            <div class="row-2 field-row"${hide('time')}><div class="field"><label>显示时区</label><input class="input" data-k="tz" value="${escapeHtml(d.tz || 'Asia/Shanghai')}" placeholder="Asia/Shanghai"><div class="hint">秒 / 毫秒时间戳自动识别；ISO 字符串无时区时按此时区解释。</div></div><div class="field"><label>提前几天提醒（可选）</label><input class="input" data-k="warn_days" type="number" min="1" max="365" step="1" value="${escapeHtml(d.warn_days || '')}" placeholder="默认 7 天"></div></div>
+            <div class="row-2 field-row"${hide('time')}><div class="field"><label>显示时区</label><input class="input" data-k="tz" value="${escapeHtml(d.tz || 'Asia/Shanghai')}" placeholder="Asia/Shanghai"><div class="hint">秒 / 毫秒时间戳自动识别；ISO 字符串无时区时按此时区解释。</div></div><div class="field"><label>提前几天提醒（可选）</label><input class="input" data-k="warn_days" type="number" min="0" max="365" step="1" value="${escapeHtml(d.warn_days == null ? '' : String(d.warn_days))}" placeholder="默认 7 天"><div class="hint">填 0 = 不提醒，只显示倒计时——适合「额度重置 / 下次刷新」这类每天、每月都会到的时间。</div></div></div>
             <div class="field-test-row">
               <button type="button" class="btn sm ghost" data-act="test">测试取值</button>
               <span class="test-result" aria-live="polite"></span>
@@ -5500,6 +5528,19 @@
       $('bmModal').classList.add('show');
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
+    // 看板卡片上「更新 cURL / 检查字段」：打开编辑弹窗，只展开出问题的那个字段，光标放进 cURL 输入框。
+    async function fixBmField(i, fid) {
+      if (!guardAdmin()) return;
+      await openBmModal(i);
+      if (!$('bmModal').classList.contains('show')) return;
+      const target = bmDraftFields.find(d => d.id === fid);
+      if (!target) return;
+      bmDraftFields.forEach(d => { d._open = d === target; });
+      renderFieldEditor();
+      const item = [...$('bmFieldList').querySelectorAll('details.field-editor-item')].find(det => det.dataset.key === target._key);
+      const box = item && item.querySelector('[data-k="_curl_text"]');
+      if (box) { box.focus(); if (typeof box.select === 'function') box.select(); }
+    }
     $('addBm').addEventListener('click', () => { if (guardAdmin()) openBmModal(-1); });
     $('bmCancel').addEventListener('click', () => $('bmModal').classList.remove('show'));
     $('bmAddField').addEventListener('click', () => {
@@ -5719,7 +5760,7 @@
       if (linkAlertFilter && !counts[linkAlertFilter]) linkAlertFilter = '';
       renderLinkAlerts(counts);
       const visible = links.map((l, i) => ({ l, i })).filter(({ l }) =>
-        (!query || `${l.name || ''} ${l.url || ''} ${siteHost(l.url)} ${l.desc || ''} ${(l.tags || []).join(' ')}`.toLowerCase().includes(query))
+        (!query || `${l.name || ''} ${l.url || ''} ${siteHost(l.url)} ${l.desc || ''} ${(l.tags || []).join(' ')}`.toLowerCase().includes(query) || pinyinHit(l.name, query))
         && (!linkAlertFilter || linkCheckState(l) === linkAlertFilter));
       const filtering = !!(query || linkAlertFilter);
       $('bmVisibleCount').textContent = filtering ? `${visible.length} / ${links.length} 个网址` : `${links.length} 个网址`;
@@ -6432,6 +6473,11 @@
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
     }
 
+    function unlockFromHome() {
+      UNLOCK_RETURN = true;
+      switchView('settings');
+      ADMIN_PWD.focus();
+    }
     // 管理密码解锁
     $('adminForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -6443,7 +6489,12 @@
           headers: adminHeaders({ 'X-Admin-Password': pwd }),
         });
         const data = await resp.json();
-        if (data.ok) { ADMIN_PWD.value = ''; toast('解锁成功', 'ok'); loadConfigs(); }
+        if (data.ok) {
+          ADMIN_PWD.value = '';
+          toast('解锁成功', 'ok');
+          await loadConfigs();
+          if (UNLOCK_RETURN && canEdit()) { UNLOCK_RETURN = false; switchView('bookmarks'); openLibPage('@home'); }
+        }
         else if (resp.status === 429) { toast(data.error || '尝试过于频繁，请稍后再试', 'err'); }
         else { toast(data.error || '密码错误', 'err'); }
       } catch (e) { toast('网络错误：' + e.message, 'err'); }
@@ -6499,15 +6550,57 @@
 
     function omniHaystack(parts) { return parts.filter(Boolean).join(' ').toLowerCase(); }
 
-    // 打分：名称前缀 > 名称包含 > 域名 > 描述/标签/分组名。分数越大越靠前。
+    // ----- 拼音首字母：输「lsyx」找到「临时邮箱」，不用切输入法 -----
+    // 不带字表：浏览器自带的中文排序（ICU 的拼音序）里，每个声母打头的第一个字当边界，一个字落在哪两个边界之间，
+    // 首字母就是哪个。边界字从 GB2312 一级字按 Chromium 的排序推出来，再用 pypinyin 逐字核对过：3755 个常用字里
+    // 只有 6 个多音字取了另一个读音（咳 傀 埔 炔 辗 椎）。常见的那张边界表 M 那一档是错的（「路」「流」会算成 m）。
+    // 浏览器的排序不是拼音序（没带中文排序数据）时整段不生效，只是找不到，不会乱匹配。
+    const PINYIN_BOUNDS = '阿八擦搭讹发嘎哈讥咖垃妈拿哦趴七然撒他挖夕丫匝', PINYIN_LETTERS = 'abcdefghjklmnopqrstwxyz';
+    const PINYIN_MEMO = new Map();
+    let PINYIN_COL;   // undefined = 还没试；null = 这个浏览器用不了
+    function pinyinCollator() {
+      if (PINYIN_COL !== undefined) return PINYIN_COL;
+      PINYIN_COL = null;
+      try {
+        const col = new Intl.Collator('zh-Hans-CN-u-co-pinyin');
+        const b = [...PINYIN_BOUNDS];
+        if (b.every((c, i) => !i || col.compare(b[i - 1], c) < 0) && col.compare('路', '垃') > 0 && col.compare('路', '妈') < 0) PINYIN_COL = col;
+      } catch (_) { /* 没有 Intl：不做拼音 */ }
+      return PINYIN_COL;
+    }
+    function pinyinInitials(text) {
+      const src = String(text || '');
+      if (!/[\u4e00-\u9fff]/.test(src)) return '';
+      if (PINYIN_MEMO.has(src)) return PINYIN_MEMO.get(src);
+      const col = pinyinCollator();
+      let out = '';
+      if (col) for (const ch of src) {
+        if (/[\u4e00-\u9fff]/.test(ch)) {
+          let lo = 0, hi = PINYIN_BOUNDS.length - 1, hit = -1;   // 最后一个 ≤ ch 的边界字
+          while (lo <= hi) { const mid = (lo + hi) >> 1; if (col.compare(ch, PINYIN_BOUNDS[mid]) >= 0) { hit = mid; lo = mid + 1; } else hi = mid - 1; }
+          if (hit >= 0) out += PINYIN_LETTERS[hit];
+        } else if (/[a-z0-9]/i.test(ch)) out += ch.toLowerCase();
+      }
+      if (PINYIN_MEMO.size > 2000) PINYIN_MEMO.clear();
+      PINYIN_MEMO.set(src, out);
+      return out;
+    }
+    // 只有纯字母数字（至少一个字母）的查询才去比拼音首字母。
+    function pinyinQuery(q) { return /^[a-z0-9]+$/.test(q) && /[a-z]/.test(q); }
+    function pinyinHit(text, q) { return pinyinQuery(q) && pinyinInitials(text).includes(q); }
+
+    // 打分：名称前缀 > 名称包含 > 拼音首字母前缀 > 域名 > 描述/标签/分组名。分数越大越靠前。
     function omniScore(item, query) {
       if (!query) return item.pinned ? 2 : 1;
       const name = (item.title || '').toLowerCase();
       const host = (item.host || '').toLowerCase();
       if (name.startsWith(query)) return 100 - Math.min(40, name.length);
       if (name.includes(query)) return 70;
+      const py = pinyinQuery(query) ? pinyinInitials(item.title) : '';
+      if (py && py.startsWith(query)) return 62;
       if (host.startsWith(query)) return 60;
       if (host.includes(query)) return 50;
+      if (py && py.includes(query)) return 42;
       if ((item.tags || []).some(t => t.toLowerCase() === query)) return 45;
       if (item.haystack.includes(query)) return 30;
       return 0;

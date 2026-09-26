@@ -410,10 +410,12 @@ class PageShapeTest(unittest.TestCase):
         self.assertIn("'bookmarks', 'chat', 'checkin', 'settings'", self.html)
         self.assertIn("function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }", self.html)
 
-    def test_a_locked_library_has_no_entry_anywhere(self):
+    def test_a_locked_library_has_no_data_entry_anywhere(self):
+        # 锁定时只剩首页（时钟 + 搜索 + 解锁卡片，不含收藏数据）和设置里的解锁面板；行为测试见 test_ux_0926。
         self.assertIn("function libraryLocked() { return !!(STATE.private && STATE.locked); }", self.html)
-        self.assertIn("if (libTab) libTab.hidden = locked;", self.html)
-        self.assertIn("if (STATE_LOADED && libraryLocked() && mainName !== 'settings') { switchView('settings', updateHash); return; }", self.html)
+        self.assertIn("if (STATE_LOADED && libraryLocked() && mainName !== 'settings' && mainName !== 'bookmarks') { switchView('bookmarks', updateHash); return; }", self.html)
+        self.assertIn("if (STATE_LOADED && libraryLocked() && LIB.page !== '@home') { LIB.page = '@home';", self.html)
+        self.assertIn("LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked ||", self.html)
 
     def test_the_frame_is_sandboxed_without_top_navigation(self):
         sandbox = re.search(r"frame\.setAttribute\('sandbox', '([^']+)'\)", self.html).group(1).split()
