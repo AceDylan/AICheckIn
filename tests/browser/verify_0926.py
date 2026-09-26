@@ -257,6 +257,31 @@ def group_tiles(b):
     ctx.close()
 
 
+def snooze(b):
+    reset()
+    write_store(seed_dashboard)
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "dark", "bh_wallpaper": "off"})
+    notice = lambda: page.locator("#homeNotice").inner_text()
+    check("首页提醒条里有取数失败", "取数失败" in notice(), notice())
+    page.goto(BASE + "/#links/monitor"); page.wait_for_timeout(700)
+    card = page.locator('#bmList [data-bm-index="1"]')
+    card.get_by_role("button", name="先不管 7 天").click(); page.wait_for_timeout(700)
+    st = page.evaluate("() => [fieldSnoozed(STATE.bookmarks[1].fields[0]), bookmarkAlert(STATE.bookmarks[1])]")
+    check("点「先不管 7 天」：这个字段暂停提醒、站点不再算预警", st == [True, ""], st)
+    check("卡片上照样显示失败，并写明暂停到哪天、可以恢复", "HTTP 401" in card.inner_text() and "已暂停提醒到" in card.inner_text() and card.get_by_role("button", name="恢复提醒").count() == 1)
+    check("提示条上可以撤销", page.locator(".toast .toast-action", has_text="撤销").count() == 1)
+    exported = ctx.request.get(BASE + "/api/configs/export").json()
+    check("暂停落盘（换设备也生效）", bool(exported["bookmarks"][1]["fields"][0].get("snooze_until")))
+    page.goto(BASE + "/#bookmarks"); page.wait_for_timeout(700)
+    check("首页提醒条不再数它", "取数失败" not in notice(), notice())
+    page.goto(BASE + "/#links/monitor"); page.wait_for_timeout(700)
+    page.locator('#bmList [data-bm-index="1"]').get_by_role("button", name="恢复提醒").click(); page.wait_for_timeout(700)
+    check("点「恢复提醒」：重新算预警，之前那条「撤销」提示一并收掉", page.evaluate("() => bookmarkAlert(STATE.bookmarks[1])") == "error"
+          and page.locator(".toast .toast-action", has_text="撤销").count() == 0)
+    shot(page, "0926c-snooze")
+    ctx.close()
+
+
 def start_steps(b):
     reset()
     samsung = "Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36"
@@ -350,4 +375,4 @@ def quiet_shortcut(b):
 
 
 if __name__ == "__main__":
-    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps))
+    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps, snooze))

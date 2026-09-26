@@ -70,6 +70,7 @@
 | 执行签到 / 单站签到 / 测试连接（`/api/checkin`、`/api/checkin/<i>`、`/api/test/<i>`） | ❌ | ✅ |
 | 运行历史（`/api/history`） | ❌ | ✅ |
 | 增删改配置 / 收藏 / 分组、定时设置 | ❌ | ✅ |
+| 取数失败「先不管」几天 / 恢复提醒（`/api/bookmarks/<i>/fields/<id>/snooze`） | ❌ | ✅ |
 | 导出 / 导入整份配置（`/api/configs/export`、`/api/configs/import`） | ❌ | ✅ |
 | 部署自检（`/api/diagnostics`） | ❌ | ✅ |
 | 死链检查（`/api/link_groups/<id>/check`） | ❌ | ✅ |

@@ -1002,7 +1002,25 @@ def clean_field(raw, existing=None, taken=()):
             v = snapshot_src.get(k)
             if v not in (None, "") and isinstance(v, (str, int, float)) and not isinstance(v, bool):
                 field[k] = v
+        # 「先不管」的暂停提醒跟着快照走：请求配置没变就沿用（改了 cURL 多半是修好了，重新开始提醒）；导入时接受自带的。
+        until = _clean_snooze_until(snapshot_src.get("snooze_until"))
+        if until:
+            field["snooze_until"] = until
     return field
+
+
+# 取数失败的字段可以「先不管」几天：页面照样显示失败，只是不再计入首页 / 看板的提醒。
+FIELD_SNOOZE_MAX_DAYS = 30
+
+
+def _clean_snooze_until(value):
+    """暂停提醒的截止时间戳；无效、已过期或远得离谱（超过上限天数）的一律当作没有。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    now = time.time()
+    if not now < value <= now + (FIELD_SNOOZE_MAX_DAYS + 1) * 86400:
+        return 0
+    return int(value)
 
 
 def clean_bookmark(payload, existing=None):
@@ -1262,7 +1280,7 @@ def public_config(item, reveal=False):
 # 请求体、接口 URL（常带 key / token 查询参数）。这些一律不出现在开放接口里。
 _FIELD_SECRET_KEYS = ("headers", "curl", "body", "url", "method")
 # 展示用的非敏感元信息（缺失则不输出，保持响应精简）。
-_FIELD_PUBLIC_META = ("unit", "divisor", "ts_unit", "tz", "warn_below", "warn_days")
+_FIELD_PUBLIC_META = ("unit", "divisor", "ts_unit", "tz", "warn_below", "warn_days", "snooze_until")
 
 
 def public_error(message):
@@ -3581,6 +3599,44 @@ def api_bookmark_refresh_field(idx, field_id):
         return jsonify({"ok": False, "error": "字段不存在"}), 404
     results = refresh_bookmark_fields(bookmark, store.get("proxy_url", ""), field_id=field_id)
     return _bookmark_refresh_response(store, bookmark, results)
+
+
+@app.post("/api/bookmarks/<int:idx>/fields/<field_id>/snooze")
+def api_bookmark_field_snooze(idx, field_id):
+    """取数失败先不管：{"days": 1–30} 暂停这个字段的提醒，{"days": 0} 恢复。需管理密码。"""
+    guard = _guard_admin()
+    if guard:
+        return guard
+    payload = request.get_json(silent=True) or {}
+    try:
+        days = int(payload.get("days", 7))
+    except (TypeError, ValueError):
+        days = -1
+    if not 0 <= days <= FIELD_SNOOZE_MAX_DAYS:
+        return jsonify({"ok": False, "error": "暂停天数需为 0–%d 的整数（0 = 恢复提醒）" % FIELD_SNOOZE_MAX_DAYS}), 400
+    # 和刷新结果的合并共用一把锁：读—改—写之间不会被别的刷新冲掉。
+    with _snapshot_merge_lock:
+        try:
+            store = read_store()
+        except RuntimeError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+        bookmarks = store["bookmarks"]
+        if idx < 0 or idx >= len(bookmarks):
+            return jsonify({"ok": False, "error": "收藏不存在"}), 404
+        stale = _stale_target(bookmarks[idx], bookmark_snapshot_key, "这个站点")
+        if stale:
+            return stale
+        field = next((f for f in bookmarks[idx].get("fields") or [] if f.get("id") == field_id), None)
+        if field is None:
+            return jsonify({"ok": False, "error": "字段不存在"}), 404
+        if days:
+            field["snooze_until"] = int(time.time()) + days * 86400
+        else:
+            field.pop("snooze_until", None)
+        err = _save_store_or_error(store)
+        if err:
+            return err
+    return jsonify({"ok": True, "bookmark": public_bookmark(bookmarks[idx]), "snooze_until": field.get("snooze_until", 0)})
 
 
 @app.post("/api/bookmarks/field_preview")

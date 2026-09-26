@@ -2925,7 +2925,7 @@
       if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
       else sub = primary.updated_at ? `${primary.label} · ${agoStamp(primary.updated_at)}更新` : primary.label;
       const ago = !secondary && primary.updated_at ? primary.updated_at : '';   // 渲染时换成会自己走的 agoSpan
-      return { state, value, unit, sub, ago, label: primary.label, valueCls: primary.error ? ' is-error' : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
+      return { state, value, unit, sub, ago, label: primary.label, valueCls: primary.error ? (fieldSnoozed(primary) ? ' is-stale' : ' is-error') : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
     }
     function homeSiteWidgetHtml(b, i) {
       const host = siteHost(b.url) || '未设置域名';
@@ -5137,12 +5137,16 @@
       let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? `较旧 · ${agoSpan(f.updated_at)}` : agoSpan(f.updated_at)}</span>` : '';
       let value = '', valueCls = '', extra = '';
       if (f.error) {
-        value = `<span class="field-error" title="${escapeHtml(f.error)}">${escapeHtml(f.error)}</span>`;
+        value = `<span class="field-error${fieldSnoozed(f) ? ' is-snoozed' : ''}" title="${escapeHtml(f.error)}">${escapeHtml(f.error)}</span>`;
         if (f.value != null && f.value !== '') extra = `<span class="field-last" title="${escapeHtml(f.value)}">上次成功：${escapeHtml(type === 'amount' ? amountText(f.value) : f.value)}</span>`;
         // 最常见的失败是登录凭据过期（401 / 403）：直接说原因，并给一个按钮直达这个字段的 cURL 输入框。
         if (bi != null && canEdit()) {
           const auth = /\b40[13]\b/.test(String(f.error));
-          extra += `<div class="field-fix">${auth ? '<span>登录凭据可能过期了：重新复制一份 cURL 粘贴即可</span>' : ''}<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(f.id || '')}" onclick="fixBmField(${Number(bi)}, this.dataset.fixField)">${auth ? '更新 cURL' : '检查字段'}</button></div>`;
+          const fid = escapeHtml(f.id || '');
+          const fixBtn = `<button type="button" class="btn ghost sm" data-fix-field="${fid}" onclick="fixBmField(${Number(bi)}, this.dataset.fixField)">${auth ? '更新 cURL' : '检查字段'}</button>`;
+          extra += fieldSnoozed(f)
+            ? `<div class="field-fix is-snoozed"><span>已暂停提醒到 ${escapeHtml(snoozeDateText(f.snooze_until))}</span>${fixBtn}<button type="button" class="btn ghost sm" data-fix-field="${fid}" onclick="snoozeBmField(${Number(bi)}, this.dataset.fixField, 0)">恢复提醒</button></div>`
+            : `<div class="field-fix">${auth ? '<span>登录凭据可能过期了：重新复制一份 cURL 粘贴即可</span>' : ''}${fixBtn}<button type="button" class="btn ghost sm" data-fix-field="${fid}" onclick="snoozeBmField(${Number(bi)}, this.dataset.fixField, 7)" title="7 天内照样显示失败，但不再计入首页和看板的提醒">先不管 7 天</button></div>`;
         }
       } else if (f.value == null || f.value === '') {
         value = '<span class="field-pending">等待首次刷新</span>';
@@ -5184,7 +5188,7 @@
     let bmAlertFilter = '';   // '' | 'error' | 'expired' | 'soon'
 
     function fieldAlert(f) {
-      if (f.error) return 'error';
+      if (f.error) return fieldSnoozed(f) ? '' : 'error';
       const type = f.type || 'amount';
       if (type === 'amount') {
         if (f.warn_below == null || f.warn_below === '' || f.value == null || f.value === '') return '';
@@ -5200,6 +5204,8 @@
       if (diff < days * 86400) return 'soon';
       return '';
     }
+    // 取数失败「先不管」：snooze_until 之前照样显示失败，只是不算预警（首页提醒条、看板预警标签都不数它）。
+    function fieldSnoozed(f) { return !!f && Number(f.snooze_until) > Date.now() / 1000; }
     // 「提前几天提醒」填 0 = 不提醒：这个时间只是倒计时（额度重置、下次刷新），不是到期日。
     function timeFieldQuiet(f) { return (f.type || 'amount') === 'time' && f.warn_days !== '' && f.warn_days != null && Number(f.warn_days) === 0; }
     // 一个站点归到哪一类：按严重程度取最高的那类（失败 > 已过期 > 余额偏低 > 即将到期）。
@@ -5273,12 +5279,14 @@
         const p = siteWidgetParts(b);
         value = p.value; unit = p.unit; sub = p.sub; valCls = p.valueCls || '';
       }
-      const failed = fields.find(f => f.error);
+      const failed = fields.find(f => f.error && !fieldSnoozed(f));
+      const snoozedField = !failed && fields.find(f => f.error && fieldSnoozed(f));
       // 重置时间类字段还按到期在提醒：列表里同样给「不再提醒…」（手机上看板默认就是列表）。
       const resetting = !failed && fields.find(f => ['soon', 'expired'].includes(fieldAlert(f)) && (f.type || 'amount') === 'time' && RESET_LABEL_RE.test(String(f.label || '')));
       const fix = !canEdit() ? ''
         : failed ? `<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(failed.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField)" title="${escapeHtml(failed.label + '：' + failed.error)}">${/\b40[13]\b/.test(String(failed.error)) ? '更新 cURL' : '检查字段'}</button>`
         : resetting ? `<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(resetting.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField, 'quiet')" title="「${escapeHtml(resetting.label)}」是会反复到来的重置时间？打开编辑，把提醒天数填成 0">不再提醒…</button>`
+        : snoozedField ? `<span class="bm-row-muted" title="${escapeHtml(snoozedField.label + '：' + snoozedField.error)}">已暂停提醒到 ${escapeHtml(snoozeDateText(snoozedField.snooze_until))}</span>`
         : '';
       return `<article class="bm-row${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" style="--hue:${hueOf(host)}">
           <a class="bm-row-main" ${safe ? `href="${escapeHtml(safe)}" ${linkTargetAttrs()}` : ''} title="${escapeHtml(b.url)}">
@@ -5361,7 +5369,11 @@
                 <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
                 <button onclick="moveBm(${i},'down')" ${i === total - 1 ? 'disabled' : ''}>下移</button>`;
       // 手机上列表行不放「刷新」按钮（一行放不下），这里有同一个入口。
-      return `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}
+      const failing = canEdit() && enabledFields(b).find(f => f.error);
+      const snoozeItem = !failing ? ''
+        : fieldSnoozed(failing) ? `<button data-fix-field="${escapeHtml(failing.id || '')}" onclick="snoozeBmField(${i}, this.dataset.fixField, 0)">恢复「${escapeHtml(failing.label)}」的提醒</button>`
+        : `<button data-fix-field="${escapeHtml(failing.id || '')}" onclick="snoozeBmField(${i}, this.dataset.fixField, 7)">取数失败先不管 7 天</button>`;
+      return `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}${snoozeItem}
                 <button onclick="toggleHomeSite(${i})">${b.show_on_home ? '从首页移除' : '展示到首页'}</button>${moves}
                 <button onclick="editBm(${i})">编辑</button>
                 <div class="sep"></div>
@@ -5653,6 +5665,26 @@
       $('bmModal').classList.add('show');
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
+    function snoozeDateText(ts) { const d = new Date(Number(ts) * 1000); return `${d.getMonth() + 1}月${d.getDate()}日`; }
+    // 「先不管 7 天」/「恢复提醒」：服务端记下暂停到哪天，页面上照样显示失败，只是首页和看板的提醒不再数它。
+    let SNOOZE_TOAST_CLOSE = null;   // 上一条「N 天内不再提醒 · 撤销」：再操作一次就收掉，免得对着过期的「撤销」
+    async function snoozeBmField(i, fid, days) {
+      if (!guardAdmin()) return;
+      const b = (STATE.bookmarks || [])[i];
+      if (!b) return;
+      if (SNOOZE_TOAST_CLOSE) { SNOOZE_TOAST_CLOSE(); SNOOZE_TOAST_CLOSE = null; }
+      try {
+        const resp = await fetch(`/api/bookmarks/${i}/fields/${encodeURIComponent(fid)}/snooze` + expectQ(b), { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ days }) });
+        const data = await resp.json();
+        if (staleReload(resp, data)) return;
+        if (!data.ok) { toast(data.error || '操作失败', 'err'); return; }
+        STATE.bookmarks[i] = data.bookmark;
+        renderLibrary();
+        const f = (data.bookmark.fields || []).find(x => x.id === fid) || {};
+        if (days) SNOOZE_TOAST_CLOSE = toastAction(`「${b.name} · ${f.label || '字段'}」${days} 天内不再提醒（到 ${snoozeDateText(data.snooze_until)}）`, '撤销', () => { SNOOZE_TOAST_CLOSE = null; snoozeBmField(i, fid, 0); });
+        else toast('已恢复提醒', 'ok');
+      } catch (e) { toast('网络错误：' + e.message, 'err'); }
+    }
     // 看板卡片上「更新 cURL / 检查字段」：打开编辑弹窗，只展开出问题的那个字段，光标放进 cURL 输入框。
     // mode = 'quiet'（「不再提醒…」）：同样定位到那个字段，把「提前几天提醒」预填成 0，光标放在那一格，点「保存」才生效。
     async function fixBmField(i, fid, mode) {

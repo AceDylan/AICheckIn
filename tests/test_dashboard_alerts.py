@@ -78,6 +78,11 @@ class AlertClassificationTest(unittest.TestCase):
         out = self.classify([{"id": "a", "type": "time", "error": "HTTP 401", "warn_days": 0}])
         self.assertEqual(out["bookmark"], "error")
 
+    def test_snoozed_failure_is_not_an_alert_until_the_snooze_ends(self):
+        out = self.classify([{"id": "a", "type": "amount", "error": "HTTP 401", "snooze_until": time.time() + DAY},
+                             {"id": "b", "type": "amount", "error": "HTTP 401", "snooze_until": time.time() - 60}])
+        self.assertEqual(out["fields"], ["", "error"])
+
     def test_past_expiry_is_expired(self):
         out = self.classify([{"id": "a", "type": "time", "raw": time.time() - DAY}])
         self.assertEqual(out["bookmark"], "expired")

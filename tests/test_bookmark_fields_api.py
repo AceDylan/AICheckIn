@@ -81,6 +81,56 @@ class BookmarkFieldsApiTest(StoreIsolationMixin, unittest.TestCase):
         saved = app_module.read_store()["bookmarks"][idx]["fields"][0]
         self.assertEqual((saved["warn_days"], saved.get("value"), saved.get("raw")), (0, "2026-09-26 15:11:40", 1790406700))
 
+    def _failing_site(self):
+        curl = "curl 'https://api.example.com/v1/balance' -H 'Authorization: Bearer x'"
+        self.client.post("/api/bookmarks", json={"name": "EXA", "url": "https://exa.example", "fields": [
+            {"label": "余额", "type": "amount", "curl": curl, "json_path": "data.bal"}]})
+        store = app_module.read_store()
+        idx = len(store["bookmarks"]) - 1
+        store["bookmarks"][idx]["fields"][0].update(value="27.47", error="HTTP 401", updated_at="2026-09-26 10:00:00")
+        app_module.write_store(store)
+        return idx, store["bookmarks"][idx]["fields"][0]["id"]
+
+    def test_failing_field_can_be_snoozed_and_restored(self):
+        import time as _t
+        idx, fid = self._failing_site()
+        resp = self.client.post("/api/bookmarks/%d/fields/%s/snooze" % (idx, fid), json={"days": 7}).get_json()
+        self.assertTrue(resp["ok"], resp)
+        until = app_module.read_store()["bookmarks"][idx]["fields"][0]["snooze_until"]
+        self.assertAlmostEqual(until, _t.time() + 7 * 86400, delta=60)
+        pub = self.client.get("/api/configs").get_json()["bookmarks"][idx]["fields"][0]
+        self.assertEqual(pub["snooze_until"], until)          # 页面据此不算预警
+        self.assertEqual(pub["error"], "HTTP 401")            # 失败照样显示
+        self.assertTrue(self.client.post("/api/bookmarks/%d/fields/%s/snooze" % (idx, fid), json={"days": 0}).get_json()["ok"])
+        self.assertNotIn("snooze_until", app_module.read_store()["bookmarks"][idx]["fields"][0])
+
+    def test_snooze_input_is_validated(self):
+        idx, fid = self._failing_site()
+        for bad in ({"days": 31}, {"days": -1}, {"days": "abc"}):
+            self.assertEqual(self.client.post("/api/bookmarks/%d/fields/%s/snooze" % (idx, fid), json=bad).status_code, 400, bad)
+        self.assertEqual(self.client.post("/api/bookmarks/%d/fields/nope/snooze" % idx, json={"days": 7}).status_code, 404)
+        self.assertEqual(self.client.post("/api/bookmarks/99/fields/%s/snooze" % fid, json={"days": 7}).status_code, 404)
+        self.assertEqual(self.client.post("/api/bookmarks/%d/fields/%s/snooze?expect=other|x" % (idx, fid), json={"days": 7}).status_code, 409)
+
+    def test_snooze_survives_an_edit_that_keeps_the_request(self):
+        idx, fid = self._failing_site()
+        self.client.post("/api/bookmarks/%d/fields/%s/snooze" % (idx, fid), json={"days": 7})
+        f = self.client.get("/api/bookmarks/%d/secret" % idx).get_json()["bookmark"]["fields"][0]
+        keep = {"id": f["id"], "label": "余额（改名）", "type": "amount", "enabled": True, "json_path": f["json_path"], "curl": f["curl"]}
+        self.client.put("/api/bookmarks/%d" % idx, json={"name": "EXA", "url": "https://exa.example", "fields": [keep]})
+        self.assertIn("snooze_until", app_module.read_store()["bookmarks"][idx]["fields"][0])
+        # 换了 cURL（多半是修好了）：重新开始提醒。
+        fresh = dict(keep, curl="curl 'https://api.example.com/v2/balance' -H 'Authorization: Bearer y'")
+        self.client.put("/api/bookmarks/%d" % idx, json={"name": "EXA", "url": "https://exa.example", "fields": [fresh]})
+        self.assertNotIn("snooze_until", app_module.read_store()["bookmarks"][idx]["fields"][0])
+
+    def test_expired_or_absurd_snooze_is_dropped_when_cleaned(self):
+        import time as _t
+        base = {"label": "余额", "type": "amount", "curl": "curl https://x.example/api", "json_path": "a"}
+        for until in (_t.time() - 10, _t.time() + 400 * 86400, "tomorrow", True):
+            self.assertNotIn("snooze_until", app_module.clean_field(dict(base, snooze_until=until)), until)
+        self.assertIn("snooze_until", app_module.clean_field(dict(base, snooze_until=_t.time() + 3 * 86400)))
+
     def test_full_flow(self):
         base = "http://127.0.0.1:%d" % self.port
         c = self.client

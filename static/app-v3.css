@@ -2457,3 +2457,8 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .start-more { margin-top: 8px; }
 .start-more > summary { width: fit-content; color: var(--text-3); cursor: pointer; font-size: 12px; }
 .start-more[open] > summary { margin-bottom: 8px; }
+
+/* 取数失败「先不管」期间：失败文字变淡，说明暂停到哪天。 */
+.field-error.is-snoozed { color: var(--text-3); }
+.field-fix.is-snoozed { color: var(--text-3); }
+.bm-row-muted { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

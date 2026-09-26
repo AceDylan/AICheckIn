@@ -85,6 +85,7 @@ class NothingLeaksWhileLockedTest(PrivateModeBase):
             ("get", "/api/bookmarks/0/secret"), ("get", "/api/configs/0/secret"),
             ("post", "/api/checkin"), ("post", "/api/link_groups"),
             ("put", "/api/settings"),
+            ("post", "/api/bookmarks/0/fields/f1/snooze"), ("get", "/api/link_icon/self/l1"),
         ]
         for method, path in cases:
             self.assertEqual(getattr(self.client, method)(path).status_code, 403,

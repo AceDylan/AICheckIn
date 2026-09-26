@@ -142,6 +142,9 @@ def dashboard_responses():
         {'name': 'VPS', 'url': 'https://vps.example', 'show_on_home': False, 'key': 'k2', 'fields': [
             {'id': 'exp', 'label': '到期', 'type': 'time', 'enabled': True, 'raw': now + 3 * 86400, 'value': 'x'}]},
     ]
+    snoozed = copy.deepcopy(data['/api/configs']['bookmarks'][1])
+    snoozed['fields'][0]['snooze_until'] = now + 7 * 86400
+    data['/api/bookmarks/1/fields/bal/snooze'] = {'ok': True, 'bookmark': snoozed, 'snooze_until': now + 7 * 86400}
     data['/api/bookmarks/1/secret'] = {'ok': True, 'bookmark': {'name': 'EXA', 'url': 'https://exa.example', 'fields': [
         {'id': 'other', 'label': '用量', 'type': 'amount', 'enabled': True, 'curl': "curl 'https://exa.example/a'", 'json_path': 'a'},
         {'id': 'bal', 'label': '余额', 'type': 'amount', 'enabled': True, 'curl': "curl 'https://exa.example/b'", 'json_path': 'b'}]}}
@@ -218,6 +221,23 @@ class DashboardDisplayTest(unittest.TestCase):
             const d = bmDraftFields.find(x => x.id === 'bal');
             assert.equal(d.warn_days, '0');
             assert.deepEqual(bmDraftFields.map(x => x._open), [false, true]);
+        """)
+
+    def test_failing_field_can_be_snoozed_from_the_card_and_menu(self):
+        self.check("""
+            const f = STATE.bookmarks[1].fields[0];
+            let html = fieldItemHtml(f, true, 1);
+            assert.ok(html.includes('先不管 7 天') && html.includes('snoozeBmField(1, this.dataset.fixField, 7)'), html);
+            assert.ok(bmMenuHtml(STATE.bookmarks[1], 1, {}).includes('取数失败先不管 7 天'));
+            await snoozeBmField(1, 'bal', 7);
+            assert.ok(fieldSnoozed(STATE.bookmarks[1].fields[0]));
+            assert.equal(bookmarkAlert(STATE.bookmarks[1]), '');
+            html = fieldItemHtml(STATE.bookmarks[1].fields[0], true, 1);
+            assert.ok(html.includes('已暂停提醒到') && html.includes('恢复提醒') && html.includes('更新 cURL'), html);
+            assert.ok(bmMenuHtml(STATE.bookmarks[1], 1, {}).includes('恢复「余额」的提醒'));
+            assert.ok(bmRowHtml(STATE.bookmarks[1], 1, false).includes('已暂停提醒到'));
+            renderHomeNotice();
+            assert.ok(!$('homeNotice').innerHTML.includes('取数失败'), $('homeNotice').innerHTML);
         """)
 
     def test_dashboard_meta_shows_the_refresh_cadence(self):
