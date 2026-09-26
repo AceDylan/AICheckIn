@@ -240,6 +240,23 @@ class DashboardDisplayTest(unittest.TestCase):
             assert.ok(!$('homeNotice').innerHTML.includes('取数失败'), $('homeNotice').innerHTML);
         """)
 
+    def test_dashboard_amount_shows_a_trend_once_there_are_two_days(self):
+        self.check("""
+            const f = Object.assign({}, STATE.bookmarks[0].fields[0], { daily: [['2026-09-20', 60], ['2026-09-23', 45], ['2026-09-26', 30]] });
+            const html = fieldItemHtml(f, true, 0);
+            assert.ok(html.includes('trend-line') && html.includes('近 6 天日均用 5') && html.includes('约还能用 6 天'), html);
+            // 非主字段只写那一句，不画线；只有一天的点不画。
+            assert.ok(!fieldItemHtml(f, false, 0).includes('trend-line') && fieldItemHtml(f, false, 0).includes('日均用'));
+            assert.ok(!fieldItemHtml(Object.assign({}, f, { daily: [['2026-09-26', 30]] }), true, 0).includes('trend'));
+        """)
+
+    def test_site_without_fields_gets_a_compact_add_button(self):
+        self.check("""
+            const html = fieldsBlockHtml({ name: '空站', url: 'https://e.example', fields: [] }, 3);
+            assert.ok(html.includes('还没配监控字段') && html.includes('addBmField(3)'), html);
+            assert.ok(fieldsBlockHtml({ fields: [{ id: 'a', label: 'x', enabled: false }] }, 3).includes('字段都停用了'));
+        """)
+
     def test_dashboard_meta_shows_the_refresh_cadence(self):
         self.check("""
             STATE.refresh = { enabled: true, interval_minutes: 360, last_run_time: '2026-09-26 06:00:00' };

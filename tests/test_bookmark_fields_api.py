@@ -131,6 +131,44 @@ class BookmarkFieldsApiTest(StoreIsolationMixin, unittest.TestCase):
             self.assertNotIn("snooze_until", app_module.clean_field(dict(base, snooze_until=until)), until)
         self.assertIn("snooze_until", app_module.clean_field(dict(base, snooze_until=_t.time() + 3 * 86400)))
 
+    def test_successful_refreshes_leave_one_balance_point_per_day(self):
+        idx, fid = self._failing_site()
+        def refresh_to(value, error=""):
+            def fake(bookmark, proxy_url, field_id=None):
+                for f in bookmark["fields"]:
+                    f["value"], f["updated_at"] = value, "2026-09-26 10:00:00"
+                    if error:
+                        f["error"] = error
+                    else:
+                        f.pop("error", None)
+                return [{"ok": not error, "label": "余额", "value": value, "error": error}]
+            with patch.object(app_module, "refresh_bookmark_fields", fake):
+                self.client.post("/api/bookmarks/%d/refresh_balance" % idx)
+        refresh_to("30.00")
+        refresh_to("28.50")             # 同一天再刷：只留最后一次
+        refresh_to("99.00", "HTTP 401")  # 失败：显示的是旧值，不记
+        key = "https://exa.example|EXA|%s" % fid
+        pts = app_module.read_field_history()[key]
+        self.assertEqual(len(pts), 1)
+        self.assertEqual(pts[0][1], 28.5)
+        # 首页数据里带上走势点，页面据此画线、估日均用量。
+        pub = self.client.get("/api/configs").get_json()["bookmarks"][idx]["fields"][0]
+        self.assertEqual(pub["daily"], pts)
+
+    def test_history_keeps_ninety_days_and_drops_forgotten_sites(self):
+        import datetime as _dt
+        old_day = (_dt.date.today() - _dt.timedelta(days=200)).isoformat()
+        with open(app_module._field_history_path(), "w", encoding="utf-8") as fh:
+            json.dump({"https://gone.example|旧站|x": [[old_day, 1.0]]}, fh)
+        idx, fid = self._failing_site()
+        store = app_module.read_store()
+        store["bookmarks"][idx]["fields"][0].pop("error", None)   # 这回取数成功了
+        app_module.write_store(store)
+        app_module.persist_field_snapshots({}, refresh_run=True)
+        history = app_module.read_field_history()
+        self.assertNotIn("https://gone.example|旧站|x", history)   # 200 天没更新的旧序列清掉
+        self.assertEqual(history["https://exa.example|EXA|%s" % fid][-1][1], 27.47)
+
     def test_full_flow(self):
         base = "http://127.0.0.1:%d" % self.port
         c = self.client

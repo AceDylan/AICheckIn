@@ -1161,6 +1161,84 @@ def collect_field_snapshots(bookmark):
 
 _snapshot_merge_lock = threading.Lock()
 
+# 看板金额字段的每日余额点：data/field_history.json = {"<网址|名称>|<字段 id>": [["YYYY-MM-DD", 12.34], …]}。
+# 每次取数成功（手动刷新、后台自动刷新）把当前值记成「今天」的一个点，同一天只留最后一次；
+# 页面据此画走势、估「近 N 天日均用多少 · 约还能用几天」（签到账户的余额走势同一个做法）。
+# 这是派生数据：不进 config.json、不随导出走，删掉只是走势从头记起。
+FIELD_HISTORY_KEEP = 90
+FIELD_HISTORY_SEND = 30
+_field_history_cache = {}
+_AMOUNT_NUM_RE = re.compile(r"^-?[\d,]*\.?\d+$")
+
+
+def _field_history_path():
+    return Path(DATA_DIR) / "field_history.json"
+
+
+def read_field_history():
+    """读每日余额点；按文件修改时间缓存（首页每次打开都要读，文件没变就不重新解析）。"""
+    path = _field_history_path()
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        return {}
+    cached = _field_history_cache.get(str(path))
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    _field_history_cache.clear()
+    _field_history_cache[str(path)] = (mtime, data)
+    return data
+
+
+def _amount_number(value):
+    text = str(value if value is not None else "").strip()
+    if not _AMOUNT_NUM_RE.match(text):
+        return None
+    try:
+        return float(text.replace(",", ""))
+    except ValueError:
+        return None
+
+
+def record_field_history(store):
+    """把各看板站点金额字段的当前值记成今天的点；取数失败的字段不记（它显示的是上次成功的旧值）。"""
+    today = _today_str()
+    history = dict(read_field_history())
+    changed = False
+    for bookmark in store.get("bookmarks") or []:
+        bkey = bookmark_snapshot_key(bookmark)
+        for field in bookmark.get("fields") or []:
+            if (field.get("type") or "amount") != "amount" or field.get("error"):
+                continue
+            number = _amount_number(field.get("value"))
+            if number is None:
+                continue
+            key = "{0}|{1}".format(bkey, field.get("id"))
+            old = history.get(key) or []
+            points = [p for p in old if isinstance(p, list) and len(p) == 2 and p[0] != today]
+            points.append([today, round(number, 6)])
+            points = points[-FIELD_HISTORY_KEEP:]
+            if points != old:
+                history[key] = points
+                changed = True
+    # 改名 / 删掉的站点留下的旧序列：最后一个点也在保留期之外的就清掉。
+    cutoff = (datetime.date.today() - datetime.timedelta(days=FIELD_HISTORY_KEEP)).isoformat()
+    for key in [k for k, v in history.items() if not v or not isinstance(v[-1], list) or str(v[-1][0]) < cutoff]:
+        del history[key]
+        changed = True
+    if not changed:
+        return
+    try:
+        _write_text_atomic(_field_history_path(), json.dumps(history, ensure_ascii=False))
+    except OSError:
+        pass   # 走势只是锦上添花，写不进去不影响取数
+
 
 def persist_field_snapshots(snapshots, schedule_run=None, refresh_run=False):
     """把刷新拿到的取值快照合并回**最新的** store 并落盘；成功返回 True。
@@ -1207,6 +1285,7 @@ def _persist_field_snapshots_locked(snapshots, schedule_run, refresh_run):
         write_store(store)
     except RuntimeError:
         return False
+    record_field_history(store)
     return True
 
 
@@ -1311,10 +1390,20 @@ def public_field(field):
 
 def public_bookmark(bookmark):
     """收藏站点的对外视图：名称 / 网址 / 字段展示值；不含 fields 的请求配置，也不含 balance_config。"""
+    history, bkey = read_field_history(), bookmark_snapshot_key(bookmark)
+    fields = []
+    for f in bookmark.get("fields") or []:
+        if not isinstance(f, dict):
+            continue
+        pf = public_field(f)
+        pts = history.get("{0}|{1}".format(bkey, f.get("id")))
+        if pts and (f.get("type") or "amount") == "amount":
+            pf["daily"] = pts[-FIELD_HISTORY_SEND:]   # 画走势、估日均用量；只是历史数值，不含任何请求配置
+        fields.append(pf)
     return {
         "name": bookmark.get("name", ""),
         "url": bookmark.get("url", ""),
-        "fields": [public_field(f) for f in bookmark.get("fields") or [] if isinstance(f, dict)],
+        "fields": fields,
         "show_on_home": bool(bookmark.get("show_on_home")),
         # 旧键镜像仅用于展示，本身不含凭据；balance_config（含请求头）刻意不下发。
         "balance": bookmark.get("balance", ""),

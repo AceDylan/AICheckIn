@@ -1568,8 +1568,10 @@
     }
     // 余额走势：每天一个点（服务端留 90 天）。至少两天才画；按最近 14 天估日均消耗和「还能用多少天」。
     // 单一序列：不要图例，线用正文次要色（不借状态色），末点一个圆点；数值写在旁边的文字里，悬停有原生提示。
-    function balanceTrend(c) {
-      const pts = ((c.metrics && c.metrics.daily) || [])
+    function balanceTrend(c) { return trendHtml(c.metrics && c.metrics.daily); }
+    // 签到账户和看板的金额字段共用：points = [["YYYY-MM-DD", 数值], …]；noPlot = 只要那一句日均，不画线。
+    function trendHtml(points, noPlot) {
+      const pts = (points || [])
         .filter(p => Array.isArray(p) && p.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(p[0]) && /\d/.test(String(p[1])))
         .map(([d, v]) => [d, parseNum(v)]);
       if (pts.length < 2) return null;
@@ -1592,6 +1594,7 @@
       const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
       const [lx, ly] = xy[xy.length - 1];
       const label = `余额走势：${pts[0][0]} ${fmtNum(pts[0][1])} → ${last[0]} ${fmtNum(last[1])}，共 ${pts.length} 天的记录`;
+      if (noPlot) return note ? `<div class="trend"><div class="trend-note">${escapeHtml(note)}</div></div>` : '';
       return `<div class="trend"><div class="trend-plot">
           <svg class="trend-line" viewBox="-2 0 104 26" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title>
             <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
@@ -5162,6 +5165,8 @@
         if (rel.text) head = `<span class="field-badge ${rel.cls}" title="上次更新 ${escapeHtml(f.updated_at || '')}">${escapeHtml(rel.text)}</span>`;
       } else if (type === 'amount') {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(amountText(f.value))}</span>` + (f.unit ? `<span class="field-unit">${escapeHtml(f.unit)}</span>` : '');
+        // 每天一个点（服务端记在 field_history.json），满两天才画；主字段给整条走势，其它字段只写一句日均。
+        extra += trendHtml(f.daily, !primary);
         if (fieldAlert(f) === 'low') { valueCls = 'is-soon'; head = `<span class="field-badge is-soon" title="低于提醒阈值 ${escapeHtml(String(f.warn_below))}">余额偏低</span>`; }
       } else {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(f.value)}</span>`;
@@ -5174,7 +5179,12 @@
     // 卡片字段区：仅展示启用字段；首个为主字段（通栏大字），其余双列；超过上限折叠为「+N 项」。
     function fieldsBlockHtml(b, bi) {
       const fields = enabledFields(b);
-      if (!fields.length) return '<div class="bm-fields-block is-empty"><div class="fields-empty-text">暂无监控字段，在「···」→「编辑」中添加。</div></div>';
+      // 没配字段的站点只是个书签：一行说明 + 直接「添加」，不再撑着一整块空卡片。
+      if (!fields.length) {
+        const hint = (b.fields || []).length ? '字段都停用了' : '还没配监控字段';
+        const add = bi != null && canEdit() ? `<button type="button" class="btn ghost sm" onclick="addBmField(${Number(bi)})">＋ 添加余额 / 到期字段</button>` : '';
+        return `<div class="bm-fields-block is-empty"><span class="fields-empty-text">${hint}</span>${add}</div>`;
+      }
       const head = fields.slice(0, CARD_FIELD_LIMIT), rest = fields.slice(CARD_FIELD_LIMIT);
       let html = head.map((f, k) => fieldItemHtml(f, k === 0, bi)).join('');
       if (rest.length) html += `<details class="fields-more"><summary>+${rest.length} 项 ▾</summary><div class="fields-more-grid">${rest.map(f => fieldItemHtml(f, false, bi)).join('')}</div></details>`;
@@ -5410,11 +5420,23 @@
       }
       const queues = [...byHost.values()];
       let succeeded = 0;
-      const worker = async () => { for (let q = queues.shift(); q; q = queues.shift()) for (const i of q) if (await refreshBmBalance(i, true)) succeeded++; };
+      // 进度写在按钮上（「刷新中 3/8」），结束时说出哪几个站没刷成，不用再挨个找红字。
+      let done = 0;
+      const failed = [];
+      const progress = () => { btn.innerHTML = `<span class="spinner"></span>刷新中 ${done}/${indexes.length}`; };
+      progress();
+      const worker = async () => {
+        for (let q = queues.shift(); q; q = queues.shift()) for (const i of q) {
+          const name = (STATE.bookmarks[i] || {}).name || '';
+          if (await refreshBmBalance(i, true)) succeeded++; else failed.push(name);
+          done++;
+          progress();
+        }
+      };
       await Promise.all(Array.from({ length: Math.min(BM_REFRESH_PARALLEL, queues.length) }, worker));
       btn.disabled = false;
       btn.textContent = '刷新所有数据';
-      toast(`刷新完成：${succeeded}/${indexes.length} 个站点全部字段成功`, succeeded === indexes.length ? 'ok' : 'err');
+      toast(failed.length ? `刷新完成：${succeeded}/${indexes.length} 个站点成功；没刷成：${failed.slice(0, 4).join('、')}${failed.length > 4 ? ` 等 ${failed.length} 个` : ''}` : `刷新完成：${indexes.length} 个站点全部成功`, failed.length ? 'err' : 'ok');
     });
 
     // 刷新单个收藏的全部启用字段；后端返回最新 bookmark 对象，就地替换后重绘。
@@ -5665,6 +5687,12 @@
       $('bmModal').classList.add('show');
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
+    // 空站点卡片上的「添加余额 / 到期字段」：打开编辑，直接多出一个新字段、光标在字段名上。
+    async function addBmField(i) {
+      if (!guardAdmin()) return;
+      await openBmModal(i);
+      if ($('bmModal').classList.contains('show')) $('bmAddField').click();
+    }
     function snoozeDateText(ts) { const d = new Date(Number(ts) * 1000); return `${d.getMonth() + 1}月${d.getDate()}日`; }
     // 「先不管 7 天」/「恢复提醒」：服务端记下暂停到哪天，页面上照样显示失败，只是首页和看板的提醒不再数它。
     let SNOOZE_TOAST_CLOSE = null;   // 上一条「N 天内不再提醒 · 撤销」：再操作一次就收掉，免得对着过期的「撤销」

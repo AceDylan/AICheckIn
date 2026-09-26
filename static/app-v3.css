@@ -2462,3 +2462,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .field-error.is-snoozed { color: var(--text-3); }
 .field-fix.is-snoozed { color: var(--text-3); }
 .bm-row-muted { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 没配监控字段的看板站点：一行说明 + 「添加」按钮，不再是一整块空白。 */
+.bm-fields-block.is-empty { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 0; }
+.bm-fields-block.is-empty .fields-empty-text { padding: 0; }

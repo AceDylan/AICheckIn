@@ -282,6 +282,37 @@ def snooze(b):
     ctx.close()
 
 
+def dashboard_more(b):
+    reset()
+    import datetime as _dt
+    def mutate(store):
+        seed_dashboard(store)
+        store["bookmarks"].append({"name": "只是书签", "url": "https://plain.example.com", "fields": [], "show_on_home": False})
+    write_store(mutate)
+    days = [(_dt.date.today() - _dt.timedelta(days=d)).isoformat() for d in (6, 3, 0)]
+    with open(os.path.join(DATA, "field_history.json"), "w", encoding="utf-8") as fh:
+        json.dump({"https://relay-a.example.com|中转站 A|bal": [[days[0], 25.0], [days[1], 19.0], [days[2], 13.46]]}, fh)
+    ctx, page = open_at(b, 1440, 900, "/#links/monitor", cookies={"bh_theme": "dark", "bh_wallpaper": "off"})
+    card = page.locator('#bmList [data-bm-index="0"]')
+    check("看板金额有走势：线 + 近 N 天日均用量 + 约还能用几天", card.locator(".trend-line").count() == 1 and "日均用" in card.inner_text() and "约还能用" in card.inner_text(), card.inner_text()[:200])
+    empty = page.locator('#bmList [data-bm-index="3"]')
+    btn = empty.get_by_role("button", name="＋ 添加余额 / 到期字段")
+    check("没配字段的站点：一行说明 + 「添加余额 / 到期字段」", "还没配监控字段" in empty.inner_text() and btn.count() == 1)
+    btn.click(); page.wait_for_timeout(700)
+    st = page.evaluate("() => [document.getElementById('bmModal').classList.contains('show'), document.querySelectorAll('#bmFieldList details.field-editor-item').length, document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null]")
+    check("点了：编辑弹窗里直接多出一个新字段、光标在字段名上", st == [True, 1, "label"], st)
+    page.keyboard.press("Escape"); page.evaluate("() => document.getElementById('bmModal').classList.remove('show')")
+    shot(page, "0926d-trend")
+    page.evaluate("""() => { const f = window.fetch; window.fetch = async (...a) => { if (String(a[0]).includes('/refresh_balance')) await new Promise(r => setTimeout(r, 500)); return f(...a); }; }""")
+    page.click("#refreshAllBm"); page.wait_for_timeout(250)
+    busy = page.locator("#refreshAllBm").inner_text()
+    check("「刷新所有数据」进行中：按钮上写进度", "刷新中" in busy and "/3" in busy, busy)
+    page.wait_for_function("() => !document.getElementById('refreshAllBm').disabled", timeout=20000)
+    toasts = page.evaluate("() => [...document.querySelectorAll('.toast')].map(t => t.innerText).join(' | ')")
+    check("刷新结束：说出哪几个站没刷成", "没刷成" in toasts and "中转站" in toasts, toasts)
+    ctx.close()
+
+
 def start_steps(b):
     reset()
     samsung = "Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36"
@@ -375,4 +406,4 @@ def quiet_shortcut(b):
 
 
 if __name__ == "__main__":
-    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps, snooze))
+    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps, snooze, dashboard_more))
