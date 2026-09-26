@@ -1,6 +1,7 @@
 import json
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # 隔离运行：不启动调度线程，配置文件指向本用例专属临时目录，关闭管理密码。
@@ -45,6 +46,23 @@ class BookmarkFieldsApiTest(StoreIsolationMixin, unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()   # shutdown 只停循环，监听套接字要另外关，否则留下 ResourceWarning
+
+    def test_refresh_merges_into_the_latest_config(self):
+        # 等对方接口的那几秒里别处改了配置：刷新结果只合并回去，不能把请求开始时读到的旧配置整份写回。
+        def slow_refresh(bookmark, proxy_url, field_id=None):
+            store = app_module.read_store()
+            store["link_groups"] = [{"id": "g", "name": "刷新期间新建的分组", "links": []}]
+            app_module.write_store(store)
+            for f in bookmark["fields"]:
+                f["value"], f["updated_at"] = "9.99", "2026-09-26 10:00:00"
+            return [{"ok": True, "label": f["label"], "value": "9.99"} for f in bookmark["fields"]]
+        with patch.object(app_module, "refresh_bookmark_fields", slow_refresh):
+            rf = self.client.post("/api/bookmarks/0/refresh_balance").get_json()
+        self.assertTrue(rf["ok"], rf)
+        store = app_module.read_store()
+        self.assertEqual([g["name"] for g in store["link_groups"]], ["刷新期间新建的分组"])
+        self.assertEqual(store["bookmarks"][0]["fields"][0]["value"], "9.99")
+        self.assertEqual(store["bookmarks"][0]["balance"], "9.99")
 
     def test_full_flow(self):
         base = "http://127.0.0.1:%d" % self.port

@@ -291,7 +291,8 @@ class LinkCheckUiTest(unittest.TestCase):
 
     def test_drag_handle_is_disabled_while_filtering_by_status(self):
         # 按状态筛选后看到的是子集，按可见顺序写回会打乱其余条目。
-        self.assertIn("linkCardHtml(l, i, g, links.length, filtering)", self.html)
+        # 列表 / 图标两种视图共用同一行调用；图标视图本来就没有拖动把手。
+        self.assertIn("(tiles ? linkTileHtml : linkCardHtml)(l, i, g, links.length, filtering)", self.html)
 
     def test_styles_exist(self):
         for rule in (".check-badge", ".link-card.check-missing", ".link-card.check-unreachable"):

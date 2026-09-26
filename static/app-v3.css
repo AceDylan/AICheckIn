@@ -2377,3 +2377,58 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 /* 看板字段取数失败时的修复入口：一句原因 + 「更新 cURL」，按钮直达编辑弹窗里那个字段。 */
 .field-fix { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; color: var(--text-2); font-size: 12px; line-height: 1.45; }
 .field-fix .btn { flex: none; }
+
+/* 分组页 / 看板页工具条右端的显示方式切换（列表 · 图标 / 卡片 · 列表）。 */
+.lib-view { flex: none; min-height: 30px; margin-left: auto; padding: 2px; }
+.lib-view button { flex: none; padding: 0 10px; font-size: 12px; }
+@media (width <= 760px) { .lib-view { order: 4; } }
+
+/* 分组页「图标」视图：和首页同一套大图标 + 名字。 */
+#linkList.link-tiles { --tile-w: 96px; --tile-gap: 10px; display: grid; grid-template-columns: repeat(auto-fill, var(--tile-w)); justify-content: start; gap: 18px var(--tile-gap); padding: 4px 0 8px; }
+@media (width <= 760px) { #linkList.link-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 4px; } }
+
+/* 看板「列表」视图：一行一个站点。 */
+.bm-rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+/* 状态与操作两列定宽：每行按钮数量不同（有的多一颗「更新 cURL」），列宽跟着变的话数值那一列就对不齐。 */
+.bm-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 116px 224px; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.bm-row:last-child { border-bottom: 0; }
+.bm-row.is-busy { opacity: .6; }
+.bm-row-main { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
+.bm-row-main .site-avatar { flex: none; width: 34px; height: 34px; border-radius: 10px; font-size: 13px; }
+.bm-row-copy { display: flex; flex-direction: column; min-width: 0; }
+.bm-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.bm-row-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
+.bm-row-val { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; min-width: 0; font-variant-numeric: tabular-nums; }
+.bm-row-val b { font-size: 16px; font-weight: 620; letter-spacing: -.01em; }
+.bm-row-val small { color: var(--text-3); font-size: 11.5px; }
+.bm-row-val.is-error b { color: var(--danger); font-size: 13px; }
+.bm-row-val.is-stale b, .bm-row-val.is-past b { color: var(--text-3); font-size: 13px; }
+.bm-row-sub { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
+.bm-row-state { min-width: 0; }
+.bm-row-actions { display: flex; align-items: center; gap: 6px; justify-self: end; }
+@media (width <= 760px) {
+  .bm-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main val" "state act"; gap: 6px 10px; padding: 10px 12px; }
+  .bm-row-main { grid-area: main; }
+  .bm-row-val { grid-area: val; justify-content: flex-end; text-align: right; }
+  .bm-row-sub { max-width: 46vw; margin-left: auto; }
+  .bm-row-state { grid-area: state; }
+  .bm-row-actions { grid-area: act; }
+}
+
+/* 手机上网址行更紧凑：标签并到域名那一行，不再单独占一行。 */
+@media (width <= 760px) {
+  .link-body { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); column-gap: 8px; align-items: center; }
+  .link-body > .link-name, .link-body > .link-desc { grid-column: 1 / -1; }
+  .link-body > .link-host { grid-column: 1; }
+  .link-body > .link-tags { grid-column: 2; flex-wrap: nowrap; overflow: hidden; margin-top: 3px; }
+}
+
+/* 矮屏（笔记本 150% 缩放再扣掉浏览器工具栏，可视区常只有 650px 高）：时钟和问候并成一行、字号收小，
+   把首屏让给图标——起始页的第一件事是点开网站。手机另有自己的紧凑版头部。 */
+@media (width > 760px) and (height <= 720px) {
+  .home-hero { flex-direction: row; align-items: baseline; justify-content: center; gap: 16px; padding-top: 8px; }
+  .hero-clock { font-size: 46px; }
+  .home-search { margin-top: 14px; }
+  .home-notice { margin-top: 12px; }
+  .home-body { margin-top: 20px; }
+}

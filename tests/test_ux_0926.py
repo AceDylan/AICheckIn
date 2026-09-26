@@ -210,5 +210,52 @@ class DashboardDisplayTest(unittest.TestCase):
         """)
 
 
+@unittest.skipIf(NODE is None, '未安装 node')
+class LibraryViewsTest(unittest.TestCase):
+    """分组页「列表 / 图标」、看板「卡片 / 列表」两种显示方式。"""
+
+    def check(self, assertions, responses=None):
+        proc = run_page(assertions, responses=responses)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('ok', proc.stdout)
+
+    def test_group_page_can_switch_to_icon_tiles(self):
+        self.check("""
+            openLibPage('daily');
+            assert.equal(linkView(), 'rows');
+            assert.equal($('linkList').className, 'link-grid');
+            assert.ok($('linkList').innerHTML.includes('link-card'));
+            setCookie('bh_link_view=tiles; path=/');
+            renderCurrentLibraryPage();
+            assert.equal($('linkList').className, 'link-tiles');
+            const html = $('linkList').innerHTML;
+            assert.ok(html.includes('home-tile') && html.includes('Docs'), html);
+            assert.ok(html.includes("editLink('daily','l1')"));    // 图标上的「···」仍能编辑
+            assert.equal($('libView').hidden, false);
+            setCookie('bh_link_view=evil; path=/');
+            assert.equal(linkView(), 'rows');
+            openLibPage('@home');
+            assert.equal($('libView').hidden, true);
+        """)
+
+    def test_dashboard_list_rows(self):
+        data = dashboard_responses()
+        self.check("""
+            openLibPage('monitor');
+            assert.equal(bmView(), 'cards');   // 电脑上默认卡片（DOM 替身没有 matchMedia，算宽屏）
+            setCookie('bh_bm_view=list; path=/');
+            renderCurrentLibraryPage();
+            assert.equal($('bmList').className, 'bm-rows');
+            const html = $('bmList').innerHTML;
+            assert.ok(html.includes('bm-row') && html.includes('reclaude-5'));
+            assert.ok(html.includes('>13.46<'), '列表里的金额同首页小组件格式');
+            assert.ok(html.includes('更新 cURL'), 'EXA 的 401 在列表里也有修复入口');
+            assert.ok(html.includes('bm-refresh'), '刷新按钮仍带 bm-refresh（刷新时的忙碌态要找它）');
+            // 没配字段的站点不报错
+            STATE.bookmarks.push({ name: '空站', url: 'https://empty.example', fields: [] });
+            assert.ok(bmRowHtml(STATE.bookmarks[3], 3, false).includes('未配置字段'));
+        """, responses=data)
+
+
 if __name__ == '__main__':
     unittest.main()

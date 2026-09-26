@@ -111,6 +111,7 @@
               <span class="kbd" aria-hidden="true">/</span>
             </label>
             <span class="toolbar-meta" id="bmVisibleCount"></span>
+            <span class="segmented lib-view" id="libView" role="radiogroup" aria-label="显示方式" hidden><button type="button" role="radio" data-lib-view="rows">列表</button><button type="button" role="radio" data-lib-view="tiles">图标</button></span>
           </div>
           <div id="homePage">
             <!-- 时钟 + 工具条。工具条（密度 / 外观 / 添加 / 编辑）都是偶尔才用的设置：宽屏收在右上角，不再横在搜索框和图标之间；
@@ -2471,6 +2472,8 @@
       $('libChips').innerHTML = pages.map(p =>
         `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
       ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
+      // 锁定时手机顶上这排分组标签也收起（电脑侧栏的分组导航由 syncAdminViews 收）。
+      $('libChips').hidden = STATE_LOADED && libraryLocked();
       queueSubnavSync(true);
     }
     // 量侧栏要读 clientHeight / scrollHeight，会逼浏览器当场排版；重画侧栏时首页、看板、签到卡片紧跟着还要重画，
@@ -2755,6 +2758,7 @@
       // 首页自带时钟 + 搜索，不再叠一层大横幅：手机上旧横幅会吃掉整个首屏。
       header.hidden = isHome;
       $('libToolbar').hidden = isHome;
+      syncLibView();
       $('libActionsMonitor').hidden = !isMonitor;
       $('libActionsGroup').hidden = isMonitor || isHome;
       $('homePage').hidden = !isHome;
@@ -5193,9 +5197,66 @@
       renderBookmarks();
     });
 
+    // 分组页：列表（默认；有描述、标签、拖动排序）或图标；看板：卡片（默认）或列表（一行一个站点）。
+    // 各记在本机 Cookie，手机和电脑各选各的。看板在手机上、站点超过 6 个又没选过时默认列表——同签到中心的做法。
+    const LINK_VIEWS = ['rows', 'tiles'], BM_VIEWS = ['cards', 'list'];
+    function linkView() { return readPref('bh_link_view', LINK_VIEWS, 'rows'); }
+    function narrowScreen() { return typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches; }
+    function bmView() { return readPref('bh_bm_view', BM_VIEWS, (STATE.bookmarks || []).length > 6 && narrowScreen() ? 'list' : 'cards'); }
+    function syncLibView() {
+      const el = $('libView');
+      const monitor = LIB.page === 'monitor';
+      el.hidden = LIB.page === '@home';
+      if (el.hidden) return;
+      const opts = monitor ? [['cards', '卡片'], ['list', '列表']] : [['rows', '列表'], ['tiles', '图标']];
+      const cur = monitor ? bmView() : linkView();
+      el.setAttribute('aria-label', monitor ? '站点显示方式' : '网址显示方式');
+      el.querySelectorAll('[data-lib-view]').forEach((b, k) => {
+        b.dataset.libView = opts[k][0];
+        b.textContent = opts[k][1];
+        const on = opts[k][0] === cur;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', String(on));
+      });
+    }
+    $('libView').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-lib-view]');
+      if (!b) return;
+      writePref(LIB.page === 'monitor' ? 'bh_bm_view' : 'bh_link_view', b.dataset.libView);
+      renderCurrentLibraryPage();
+    });
+    // 看板的「列表」视图：一行一个站点——名字、主要数值（金额同首页小组件的格式）、第二个字段、状态和操作。
+    function bmRowHtml(b, i, filtering) {
+      const fields = enabledFields(b);
+      const safe = safeUrl(b.url);
+      const host = siteHost(b.url) || '未设置域名';
+      const alert = bookmarkAlert(b);
+      let value = '', unit = '', sub = '未配置字段', valCls = '';
+      if (fields.length) {
+        const p = siteWidgetParts(b);
+        value = p.value; unit = p.unit; sub = p.sub; valCls = p.valueCls || '';
+      }
+      const failed = fields.find(f => f.error);
+      const fix = failed && canEdit()
+        ? `<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(failed.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField)" title="${escapeHtml(failed.label + '：' + failed.error)}">${/\b40[13]\b/.test(String(failed.error)) ? '更新 cURL' : '检查字段'}</button>` : '';
+      return `<article class="bm-row${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" style="--hue:${hueOf(host)}">
+          <a class="bm-row-main" ${safe ? `href="${escapeHtml(safe)}" ${linkTargetAttrs()}` : ''} title="${escapeHtml(b.url)}">
+            ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
+            <span class="bm-row-copy"><span class="bm-row-name">${escapeHtml(b.name)}</span><span class="bm-row-host">${escapeHtml(host)}</span></span>
+          </a>
+          <span class="bm-row-val${valCls}">${fields.length ? `<b>${escapeHtml(value)}</b>${unit ? `<small>${escapeHtml(unit)}</small>` : ''}` : ''}<span class="bm-row-sub">${escapeHtml(sub)}</span></span>
+          <span class="bm-row-state">${alert && !(alert === 'error' && value === '取数失败') ? `<span class="alert-chip ${ALERT_META[alert].cls}">${icon(ALERT_META[alert].icon)}${ALERT_META[alert].label}</span>` : ''}</span>
+          <span class="bm-row-actions">${fix}${fields.length ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
+            <details class="action-menu">
+              <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
+              <div class="menu-popover">${bmMenuHtml(b, i, { filtering })}</div>
+            </details></span>
+        </article>`;
+    }
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
       if (!STATE_LOADED) { renderBootPending(list, empty, 'cards'); return; }
+      syncLibView();
       const bms = STATE.bookmarks || [];
       const query = (($('bmSearch') && $('bmSearch').value) || '').trim().toLowerCase();
       // 预警计数基于全部站点，不受搜索 / 筛选影响——否则筛完数字就跟着变了，没法当仪表盘看。
@@ -5215,21 +5276,18 @@
         return;
       }
       hideEmpty(empty);
-      list.innerHTML = visible.map(({ b, i }) => bookmarkCardHtml(b, i, { filtering })).join('');
+      const rows = bmView() === 'list';
+      list.className = rows ? 'bm-rows' : 'bookmark-grid';
+      list.innerHTML = visible.map(({ b, i }) => rows ? bmRowHtml(b, i, filtering) : bookmarkCardHtml(b, i, { filtering })).join('');
       pumpFavicons();
     }
     // 看板页与首页「卡片」视图共用同一张卡片；首页上不排序（顺序跟随看板），所以收起移动项。
     function bookmarkCardHtml(b, i, opts) {
       const o = opts || {};
-      const total = (STATE.bookmarks || []).length;
       const hasFields = enabledFields(b).length > 0;
       const safe = safeUrl(b.url);
       const host = siteHost(b.url) || '未设置域名';
       const alert = bookmarkAlert(b);
-      const moves = o.home ? `<button onclick="openLibPage('monitor')">前往「站点看板」</button>` : `
-                <button onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''}>置顶</button>
-                <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
-                <button onclick="moveBm(${i},'down')" ${i === total - 1 ? 'disabled' : ''}>下移</button>`;
       return `
         <article class="bookmark-card${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" data-card-id="${i}" style="--hue:${hueOf(host)}">
           <div class="bookmark-top">
@@ -5243,15 +5301,21 @@
             ${hasFields ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新全部启用字段" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
             <details class="action-menu">
               <summary class="menu-trigger" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
-              <div class="menu-popover">
-                <button onclick="toggleHomeSite(${i})">${b.show_on_home ? '从首页移除' : '展示到首页'}</button>${moves}
-                <button onclick="editBm(${i})">编辑</button>
-                <div class="sep"></div>
-                <button class="danger-text" onclick="deleteBm(${i})">删除</button>
-              </div>
+              <div class="menu-popover">${bmMenuHtml(b, i, o)}</div>
             </details>
           </div>
         </article>`;
+    }
+    function bmMenuHtml(b, i, o) {
+      const total = (STATE.bookmarks || []).length;
+      const moves = o.home ? `<button onclick="openLibPage('monitor')">前往「站点看板」</button>` : `
+                <button onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''}>置顶</button>
+                <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
+                <button onclick="moveBm(${i},'down')" ${i === total - 1 ? 'disabled' : ''}>下移</button>`;
+      return `<button onclick="toggleHomeSite(${i})">${b.show_on_home ? '从首页移除' : '展示到首页'}</button>${moves}
+                <button onclick="editBm(${i})">编辑</button>
+                <div class="sep"></div>
+                <button class="danger-text" onclick="deleteBm(${i})">删除</button>`;
     }
     async function toggleHomeSite(i) {
       if (!guardAdmin()) return;
@@ -5266,6 +5330,7 @@
       } catch (e) { toast(e.message, 'err'); }
     }
 
+    const BM_REFRESH_PARALLEL = 3;
     $('refreshAllBm').addEventListener('click', async () => {
       if (!guardAdmin()) return;
       const indexes = (STATE.bookmarks || []).map((b, i) => enabledFields(b).length ? i : -1).filter(i => i >= 0);
@@ -5273,8 +5338,18 @@
       const btn = $('refreshAllBm');
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span>刷新中';
+      // 不同站点最多 3 个同时刷，同一站点（主机名）的依次来——和签到中心「运行全部签到」的并发规则一样。
+      // 服务端只把各自取到的值合并回最新配置（persist_field_snapshots），同时刷新不会互相覆盖。
+      const byHost = new Map();
+      for (const i of indexes) {
+        const h = siteHost(STATE.bookmarks[i].url) || ('#' + i);
+        if (!byHost.has(h)) byHost.set(h, []);
+        byHost.get(h).push(i);
+      }
+      const queues = [...byHost.values()];
       let succeeded = 0;
-      for (const i of indexes) if (await refreshBmBalance(i, true)) succeeded++;  // 顺序执行，避免并发压力
+      const worker = async () => { for (let q = queues.shift(); q; q = queues.shift()) for (const i of q) if (await refreshBmBalance(i, true)) succeeded++; };
+      await Promise.all(Array.from({ length: Math.min(BM_REFRESH_PARALLEL, queues.length) }, worker));
       btn.disabled = false;
       btn.textContent = '刷新所有数据';
       toast(`刷新完成：${succeeded}/${indexes.length} 个站点全部字段成功`, succeeded === indexes.length ? 'ok' : 'err');
@@ -5633,7 +5708,6 @@
     function linkCardHtml(l, idx, g, total, searching) {
       const safe = safeUrl(l.url);
       const host = siteHost(l.url) || '未设置域名';
-      const others = libGroups().filter(o => o.id !== g.id);
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
       const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, linkIconSrc(l));
       const alert = linkCheckState(l);
@@ -5654,8 +5728,15 @@
           </span>
           <details class="action-menu">
             <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(l.name)} 的更多操作">···</summary>
-            <div class="menu-popover">
-              ${askAvailable() ? `<button onclick="askAboutLink('${gid}','${lid}')">问 AI</button><div class="sep"></div>` : ''}
+            <div class="menu-popover">${linkMenuHtml(l, idx, g, total, searching)}</div>
+          </details>
+        </div>
+      </article>`;
+    }
+    function linkMenuHtml(l, idx, g, total, searching) {
+      const others = libGroups().filter(o => o.id !== g.id);
+      const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
+      return `${askAvailable() ? `<button onclick="askAboutLink('${gid}','${lid}')">问 AI</button><div class="sep"></div>` : ''}
               <button onclick="toggleHomeLink('${gid}','${lid}')">${l.show_on_home ? '从首页移除' : '展示到首页'}</button>
               <button onclick="togglePinLink('${gid}','${lid}')">${l.pinned ? '取消置顶' : '置顶'}</button>
               <button onclick="editLink('${gid}','${lid}')">编辑</button>
@@ -5664,11 +5745,14 @@
               <button onclick="moveLink('${gid}','${lid}','down')" ${idx === total - 1 || searching ? 'disabled' : ''}>下移</button>
               ${others.length ? '<div class="sep"></div>' + moveToMenuHtml(gid, lid, others) : ''}
               <div class="sep"></div>
-              <button class="danger-text" onclick="deleteLink('${gid}','${lid}')">删除</button>
-            </div>
-          </details>
-        </div>
-      </article>`;
+              <button class="danger-text" onclick="deleteLink('${gid}','${lid}')">删除</button>`;
+    }
+    // 分组页的「图标」视图：和首页一样的大图标 + 名字，34 个网址手机上两屏看完。描述、标签、拖动排序留在「列表」视图；
+    // 打不开的网址在名字下面标一条。触屏上图标没有「···」（和首页一样），要编辑切回列表。
+    function linkTileHtml(l, idx, g, total, searching) {
+      const alert = linkCheckState(l);
+      const metric = alert ? `<span class="tile-metric ${escapeHtml(LINK_CHECK_META[alert].cls)}" title="${escapeHtml(linkCheckTitle(l))}"><span class="tile-metric-dot"></span>${escapeHtml(LINK_CHECK_META[alert].label)}</span>` : '';
+      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: linkIconSrc(l), tone: g.color, metric, menu: linkMenuHtml(l, idx, g, total, searching) });
     }
     // ===== 死链检查 =====
     // 「blocked」（401/403/429…）不算问题：服务器答了话就说明它还在，
@@ -5750,6 +5834,7 @@
     function renderLinks() {
       const list = $('linkList'), empty = $('linkEmpty');
       if (!STATE_LOADED) { renderBootPending(list, empty, 'rows'); return; }
+      syncLibView();
       const g = findGroup(LIB.page);
       if (!g) { list.innerHTML = ''; hideEmpty(empty); return; }
       const links = g.links || [];
@@ -5774,7 +5859,9 @@
         return;
       }
       hideEmpty(empty);
-      list.innerHTML = visible.map(({ l, i }) => linkCardHtml(l, i, g, links.length, filtering)).join('');
+      const tiles = linkView() === 'tiles';
+      list.className = tiles ? 'link-tiles' : 'link-grid';
+      list.innerHTML = visible.map(({ l, i }) => (tiles ? linkTileHtml : linkCardHtml)(l, i, g, links.length, filtering)).join('');
       pumpFavicons();
     }
     async function toggleHomeLink(gid, lid) {

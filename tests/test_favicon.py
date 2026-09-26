@@ -491,7 +491,8 @@ class FaviconUiTest(unittest.TestCase):
         for cls_name in ("'site-avatar'", "'link-avatar'", "'mini-avatar'"):
             self.assertIn("siteAvatarHtml(", self.html)
             self.assertIn(cls_name, self.html)
-        self.assertEqual(self.html.count("siteAvatarHtml(b.name, b.url, 'site-avatar')"), 1)
+        # 看板卡片 + 看板「列表」视图的行。
+        self.assertEqual(self.html.count("siteAvatarHtml(b.name, b.url, 'site-avatar')"), 2)
         self.assertEqual(self.html.count("siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, linkIconSrc(l))"), 1)
         self.assertEqual(self.html.count("siteAvatarHtml(c.name, c.base_url, 'mini-avatar')"), 4)
         # 旧的「只有首字母」写法不应残留。

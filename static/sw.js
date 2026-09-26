@@ -28,7 +28,7 @@
 // v30：分组 / 看板页头左侧的分组图标块。
 // v31：签到中心分段标签与列表视图、命令面板命令、拖链接收藏、运行记录与设置页整理（0925 体验打磨）。
 // v32：「AI 聊天」标签上的回复状态点（正在回复 / 有回复还没看）与标签页标题前缀。
-const CACHE_VERSION = 'bh-shell-v32';
+const CACHE_VERSION = 'bh-shell-v33';
 const SHELL = [
   '/',
   '/static/app-v3.css',

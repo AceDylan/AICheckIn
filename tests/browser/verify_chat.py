@@ -136,8 +136,9 @@ def framed_page(page, halo, timeout=8000):
 def locked_visitor(b, halo):
     ctx = new_context(b, 1280, 800, unlocked=False)
     page = ready(ctx.new_page())
-    check("未解锁：落在解锁面板（系统设置）", active_view(page) == "view-settings", active_view(page))
-    check("未解锁：侧栏没有「收藏库」", tab_hidden(page, "bookmarks"))
+    # 锁定时起始页仍是起始页：时钟 + 搜索框 + 「收藏已锁定」卡片（不含任何收藏数据），见 verify_0926。
+    check("未解锁：落在首页的解锁卡片", active_view(page) == "view-bookmarks" and "收藏已锁定" in page.locator("#homeEmpty").inner_text(), active_view(page))
+    check("未解锁：侧栏没有分组导航（「收藏库」入口只通到解锁卡片）", page.locator("#libSubnav").is_hidden())
     check("未解锁：侧栏没有「AI 聊天」", tab_hidden(page, "chat"))
     check("未解锁：侧栏没有「签到中心」", tab_hidden(page, "checkin"))
     state = page.evaluate("() => ({ locked: STATE.locked, private: STATE.private, n: STATE.bookmarks.length, g: STATE.link_groups.length, chat: STATE.chat })")
@@ -145,10 +146,10 @@ def locked_visitor(b, halo):
     check("未解锁：页面文本里没有种子数据的网址", "dash.example" not in page.evaluate("() => document.body.innerText") and halo not in page.content())
     page.goto(BASE + "/#bookmarks")
     page.wait_for_timeout(300)
-    check("未解锁：地址栏手敲 /#bookmarks 也只到解锁面板", active_view(page) == "view-settings", active_view(page))
+    check("未解锁：地址栏手敲 /#bookmarks 也只到解锁卡片", active_view(page) == "view-bookmarks" and page.evaluate("() => LIB.page") == "@home", active_view(page))
     page.evaluate("() => switchView('chat')")
     page.wait_for_timeout(200)
-    check("未解锁：脚本里硬切 chat 也不放行", active_view(page) == "view-settings" and page.evaluate("() => !document.querySelector('#chatStage iframe')"))
+    check("未解锁：脚本里硬切 chat 也不放行", active_view(page) == "view-bookmarks" and page.evaluate("() => !document.querySelector('#chatStage iframe')"))
     status = ctx.request.post(BASE + "/api/chat/ticket").status
     check("未解锁：签票接口 403", status == 403, status)
     page.close()
@@ -216,9 +217,9 @@ def admin_desktop(b, halo):
     page.evaluate("() => loadConfigs()")
     page.wait_for_function("() => STATE.locked === true")
     page.wait_for_timeout(200)
-    check("锁定后：「AI 聊天」「收藏库」都收起，框被卸掉，回到解锁面板",
-          tab_hidden(page, "chat") and tab_hidden(page, "bookmarks") and page.evaluate("() => !document.querySelector('#chatStage iframe')") and active_view(page) == "view-settings",
-          (tab_hidden(page, "chat"), tab_hidden(page, "bookmarks"), active_view(page)))
+    check("锁定后：「AI 聊天」收起，框被卸掉，回到首页的解锁卡片",
+          tab_hidden(page, "chat") and page.evaluate("() => !document.querySelector('#chatStage iframe')") and active_view(page) == "view-bookmarks",
+          (tab_hidden(page, "chat"), active_view(page)))
     page.close()
     ctx.close()
 

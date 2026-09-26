@@ -1141,18 +1141,27 @@ def collect_field_snapshots(bookmark):
     return out
 
 
-def persist_field_snapshots(snapshots, schedule_run=None, refresh_run=False):
-    """把后台刷新拿到的取值快照合并回**最新的** store 并落盘。
+_snapshot_merge_lock = threading.Lock()
 
-    后台任务（定时签到、定时刷新）可能跑几十秒，其间用户完全可能保存过配置。
-    如果把任务开始时读到的那份 store 整个写回去，这些编辑就被静默冲掉了。
-    所以这里重新读一次，只按 (收藏标识, 字段 id) 把快照贴回去；期间被删掉、
-    改了名或换了接口配置的字段找不到对应项，直接丢弃这份快照。
+
+def persist_field_snapshots(snapshots, schedule_run=None, refresh_run=False):
+    """把刷新拿到的取值快照合并回**最新的** store 并落盘；成功返回 True。
+
+    后台任务（定时签到、定时刷新）可能跑几十秒，页面上的「刷新」也要等对方接口几秒，
+    其间用户完全可能保存过配置，或者另一个站点的刷新先写完了。如果把开始时读到的
+    那份 store 整个写回去，这些改动就被静默冲掉了。所以这里重新读一次，只按
+    (收藏标识, 字段 id) 把快照贴回去；期间被删掉、改了名或换了接口配置的字段找不到
+    对应项，直接丢弃这份快照。读—改—写整段加锁：几个站点同时刷新也不会互相覆盖。
     """
+    with _snapshot_merge_lock:
+        return _persist_field_snapshots_locked(snapshots, schedule_run, refresh_run)
+
+
+def _persist_field_snapshots_locked(snapshots, schedule_run, refresh_run):
     try:
         store = read_store()
     except RuntimeError:
-        return
+        return False
     for bookmark in store.get("bookmarks") or []:
         snap = snapshots.get(bookmark_snapshot_key(bookmark))
         if not snap:
@@ -1179,7 +1188,8 @@ def persist_field_snapshots(snapshots, schedule_run=None, refresh_run=False):
     try:
         write_store(store)
     except RuntimeError:
-        pass
+        return False
+    return True
 
 
 def refresh_all_bookmarks(store):
@@ -3481,11 +3491,13 @@ def api_bookmark_reorder():
 
 
 def _bookmark_refresh_response(store, bookmark, results):
-    """刷新结果统一响应：ok 表示所请求字段全部成功；附带最新收藏对象与旧键 balance 供前端就地更新。"""
-    try:
-        write_store(store)
-    except RuntimeError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+    """刷新结果统一响应：ok 表示所请求字段全部成功；附带最新收藏对象与旧键 balance 供前端就地更新。
+
+    只把这个站点刚取到的值合并回最新的配置（见 persist_field_snapshots），不整份写回请求开始时读到的那份：
+    否则等对方接口的这几秒里别处的改动、别的站点的刷新结果都会被冲掉。
+    """
+    if not persist_field_snapshots({bookmark_snapshot_key(bookmark): collect_field_snapshots(bookmark)}):
+        return jsonify({"ok": False, "error": "配置写入失败（请检查数据目录是否可写）"}), 500
     failed = [r for r in results if not r["ok"]]
     resp = {
         "ok": bool(results) and not failed,
