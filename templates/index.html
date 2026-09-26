@@ -424,7 +424,7 @@
             <div class="panel"><div class="panel-title">首页与起始页</div>
               <div class="note panel-lead">把本页设为浏览器的「主页 / 启动时打开的网页」，打开浏览器就是你的收藏首页：光标自动落在搜索框，直接打字即可找收藏或搜索网页。</div>
               <div class="controls" style="margin-top:10px"><code class="start-url" id="startUrl"></code><button type="button" class="btn sm ghost" id="copyStartUrl">复制地址</button></div>
-              <div class="hint start-steps">Chrome / Edge：设置 → 启动时 → 打开特定网页，再到「外观 → 显示主页按钮」填同一地址。Firefox：设置 → 主页 → 自定义网址。Safari：设置 → 通用 → 主页。手机：浏览器菜单「添加到主屏幕」或上方「安装为应用」。</div>
+              <div class="start-steps" id="startSteps"></div>
               <div class="row-2" style="margin-top:14px">
                 <div class="field"><label>点击收藏时</label><div class="segmented" id="openModeSeg" role="radiogroup" aria-label="打开方式"><button type="button" data-open-mode="new">新标签页打开</button><button type="button" data-open-mode="same">当前页打开</button></div></div>
                 <div class="field"><label for="engineSelect">网页搜索引擎</label><select class="input" id="engineSelect"></select></div>
@@ -2877,7 +2877,9 @@
          <button onclick="toggleHomeLink('${gid}','${lid}')">从首页移除</button>` });
     }
     function homeSiteMenuHtml(b, i) {
+      const resetting = canEdit() && enabledFields(b).find(f => (f.type || 'amount') === 'time' && ['soon', 'expired'].includes(fieldAlert(f)) && RESET_LABEL_RE.test(String(f.label || '')));
       return `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}
+         ${resetting ? `<button data-fix-field="${escapeHtml(resetting.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField, 'quiet')">「${escapeHtml(resetting.label)}」不再提醒…</button>` : ''}
          <button onclick="editBm(${i})">编辑</button>
          <button onclick="openLibPage('monitor')">前往「站点看板」</button>
          <div class="sep"></div>
@@ -5272,16 +5274,20 @@
         value = p.value; unit = p.unit; sub = p.sub; valCls = p.valueCls || '';
       }
       const failed = fields.find(f => f.error);
-      const fix = failed && canEdit()
-        ? `<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(failed.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField)" title="${escapeHtml(failed.label + '：' + failed.error)}">${/\b40[13]\b/.test(String(failed.error)) ? '更新 cURL' : '检查字段'}</button>` : '';
+      // 重置时间类字段还按到期在提醒：列表里同样给「不再提醒…」（手机上看板默认就是列表）。
+      const resetting = !failed && fields.find(f => ['soon', 'expired'].includes(fieldAlert(f)) && (f.type || 'amount') === 'time' && RESET_LABEL_RE.test(String(f.label || '')));
+      const fix = !canEdit() ? ''
+        : failed ? `<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(failed.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField)" title="${escapeHtml(failed.label + '：' + failed.error)}">${/\b40[13]\b/.test(String(failed.error)) ? '更新 cURL' : '检查字段'}</button>`
+        : resetting ? `<button type="button" class="btn ghost sm" data-fix-field="${escapeHtml(resetting.id || '')}" onclick="fixBmField(${i}, this.dataset.fixField, 'quiet')" title="「${escapeHtml(resetting.label)}」是会反复到来的重置时间？打开编辑，把提醒天数填成 0">不再提醒…</button>`
+        : '';
       return `<article class="bm-row${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" style="--hue:${hueOf(host)}">
           <a class="bm-row-main" ${safe ? `href="${escapeHtml(safe)}" ${linkTargetAttrs()}` : ''} title="${escapeHtml(b.url)}">
             ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
             <span class="bm-row-copy"><span class="bm-row-name">${escapeHtml(b.name)}</span><span class="bm-row-host">${escapeHtml(host)}</span></span>
           </a>
           <span class="bm-row-val${valCls}">${fields.length ? `<b>${escapeHtml(value)}</b>${unit ? `<small>${escapeHtml(unit)}</small>` : ''}` : ''}<span class="bm-row-sub">${escapeHtml(sub)}</span></span>
-          <span class="bm-row-state">${alert && !(alert === 'error' && value === '取数失败') ? `<span class="alert-chip ${ALERT_META[alert].cls}">${icon(ALERT_META[alert].icon)}${ALERT_META[alert].label}</span>` : ''}</span>
-          <span class="bm-row-actions">${fix}${fields.length ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
+          <span class="bm-row-state">${alert && !(alert === 'error' && value === '取数失败') ? `<span class="alert-chip ${ALERT_META[alert].cls}">${icon(ALERT_META[alert].icon)}${ALERT_META[alert].label}</span>` : ''}${fix}</span>
+          <span class="bm-row-actions">${fields.length ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
             <details class="action-menu">
               <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
               <div class="menu-popover">${bmMenuHtml(b, i, { filtering })}</div>
@@ -5293,7 +5299,7 @@
       const r = STATE.refresh || {};
       if (!canEdit()) return '';
       if (!r.enabled) return ` · <a class="meta-link" href="#settings" onclick="event.preventDefault(); goSettingsSection('refreshEnabled')">没开自动刷新</a>`;
-      return ` · <span title="系统设置 → 站点数据自动刷新">每 ${escapeHtml(intervalLabel(r.interval_minutes))}自动刷新${r.last_run_time ? `，上次 ${agoSpan(r.last_run_time)}` : ''}</span>`;
+      return ` · <span title="系统设置 → 站点数据自动刷新">每 ${escapeHtml(intervalLabel(r.interval_minutes))}自动刷新${r.last_run_time ? `，${agoSpan(r.last_run_time)}刷新过` : ''}</span>`;
     }
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
@@ -5354,7 +5360,9 @@
                 <button onclick="moveBm(${i},'top')" ${i === 0 ? 'disabled' : ''}>置顶</button>
                 <button onclick="moveBm(${i},'up')" ${i === 0 ? 'disabled' : ''}>上移</button>
                 <button onclick="moveBm(${i},'down')" ${i === total - 1 ? 'disabled' : ''}>下移</button>`;
-      return `<button onclick="toggleHomeSite(${i})">${b.show_on_home ? '从首页移除' : '展示到首页'}</button>${moves}
+      // 手机上列表行不放「刷新」按钮（一行放不下），这里有同一个入口。
+      return `${enabledFields(b).length ? `<button onclick="refreshBmBalance(${i})">刷新数据</button>` : ''}
+                <button onclick="toggleHomeSite(${i})">${b.show_on_home ? '从首页移除' : '展示到首页'}</button>${moves}
                 <button onclick="editBm(${i})">编辑</button>
                 <div class="sep"></div>
                 <button class="danger-text" onclick="deleteBm(${i})">删除</button>`;
@@ -7285,6 +7293,34 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden) tickHeroClock(); });
 
     // ----- 系统设置：首页与起始页 -----
+    // 各浏览器设主页的路径不一样，一整段挤在一起很难找：按当前浏览器把对应那条放最前、标出来，其它的收进「其它浏览器」。
+    const START_STEPS = [
+      { id: 'chrome', name: 'Chrome（电脑）', text: '设置 → 启动时 → 打开特定网页或一组网页 → 添加上面这个地址；再到「外观」打开「显示主页按钮」，选自定义网址填同一地址。Chrome 的新标签页不能直接设成网址，要靠扩展。' },
+      { id: 'edge', name: 'Edge', text: '设置 → 开始、主页和新建标签页 →「Microsoft Edge 启动时」选打开以下页面，添加上面这个地址；同一页的「主页」按钮也填它。' },
+      { id: 'chrome-android', name: 'Chrome（安卓）', text: '右上角 ⋮ → 设置 → 主页 → 打开，选「输入自定义网址」填上面这个地址，地址栏左边的小房子就是它；也可以菜单里「添加到主屏幕」装成应用。' },
+      { id: 'samsung', name: '三星浏览器', text: '菜单 ☰ → 设置 → 主页 → 自定义页面，填上面这个地址；也可以菜单里「添加页面至 → 主屏幕」装成应用。' },
+      { id: 'firefox', name: 'Firefox', text: '设置 → 主页 → 主页和新窗口 → 自定义网址。' },
+      { id: 'safari', name: 'Safari', text: '电脑：设置 → 通用 → 主页。iPhone / iPad：分享 → 添加到主屏幕。' },
+    ];
+    function currentBrowser(ua) {
+      ua = ua || navigator.userAgent || '';
+      if (/SamsungBrowser/i.test(ua)) return 'samsung';
+      if (/Edg(A|iOS)?\//.test(ua)) return 'edge';
+      if (/Firefox\/|FxiOS/.test(ua)) return 'firefox';
+      if (/Android/i.test(ua) && /Chrome\//.test(ua)) return 'chrome-android';
+      if (/Chrome\//.test(ua)) return 'chrome';
+      if (/Safari\//.test(ua)) return 'safari';
+      return '';
+    }
+    function renderStartSteps() {
+      const cur = currentBrowser();
+      const item = (st, here) => `<li${here ? ' class="is-current"' : ''}><b>${escapeHtml(st.name)}${here ? '<span class="start-here">正在用</span>' : ''}</b><span>${escapeHtml(st.text)}</span></li>`;
+      const mine = START_STEPS.find(st => st.id === cur);
+      const rest = START_STEPS.filter(st => st !== mine);
+      $('startSteps').innerHTML = mine
+        ? `<ul class="start-step-list">${item(mine, true)}</ul><details class="start-more"><summary>其它浏览器</summary><ul class="start-step-list">${rest.map(st => item(st, false)).join('')}</ul></details>`
+        : `<ul class="start-step-list">${rest.map(st => item(st, false)).join('')}</ul>`;
+    }
     function renderStartPrefs() {
       const mode = openMode();
       document.querySelectorAll('#openModeSeg [data-open-mode]').forEach(b => {
@@ -7293,6 +7329,7 @@
         b.setAttribute('aria-checked', String(on));
       });
       $('startUrl').textContent = location.origin + '/';
+      renderStartSteps();
       renderEngine();
     }
     $('openModeSeg').addEventListener('click', (e) => {

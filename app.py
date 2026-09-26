@@ -4986,9 +4986,13 @@ def _favicon_origin_lock(key):
 
 
 def _favicon_missing():
-    """抓不到图标：返回 404（带短期缓存），前端据此稳定回退到首字母。"""
+    """抓不到图标：返回 404（带缓存），前端据此稳定回退到首字母 / 上传图。
+
+    浏览器缓存这个 404 三小时（服务端的负缓存是 6 小时）：内网地址、被 Cloudflare 拦下的站点抓不到是常态，
+    以前 30 分钟就过期，起始页每隔半小时打开一次就要把这十来个注定失败的请求再发一遍。
+    """
     resp = jsonify({"ok": False, "error": "未找到站点图标"})
-    resp.headers["Cache-Control"] = "public, max-age=1800"
+    resp.headers["Cache-Control"] = "public, max-age=%d" % (FAVICON_FAIL_TTL // 2)
     return resp, 404
 
 

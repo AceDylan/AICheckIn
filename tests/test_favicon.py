@@ -252,6 +252,13 @@ class FaviconApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(resp.mimetype, "image/x-icon")
         self.assertIn("http://self.example:8080/favicon.ico", self.calls)
 
+    def test_missing_icon_is_cached_by_the_browser_for_hours(self):
+        # 内网地址 / 被拦的站抓不到是常态：404 让浏览器记三小时，而不是每半小时再问一遍。
+        self._patch_http({"https://cfg.example/": (b"<html></html>", "text/html")})
+        resp = self.client.get("/api/favicon?u=https://cfg.example")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.headers["Cache-Control"], "public, max-age=%d" % (app_module.FAVICON_FAIL_TTL // 2))
+
     def test_non_image_payload_is_treated_as_missing(self):
         self._patch_http({
             "https://cfg.example/": (b'<head><link rel="icon" href="/i.png"></head>', "text/html"),

@@ -2390,7 +2390,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 /* 看板「列表」视图：一行一个站点。 */
 .bm-rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 /* 状态与操作两列定宽：每行按钮数量不同（有的多一颗「更新 cURL」），列宽跟着变的话数值那一列就对不齐。 */
-.bm-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 116px 224px; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.bm-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 210px 112px; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .bm-row:last-child { border-bottom: 0; }
 .bm-row.is-busy { opacity: .6; }
 .bm-row-main { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
@@ -2404,10 +2404,14 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .bm-row-val.is-error b { color: var(--danger); font-size: 13px; }
 .bm-row-val.is-stale b, .bm-row-val.is-past b { color: var(--text-3); font-size: 13px; }
 .bm-row-sub { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
-.bm-row-state { min-width: 0; }
+.bm-row-state { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
 .bm-row-actions { display: flex; align-items: center; gap: 6px; justify-self: end; }
 @media (width <= 760px) {
-  .bm-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main val" "state act"; gap: 6px 10px; padding: 10px 12px; }
+  /* 手机：一个站点一行（名字 · 数值 · ···），「刷新」收进「···」；只有要处理的（到期、取数失败）才多出第二行。 */
+  .bm-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "main val act" "state state state"; gap: 4px 8px; padding: 10px 6px 10px 12px; }
+  .bm-row .bm-refresh { display: none; }
+  .bm-row-state { justify-content: flex-start; }
+  .bm-row-state:empty { display: none; }
   .bm-row-main { grid-area: main; }
   .bm-row-val { grid-area: val; justify-content: flex-end; text-align: right; }
   .bm-row-sub { max-width: 46vw; margin-left: auto; }
@@ -2442,3 +2446,14 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .toolbar-meta .meta-link { color: var(--accent); text-decoration: none; }
 .toolbar-meta .meta-link:hover, .toolbar-meta .meta-link:focus-visible { text-decoration: underline; }
 @media (width <= 760px) { #libToolbar .toolbar-meta { flex: 1 1 0; min-width: 0; white-space: normal; line-height: 1.5; } }
+
+/* 设置页「首页与起始页」：当前浏览器的那一条放最前、标出来，其它浏览器收进折叠项。 */
+.start-steps { margin-top: 10px; color: var(--text-2); font-size: 12.5px; line-height: 1.6; }
+.start-step-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.start-step-list li { display: flex; flex-direction: column; gap: 2px; }
+.start-step-list li b { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12.5px; font-weight: 600; }
+.start-step-list li.is-current { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.start-here { padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 500; }
+.start-more { margin-top: 8px; }
+.start-more > summary { width: fit-content; color: var(--text-3); cursor: pointer; font-size: 12px; }
+.start-more[open] > summary { margin-bottom: 8px; }

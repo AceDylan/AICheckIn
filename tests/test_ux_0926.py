@@ -208,6 +208,10 @@ class DashboardDisplayTest(unittest.TestCase):
             assert.ok(html.includes('不再提醒…') && html.includes("fixBmField(0, this.dataset.fixField, 'quiet')"), html);
             assert.ok(!fieldItemHtml(STATE.bookmarks[2].fields[0], true, 2).includes('不再提醒'));
             assert.ok(!fieldItemHtml(STATE.bookmarks[0].fields[1], false, 0).includes('不再提醒'), '已经是不提醒的就不再给');
+            // 首页小组件的「···」里也有同一个入口；已经不提醒的就不给。
+            STATE.bookmarks[0].fields[1] = reset;
+            assert.ok(homeSiteMenuHtml(STATE.bookmarks[0], 0).includes('「刷新时间」不再提醒…'));
+            assert.ok(!homeSiteMenuHtml(STATE.bookmarks[2], 2).includes('不再提醒'));
             // 点了：打开编辑、定位到这个字段、提醒天数预填 0（保存才生效）。
             STATE.bookmarks[1].fields[0] = Object.assign({}, STATE.bookmarks[1].fields[0], { error: '' });
             await fixBmField(1, 'bal', 'quiet');
@@ -219,9 +223,27 @@ class DashboardDisplayTest(unittest.TestCase):
     def test_dashboard_meta_shows_the_refresh_cadence(self):
         self.check("""
             STATE.refresh = { enabled: true, interval_minutes: 360, last_run_time: '2026-09-26 06:00:00' };
-            assert.ok(bmRefreshMetaHtml().includes('每 6 小时自动刷新') && bmRefreshMetaHtml().includes('上次'), bmRefreshMetaHtml());
+            assert.ok(bmRefreshMetaHtml().includes('每 6 小时自动刷新') && bmRefreshMetaHtml().includes('刷新过'), bmRefreshMetaHtml());
             STATE.refresh = { enabled: false, interval_minutes: 360 };
             assert.ok(bmRefreshMetaHtml().includes('没开自动刷新') && bmRefreshMetaHtml().includes("goSettingsSection('refreshEnabled')"));
+        """)
+
+    def test_start_page_steps_follow_the_current_browser(self):
+        self.check("""
+            const ua = {
+              samsung: 'Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36',
+              'chrome-android': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+              chrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+              edge: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0',
+              firefox: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+              safari: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+            };
+            for (const [id, s] of Object.entries(ua)) assert.equal(currentBrowser(s), id, id);
+            assert.equal(currentBrowser('curl/8'), '');
+            assert.ok(START_STEPS.every(st => st.text && st.name));
+            renderStartSteps();
+            const html = $('startSteps').innerHTML;
+            assert.ok(html.includes('start-step-list') && html.includes('三星浏览器'), html);
         """)
 
     def test_quiet_value_accepted_by_editor_validation(self):
@@ -275,6 +297,11 @@ class LibraryViewsTest(unittest.TestCase):
             assert.ok(html.includes('>13.46<'), '列表里的金额同首页小组件格式');
             assert.ok(html.includes('更新 cURL'), 'EXA 的 401 在列表里也有修复入口');
             assert.ok(html.includes('bm-refresh'), '刷新按钮仍带 bm-refresh（刷新时的忙碌态要找它）');
+            // 「刷新数据」也在「···」菜单里（手机上列表行不放刷新按钮）。
+            assert.ok(bmMenuHtml(STATE.bookmarks[0], 0, {}).includes('刷新数据'));
+            // 重置时间还按到期提醒的站点，列表里也给「不再提醒…」。
+            STATE.bookmarks[0].fields[1] = Object.assign({}, STATE.bookmarks[0].fields[1], { warn_days: '' });
+            assert.ok(bmRowHtml(STATE.bookmarks[0], 0, false).includes("fixBmField(0, this.dataset.fixField, 'quiet')"));
             // 没配字段的站点不报错
             STATE.bookmarks.push({ name: '空站', url: 'https://empty.example', fields: [] });
             assert.ok(bmRowHtml(STATE.bookmarks[3], 3, false).includes('未配置字段'));

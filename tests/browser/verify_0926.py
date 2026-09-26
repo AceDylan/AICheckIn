@@ -146,6 +146,8 @@ def dashboard(b):
     ctx, page = open_at(b, 390, 844, "/#links/monitor", mobile=True, cookies={"bh_theme": "light", "bh_bm_view": "list"})
     over = page.evaluate("() => document.documentElement.scrollWidth")
     check("手机：看板列表不撑宽页面", over <= 390 and page.locator("#bmList .bm-row").count() == 3, over)
+    heights = page.evaluate("() => [...document.querySelectorAll('#bmList .bm-row')].map(r => [Math.round(r.getBoundingClientRect().height), !!r.querySelector('.bm-row-state:not(:empty)')])")
+    check("手机列表：没事的站点一行（≤ 80px），刷新按钮收进「···」", all(h <= 80 for h, busy in heights if not busy) and not page.locator("#bmList .bm-refresh").first.is_visible(), heights)
     shot(page, "0926-monitor-list-mobile")
     ctx.close()
 
@@ -255,6 +257,16 @@ def group_tiles(b):
     ctx.close()
 
 
+def start_steps(b):
+    reset()
+    samsung = "Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36"
+    ctx, page = open_at(b, 390, 844, "/#settings", mobile=True, cookies={"bh_theme": "dark"}, user_agent=samsung)
+    cur = page.locator("#startSteps li.is-current")
+    check("起始页设置：三星浏览器里把它的步骤放最前并标「正在用」", cur.count() == 1 and "三星浏览器" in cur.inner_text() and "主页" in cur.inner_text(), cur.inner_text() if cur.count() else "")
+    check("其它浏览器收在折叠项里", page.locator("#startSteps details.start-more li").count() == 5 and not page.locator("#startSteps details.start-more").get_attribute("open"))
+    ctx.close()
+
+
 def short_screen(b):
     reset()
     ctx, page = open_page(b, 1280, 650, cookies={"bh_theme": "dark", "bh_wallpaper": "off"})
@@ -338,4 +350,4 @@ def quiet_shortcut(b):
 
 
 if __name__ == "__main__":
-    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut))
+    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps))
