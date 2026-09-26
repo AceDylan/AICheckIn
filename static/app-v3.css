@@ -2350,3 +2350,26 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 /* 设置行里的分段控件（主题）：按钮文字不折行，控件按内容宽。 */
 .set-ctrl .segmented { flex: none; }
 .set-ctrl .segmented button { flex: 1 0 auto; min-width: 0; padding: 0 12px; white-space: nowrap; }
+
+/* 数据还没到时的占位骨架（首页图标 / 看板卡片 / 分组行）：只是几块灰色，不是「空库引导」。
+   微弱的明暗呼吸提示「在加载」；系统要求减少动效时静止。 */
+.boot-skeleton { grid-column: 1 / -1; width: 100%; }
+.boot-skeleton .sk-title { display: block; width: 88px; height: 12px; margin: 4px 0 18px; border-radius: 6px; background: var(--surface-hover); }
+.boot-skeleton .sk-items { display: grid; gap: 14px var(--tile-gap, 10px); }
+.boot-skeleton.is-tiles .sk-items { grid-template-columns: repeat(auto-fill, var(--tile-w, 96px)); }
+.boot-skeleton.is-cards .sk-items { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.boot-skeleton.is-rows .sk-items { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 14px; }
+.boot-skeleton :is(.sk-tile, .sk-card, .sk-row) { display: flex; align-items: center; min-width: 0; }
+.boot-skeleton .sk-tile { flex-direction: column; }
+.boot-skeleton .sk-tile i { width: 60px; height: 60px; border-radius: 16px; }
+.boot-skeleton .sk-tile b { width: 52px; height: 10px; margin-top: 10px; border-radius: 5px; }
+.boot-skeleton .sk-card { flex-direction: column; align-items: flex-start; gap: 12px; height: 150px; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.boot-skeleton .sk-card i { width: 40px; height: 40px; border-radius: 12px; }
+.boot-skeleton .sk-card b { width: 60%; height: 12px; border-radius: 6px; }
+.boot-skeleton .sk-card b + b { width: 36%; }
+.boot-skeleton .sk-row { gap: 12px; height: 56px; }
+.boot-skeleton .sk-row i { flex: none; width: 36px; height: 36px; border-radius: 10px; }
+.boot-skeleton .sk-row b { width: 55%; height: 12px; border-radius: 6px; }
+.boot-skeleton :is(i, b) { display: block; background: var(--surface-hover); animation: sk-pulse 1.4s ease-in-out infinite; }
+@keyframes sk-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .boot-skeleton :is(i, b) { animation: none; } }

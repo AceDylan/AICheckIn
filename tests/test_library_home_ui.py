@@ -423,6 +423,19 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.equal(homeView(), 'minimal');
         """)
 
+    def test_uploaded_icon_url_from_server_is_rendered_and_strictly_checked(self):
+        self.run_js("""
+            const src = '/api/link_icon/a/l1?v=0123456789ab';
+            assert.equal(linkIconSrc({ custom_icon_url: src }), src);
+            assert.equal(linkIconSrc({ custom_icon: 'data:image/png;base64,AAAA' }), 'data:image/png;base64,AAAA');
+            assert.equal(linkIconSrc(null), '');
+            assert.ok(siteAvatarHtml('Docs', 'https://docs.example', 'link-avatar', '', src).includes('src="' + src + '"'));
+            for (const bad of ['/api/link_icon/../x?v=0123456789ab', 'https://evil.example/api/link_icon/a/b?v=0123456789ab',
+                               '/api/link_icon/a/b?v=zz', '/api/link_icon/a/b']) {
+              assert.ok(!siteAvatarHtml('Docs', '', 'link-avatar', '', bad).includes('<img'), bad);
+            }
+        """)
+
     def test_fetched_icon_and_uploaded_fallback_are_independent_layers(self):
         self.run_js("""
             const uploaded = STATE.link_groups[0].links[0].custom_icon;

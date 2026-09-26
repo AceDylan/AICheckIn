@@ -3175,7 +3175,7 @@ def api_configs():
         "configs_hidden": configs_hidden,
         # 仅收藏不签到的站点：只下发展示所需字段，接口配置与凭据不出现在开放接口里。
         "bookmarks": [public_bookmark(b) for b in store.get("bookmarks") or []],
-        "link_groups": list(store.get("link_groups", [])),  # 收藏库子页面（网址分组）。
+        "link_groups": public_link_groups(store.get("link_groups")),  # 收藏库子页面（网址分组）；上传图标换成独立地址。
         "proxy_url": proxy_url if unlocked else "",
         "proxy_configured": bool(proxy_url.strip()),
         "schedule": {
@@ -4041,10 +4041,65 @@ def _find_link(group, lid):
     return -1, None
 
 
+# 上传图标（base64 data URL，最大 64 KB/个）不随分组数据下发：19 个图标就占了 /api/configs 的 98%，
+# 而起始页每开一次都要取一遍。下发时换成带内容哈希的独立地址，浏览器按地址长期缓存，
+# 图标换了哈希就变、地址跟着变。导出 / 备份仍然是完整的 data URL。
+def custom_icon_version(data_url):
+    return hashlib.sha1(str(data_url).encode("ascii", "replace")).hexdigest()[:12]
+
+
+def public_link(link, gid):
+    out = {k: v for k, v in link.items() if k != "custom_icon"}
+    icon = link.get("custom_icon") or ""
+    if icon:
+        out["custom_icon_url"] = "/api/link_icon/{0}/{1}?v={2}".format(
+            quote(str(gid), safe=""), quote(str(link.get("id") or ""), safe=""), custom_icon_version(icon))
+    return out
+
+
+def public_link_group(group):
+    out = dict(group)
+    out["links"] = [public_link(l, group.get("id")) for l in group.get("links") or []]
+    return out
+
+
+def public_link_groups(groups):
+    return [public_link_group(g) for g in groups or []]
+
+
 def _link_groups_response(store, **extra):
-    body = {"ok": True, "link_groups": store["link_groups"]}
+    body = {"ok": True, "link_groups": public_link_groups(store["link_groups"])}
+    gid = extra.get("group_id")
+    if isinstance(extra.get("group"), dict):
+        extra["group"] = public_link_group(extra["group"])
+    if isinstance(extra.get("link"), dict):
+        extra["link"] = public_link(extra["link"], gid)
+    if isinstance(extra.get("links"), list):
+        extra["links"] = [public_link(l, gid) if isinstance(l, dict) else l for l in extra["links"]]
     body.update(extra)
     return jsonify(body)
+
+
+@app.get("/api/link_icon/<gid>/<lid>")
+def api_link_icon(gid, lid):
+    """网址的上传图标。私密模式下与其它接口一样要先解锁（见 enforce_private_mode）。"""
+    try:
+        store = read_store()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    _, group = _find_group(store, gid)
+    _, link = _find_link(group, lid) if group else (-1, None)
+    match = _CUSTOM_ICON_RE.fullmatch((link or {}).get("custom_icon") or "")
+    if not match:
+        return jsonify({"ok": False, "error": "没有上传图标"}), 404
+    version = custom_icon_version(match[0])
+    resp = app.response_class(base64.b64decode(match[2]), mimetype=match[1])
+    resp.set_etag(version)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    # 地址里带的版本号对得上才敢让浏览器一年内不再问；对不上（旧页面拿着旧地址）就每次校验。
+    fresh = request.args.get("v") == version
+    resp.headers["Cache-Control"] = "private, max-age=31536000, immutable" if fresh else "private, no-cache"
+    return resp.make_conditional(request)
 
 
 def _load_store_or_error():

@@ -724,6 +724,7 @@
     let PRIVATE_PROMPTED = false;   // 私密模式的解锁引导每次加载只跳一次，别反复抢焦点
     let SHARE_HANDLED = false;      // 分享参数每次加载只消费一次
     let STATE_LOADED = false;
+    let BOOT_FAILED = false;   // 第一次取数没成功（多半是网络）：收藏页显示「连不上」而不是「从第一个网址开始」
     let RESULTS = [];  // 与 configs 同序的本次签到结果；未签到项为空，回退到持久化指标快照。
     const $ = (id) => document.getElementById(id);
 
@@ -833,11 +834,15 @@
       FAVICON_FAILED_AT.delete(origin);
       return true;
     }
+    // 上传图标：服务端下发的是带版本号的独立地址（custom_icon_url，浏览器长期缓存），不再把 data URL
+    // 塞进 /api/configs；刚在弹窗里选好、还没保存的图仍是 data URL。两种都只认严格格式。
+    const UPLOADED_ICON_RE = /^(data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+|\/api\/link_icon\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\?v=[0-9a-f]{12})$/;
+    function linkIconSrc(l) { return (l && (l.custom_icon_url || l.custom_icon)) || ''; }
     // 上传图片保留为独立的回退层，自动图标恢复后立即覆盖，之后再次失败仍可回退。
     function siteAvatarHtml(name, url, cls, emoji, customIcon) {
       const text = emoji ? escapeHtml(emoji) : escapeHtml(siteInitial(name, url));
       const origin = siteOrigin(url);
-      const uploaded = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(customIcon || '')
+      const uploaded = UPLOADED_ICON_RE.test(customIcon || '')
         ? `<img class="avatar-img avatar-upload" src="${escapeHtml(customIcon)}" alt="" decoding="async" onload="uploadedIconReady(this)" onerror="this.remove()">` : '';
       // 不用 loading="lazy"：未激活的视图是 display:none，浏览器会把里面的懒加载图片无限期挂起，
       // 反而卡死下面的限流队列。并发由 drainFavicons 自己控制。
@@ -1679,6 +1684,18 @@
     }
     function showEmpty(el, opts) { el.innerHTML = emptyStateHtml(opts); el.style.display = 'flex'; }
     function hideEmpty(el) { el.style.display = 'none'; }
+    // 数据还没到时，首页 / 看板 / 分组页只画灰色占位：以前这时画的是空库引导（「从第一个网址开始 / 新建第一个分组」），
+    // 慢网下要停一两秒，像是收藏全没了；断网时更是一直停在那儿。第一次没取到就明说「连不上」，并给一个立即重试。
+    function bootSkeletonHtml(kind) {
+      const item = kind === 'tiles' ? '<span class="sk-tile"><i></i><b></b></span>' : kind === 'cards' ? '<span class="sk-card"><i></i><b></b><b></b></span>' : '<span class="sk-row"><i></i><b></b></span>';
+      const n = kind === 'tiles' ? 8 : kind === 'cards' ? 3 : 6;
+      return `<div class="boot-skeleton is-${kind}" role="status" aria-label="正在加载收藏…"><span class="sk-title"></span><div class="sk-items">${item.repeat(n)}</div></div>`;
+    }
+    function renderBootPending(list, empty, kind) {
+      list.innerHTML = BOOT_FAILED ? '' : bootSkeletonHtml(kind);
+      if (!BOOT_FAILED) { hideEmpty(empty); return; }
+      showEmpty(empty, { icon: 'offline', title: '连不上服务器', text: '收藏都还在，只是这一次没取到。网络恢复或切回这一页时会自动再试；上面的搜索框照常能用。', actions: [{ label: '立即重试', onclick: 'retryBoot()' }] });
+    }
 
     // 渲染签到视图：启用项走卡片网格，禁用项归入「需手动签到」分组。
     function renderCheckinCards() {
@@ -1861,6 +1878,7 @@
         STATE = data;
         STATE.link_groups = Array.isArray(STATE.link_groups) ? STATE.link_groups : [];
         STATE_LOADED = true;
+        BOOT_FAILED = false;
         // 私密模式未解锁：后端只回了个空壳，把人直接带到解锁入口，别让他对着空页面发呆。
         if (STATE.private && STATE.locked) {
             if (!PRIVATE_PROMPTED) {
@@ -1886,7 +1904,11 @@
         if (!SHARE_HANDLED) { SHARE_HANDLED = true; consumeShareParams(); }
         return true;
       } catch (e) {
-        if (!quiet) toast('加载配置失败：' + e.message, 'err');
+        // fetch 抛出来的是「Failed to fetch」这类英文原文：换成人话，页面上也换成「连不上」而不是空库引导。
+        // 部署重启时反代回的是 HTML 错误页，json() 会抛 SyntaxError，同样算「暂时连不上」。
+        const offline = e instanceof TypeError || e instanceof SyntaxError;
+        if (!quiet) toast(offline ? '连不上服务器，稍后会自动重试' : '加载配置失败：' + e.message, 'err');
+        if (!STATE_LOADED && !BOOT_FAILED) { BOOT_FAILED = true; renderLibrary(); }
         return false;
       }
     }
@@ -2818,7 +2840,7 @@
     }
     function homeLinkTileHtml(l, g) {
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
-      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: l.custom_icon, tone: g.color, arrangeId: l.id, menu:
+      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: linkIconSrc(l), tone: g.color, arrangeId: l.id, menu:
         `<button onclick="editLink('${gid}','${lid}')">编辑</button>
          <button onclick="copyLinkUrl('${gid}','${lid}')">复制网址</button>
          <button onclick="openLibPage('${gid}')">前往「${escapeHtml(g.name)}」</button>
@@ -3028,7 +3050,7 @@
         out.push(Object.assign(o, { key, n, at: out.length }));
       };
       (STATE.bookmarks || []).forEach(b => { if (b) consider({ name: b.name, url: b.url, tone: 'mint', page: 'monitor', where: '站点看板' }); });
-      libGroups().forEach(g => (g.links || []).forEach(l => consider({ name: l.name, url: l.url, emoji: l.icon, customIcon: l.custom_icon, tone: g.color, page: g.id, where: g.name })));
+      libGroups().forEach(g => (g.links || []).forEach(l => consider({ name: l.name, url: l.url, emoji: l.icon, customIcon: linkIconSrc(l), tone: g.color, page: g.id, where: g.name })));
       out.sort((a, b) => b.n - a.n || a.at - b.at);
       return out.length >= HITS.minTiles ? out.slice(0, HOME_GRID.max) : [];
     }
@@ -3100,6 +3122,7 @@
       $('homeBody').classList.toggle('is-tiles', tiles);
       renderDeck();
       measureHomeGrid();
+      if (!STATE_LOADED) { $('homeAddLink').hidden = $('homeEditBtn').hidden = true; renderBootPending($('homeList'), $('homeEmpty'), 'tiles'); return; }
       // 与侧栏顺序一致：站点看板在前，其后按分组顺序。最前面是「常用」一行（图标视图、没在编辑、没在筛选时）。
       const folds = minimal ? [] : homeFolds();
       const sections = [];
@@ -5144,6 +5167,7 @@
 
     function renderBookmarks() {
       const list = $('bmList'), empty = $('bmEmpty');
+      if (!STATE_LOADED) { renderBootPending(list, empty, 'cards'); return; }
       const bms = STATE.bookmarks || [];
       const query = (($('bmSearch') && $('bmSearch').value) || '').trim().toLowerCase();
       // 预警计数基于全部站点，不受搜索 / 筛选影响——否则筛完数字就跟着变了，没法当仪表盘看。
@@ -5570,7 +5594,7 @@
       const host = siteHost(l.url) || '未设置域名';
       const others = libGroups().filter(o => o.id !== g.id);
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
-      const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, l.custom_icon);
+      const avatar = siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, linkIconSrc(l));
       const alert = linkCheckState(l);
       return `<article class="link-card tone-${escapeHtml(g.color)}${l.pinned ? ' is-pinned' : ''}${alert ? ' check-' + alert : ''}" data-link-id="${lid}" data-card-id="${lid}" style="--hue:${hueOf(host)}">
         <a class="link-main" href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(l.url)}">
@@ -5684,6 +5708,7 @@
 
     function renderLinks() {
       const list = $('linkList'), empty = $('linkEmpty');
+      if (!STATE_LOADED) { renderBootPending(list, empty, 'rows'); return; }
       const g = findGroup(LIB.page);
       if (!g) { list.innerHTML = ''; hideEmpty(empty); return; }
       const links = g.links || [];
@@ -5803,7 +5828,7 @@
     }
 
     // ----- 网址编辑弹窗（单条 / 批量） -----
-    let linkEdit = { gid: null, lid: null, mode: 'single', customIcon: '' };
+    let linkEdit = { gid: null, lid: null, mode: 'single', customIcon: '', savedIcon: '' };
     let iconUploadVersion = 0;
     function renderUploadedIcon() {
       $('lk_icon_preview').hidden = !linkEdit.customIcon;
@@ -5980,7 +6005,7 @@
       if (!g) { toast('请先新建一个分组', 'err'); return; }
       const l = lid ? (g.links || []).find(x => x.id === lid) : null;
       iconUploadVersion++;
-      linkEdit = { gid: g.id, lid: l ? l.id : null, mode: 'single', customIcon: l ? (l.custom_icon || '') : '' };
+      linkEdit = { gid: g.id, lid: l ? l.id : null, mode: 'single', customIcon: linkIconSrc(l), savedIcon: linkIconSrc(l) };
       $('lk_icon_file').value = '';
       $('linkSave').disabled = false;
       renderUploadedIcon();
@@ -5995,7 +6020,7 @@
       $('lk_desc').value = l ? (l.desc || '') : '';
       $('lk_tags').value = l ? (l.tags || []).join(', ') : '';
       $('lk_icon').value = l ? (l.icon || '') : '';
-      $('lk_more').open = !!(l && (l.desc || (l.tags || []).length || l.icon || l.custom_icon));
+      $('lk_more').open = !!(l && (l.desc || (l.tags || []).length || l.icon || linkIconSrc(l)));
       $('lk_pinned').checked = !!(l && l.pinned);
       $('lk_home').checked = !!(l && l.show_on_home);
       fillGroupSelect($('lk_group'), g.id);
@@ -6086,8 +6111,10 @@
         const body = {
           url: normalizeUrlInput($('lk_url').value), name: $('lk_name').value.trim(), desc: $('lk_desc').value.trim(),
           tags: $('lk_tags').value.split(/[,，;；]/).map(s => s.trim()).filter(Boolean), icon: $('lk_icon').value.trim(), pinned: $('lk_pinned').checked,
-          show_on_home: $('lk_home').checked, custom_icon: linkEdit.customIcon,
+          show_on_home: $('lk_home').checked,
         };
+        // 图标没动就不带这个键（服务端沿用原图）；换了图带新的 data URL，移除了带空串。
+        if (linkEdit.customIcon !== linkEdit.savedIcon) body.custom_icon = linkEdit.customIcon;
         const target = $('lk_group').value;
         let data;
         if (linkEdit.lid) {
@@ -6498,7 +6525,7 @@
         for (const l of g.links || []) {
           items.push({
             kind: 'link', title: l.name || siteHost(l.url), host: siteHost(l.url), sub: g.name,
-            tags: l.tags || [], url: l.url, emoji: l.icon, customIcon: l.custom_icon, color: g.color, groupId: g.id, pinned: !!l.pinned,
+            tags: l.tags || [], url: l.url, emoji: l.icon, customIcon: linkIconSrc(l), color: g.color, groupId: g.id, pinned: !!l.pinned,
             // created_at 形如 "YYYY-MM-DD HH:MM:SS"，字典序即时间序，直接拿来排序。
             addedAt: l.created_at || '',
             alert: linkCheckState(l),
@@ -7488,6 +7515,15 @@
       return ok;
     }
     window.addEventListener('online', () => { bootRetry(); });
+    // 「连不上服务器」里的「立即重试」：先回到占位骨架，再取一次；这次也没成就接着按原来的节奏自动重试。
+    async function retryBoot() {
+      if (STATE_LOADED || BOOT_RETRY.busy) return;
+      BOOT_FAILED = false;
+      renderLibrary();
+      clearTimeout(BOOT_RETRY.timer);
+      BOOT_RETRY.n = 0;
+      await bootRetry();
+    }
 
     // ===== 初始化 =====
     renderLibrary();

@@ -492,7 +492,7 @@ class FaviconUiTest(unittest.TestCase):
             self.assertIn("siteAvatarHtml(", self.html)
             self.assertIn(cls_name, self.html)
         self.assertEqual(self.html.count("siteAvatarHtml(b.name, b.url, 'site-avatar')"), 1)
-        self.assertEqual(self.html.count("siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, l.custom_icon)"), 1)
+        self.assertEqual(self.html.count("siteAvatarHtml(l.name, l.url, 'link-avatar', l.icon, linkIconSrc(l))"), 1)
         self.assertEqual(self.html.count("siteAvatarHtml(c.name, c.base_url, 'mini-avatar')"), 4)
         # 旧的「只有首字母」写法不应残留。
         self.assertNotIn('<div class="site-avatar" aria-hidden="true">', self.html)

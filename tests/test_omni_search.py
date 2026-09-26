@@ -28,6 +28,7 @@ HARNESS_PRELUDE = """
 const STATE = __STATE__;
 function libGroups() { return STATE.link_groups || []; }
 function omniCommands() { return []; }   // 命令依赖页面上的函数，另在 test_library_home_ui 式的整页桩里测
+function linkIconSrc(l) { return (l && (l.custom_icon_url || l.custom_icon)) || ''; }
 function siteHost(u) {
   try { return new URL(u).hostname.replace(/^www\\./, ''); }
   catch (_) { return String(u || '').replace(/^https?:\\/\\//, '').split('/')[0]; }

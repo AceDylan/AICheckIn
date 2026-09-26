@@ -59,7 +59,10 @@ class LibraryHomeApiTest(StoreIsolationMixin, unittest.TestCase):
             'name': 'Updated', 'group': 'b'}).get_json()['link']
         # 目标分组已有同 id，移动会重新分配 id；首页选择与图标仍保留。
         self.assertNotEqual(updated['id'], 'same')
-        self.assertEqual(updated['custom_icon'], PNG)
+        # 响应里只有带版本号的图标地址，原图留在存储里。
+        self.assertNotIn('custom_icon', updated)
+        self.assertTrue(updated['custom_icon_url'].startswith('/api/link_icon/b/' + updated['id'] + '?v='))
+        self.assertEqual(read_store()['link_groups'][1]['links'][-1]['custom_icon'], PNG)
         self.assertEqual(self.selections(), {('b', updated['id'])})
         self.assertEqual(updated['name'], 'Updated')
         self.client.delete('/api/link_groups/b/links/' + updated['id'])
@@ -87,13 +90,85 @@ class LibraryHomeApiTest(StoreIsolationMixin, unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         link = resp.get_json()['links'][0]
         self.assertEqual(self.selections(), {('a', link['id'])})
-        self.assertEqual(link['custom_icon'], PNG)
+        self.assertNotIn('custom_icon', link)
+        self.assertIn('custom_icon_url', link)
+        self.assertEqual(read_store()['link_groups'][0]['links'][-1]['custom_icon'], PNG)
 
     def test_bad_image_is_rejected_without_overwriting_existing_icon(self):
         self.client.put('/api/link_groups/a/links/same', json={'custom_icon': PNG})
         resp = self.client.put('/api/link_groups/a/links/same', json={'custom_icon': 'https://tracking.example/icon.png'})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(read_store()['link_groups'][0]['links'][0]['custom_icon'], PNG)
+
+
+class LinkIconEndpointTest(StoreIsolationMixin, unittest.TestCase):
+    """上传图标不再随 /api/configs 下发，改走带版本号、可长期缓存的独立地址。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = app.test_client()
+        self.write_config({'configs': [], 'bookmarks': [], 'link_groups': [
+            {'id': 'a', 'name': 'A', 'links': [
+                {'id': 'ico', 'name': 'With icon', 'url': 'https://one.example', 'custom_icon': PNG},
+                {'id': 'plain', 'name': 'Plain', 'url': 'https://two.example'}]},
+        ]})
+
+    def icon_url(self):
+        link = self.client.get('/api/configs').get_json()['link_groups'][0]['links'][0]
+        return link['custom_icon_url']
+
+    def test_configs_carry_a_versioned_url_instead_of_the_image(self):
+        resp = self.client.get('/api/configs')
+        self.assertNotIn('data:image', resp.get_data(as_text=True))
+        links = resp.get_json()['link_groups'][0]['links']
+        self.assertRegex(links[0]['custom_icon_url'], r'^/api/link_icon/a/ico\?v=[0-9a-f]{12}$')
+        self.assertNotIn('custom_icon', links[0])
+        self.assertNotIn('custom_icon_url', links[1])
+
+    def test_icon_is_served_with_long_cache_and_revalidates(self):
+        url = self.icon_url()
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, 'image/png')
+        self.assertEqual(resp.data, base64.b64decode(PNG.split(',', 1)[1]))
+        self.assertIn('immutable', resp.headers['Cache-Control'])
+        self.assertTrue(resp.headers['Cache-Control'].startswith('private'))
+        etag = resp.headers['ETag']
+        self.assertEqual(self.client.get(url, headers={'If-None-Match': etag}).status_code, 304)
+        # 版本号对不上（旧页面拿着旧地址）：照样给图，但不许长期缓存。
+        stale = self.client.get('/api/link_icon/a/ico?v=000000000000')
+        self.assertEqual(stale.status_code, 200)
+        self.assertEqual(stale.headers['Cache-Control'], 'private, no-cache')
+
+    def test_icon_url_follows_the_image(self):
+        before = self.icon_url()
+        self.client.put('/api/link_groups/a/links/ico', json={'custom_icon': ''})
+        self.assertEqual(self.client.get(before.split('?')[0]).status_code, 404)
+        self.client.put('/api/link_groups/a/links/ico', json={'custom_icon': PNG})
+        self.assertEqual(self.icon_url(), before)
+
+    def test_missing_icon_and_unknown_link_are_404(self):
+        for path in ('/api/link_icon/a/plain', '/api/link_icon/a/nope', '/api/link_icon/zz/ico'):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+
+    def test_editing_without_the_icon_key_keeps_the_icon(self):
+        self.client.put('/api/link_groups/a/links/ico', json={'name': 'Renamed', 'show_on_home': True})
+        self.assertEqual(read_store()['link_groups'][0]['links'][0]['custom_icon'], PNG)
+
+    def test_every_link_groups_response_is_stripped(self):
+        body = self.client.put('/api/link_groups/a', json={'name': 'A2'}).get_json()
+        self.assertNotIn('data:image', str(body))
+        body = self.client.put('/api/library/home', json={'links': [{'group': 'a', 'id': 'ico'}]}).get_json()
+        self.assertNotIn('data:image', str(body))
+
+    def test_export_still_contains_the_full_image(self):
+        exported = self.client.get('/api/configs/export').get_json()
+        self.assertEqual(exported['link_groups'][0]['links'][0]['custom_icon'], PNG)
+
+    def test_private_mode_requires_unlock(self):
+        with patch.object(app_module, 'ADMIN_PASSWORD', 'a-secret-password'), \
+                patch.object(app_module, 'PRIVATE_MODE', True):
+            self.assertEqual(self.client.get('/api/link_icon/a/ico').status_code, 403)
 
 
 class DashboardHomeApiTest(StoreIsolationMixin, unittest.TestCase):
