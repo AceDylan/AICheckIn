@@ -1466,7 +1466,7 @@
       if (name === 'history') loadHistory();
       else if (name === 'settings') loadDiagnostics();
       else if (name === 'chat') openChat();
-      else if (name === 'vault') openVault();
+      else if (name === 'vault') { openVault(); focusVaultFrame(); }
     }
     function currentViewName() {
       const view = document.querySelector('.view.active');
@@ -2167,12 +2167,24 @@
       // 与「AI 聊天」同样不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
       frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
       frame.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
-      frame.addEventListener('load', () => { $('vaultLoading').hidden = true; });
+      frame.addEventListener('load', () => { $('vaultLoading').hidden = true; focusVaultFrame(); });
       frame.src = '/vault/open?to=' + encodeURIComponent(to || '/');   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
       $('vaultStage').appendChild(frame);
       VAULT_EMBED.url = base;
     }
     $('vaultReload').addEventListener('click', () => openVault(true));
+    // 有鼠标键盘的设备上，到了笔记页就把键盘交给框。不然焦点还停在本站的标签按钮上，框里提示的
+    // Ctrl+O / Ctrl+P 按下去是浏览器自己的「打开文件」「打印」，得先在框里点一下才行。
+    // （聊天框不用：HaloWebUI 自己会把焦点放进输入框。）手机上不动：没有实体键盘，平白聚焦只会让页面跳。
+    // 只从「没在输入」的地方接过来——本站自己的输入框、弹窗里有焦点时不抢。
+    function focusVaultFrame() {
+      const frame = vaultFrame();
+      if (!frame || currentViewName() !== 'vault') return;
+      if (!(typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches)) return;
+      const here = document.activeElement;
+      if (here && here !== document.body && here !== frame && !(here.closest && here.closest('.tabs, .chat-bar'))) return;
+      try { frame.focus({ preventScroll: true }); } catch (_) { /* 焦点给不过去就维持原样：点一下框照样能用 */ }
+    }
     // Vault 里的相对路径（「项目/HaloWebUI.md」）。别处递来的一律先过这一道：不许绝对路径、反斜杠、
     // 空段、.. 与点开头的段（.git / .obsidian）、控制字符。对面打开前还会再验一遍。
     function cleanNotePath(value) {
