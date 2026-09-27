@@ -1986,7 +1986,9 @@
     // ===== AI 聊天 =====
     // 框里是自己的 HaloWebUI（地址来自部署的 HUB_CHAT_URL，随 /api/configs 只发给已解锁的人）。
     // 第一次点开才加载，之后切到别的标签页也不卸载——聊到一半去翻个收藏再回来，对话还在。
-    const CHAT = { src: '', busy: false, queued: '' };
+    // back：下一次开框登录后落到哪个对话（见 reenterChat）；sso：当前这张框是不是本站替它登录的；
+    // reenteredAt：上一次应框里的请求重新登录的时间。
+    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0 };
     const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
     function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
     function chatFrame() { return $('chatStage') ? $('chatStage').querySelector('iframe') : null; }
@@ -2012,21 +2014,24 @@
     async function openChat(force) {
       const prompt = CHAT.queued || '';
       if (!chatAvailable() || CHAT.busy || (CHAT.src && !force && !prompt)) return;
+      const back = prompt ? '' : CHAT.back;
       CHAT.queued = '';
+      CHAT.back = '';
       const base = STATE.chat.url;
       CHAT.busy = true;
       try {
         $('chatHost').textContent = base.replace(/^https?:\/\//, '');
         $('chatPopout').href = base + '/';
         $('chatLoading').hidden = false;
-        let target = base + '/', note = ['', ''];
+        let target = base + '/', note = ['', ''], sso = false;
         try {
           // 每次都是一张新的一次性票据；签不了票（没配密钥、管理密码不合格……）时后端照样回普通地址和原因。
           const resp = await fetch('/api/chat/ticket', {
             method: 'POST', headers: adminHeaders(),
-            body: JSON.stringify(prompt ? { prompt } : {}),
+            body: JSON.stringify(prompt ? { prompt } : back ? { back } : {}),
           });
           const data = await resp.json();
+          sso = !!(data.ok && data.sso);
           // 只认指向配置的那个源的地址，别的一概不往框里放。
           if (data.ok && typeof data.url === 'string' && data.url.startsWith(base + '/')) target = data.url;
           // 地址装不下整段问题时后端会自己截断。这属于这一次发送的事，说一声就过去，
@@ -2049,9 +2054,21 @@
         frame.src = target;
         $('chatStage').appendChild(frame);
         CHAT.src = base;
+        CHAT.sso = sso;
       } finally { CHAT.busy = false; }
     }
     $('chatReload').addEventListener('click', () => openChat(true));
+    // 本站替它登录的会话 12 小时到期，而本页（浏览器起始页、手机上一直开着的标签页）常常一开好几天。
+    // 到期后框里的 HaloWebUI 发来 reauth：换一张新票据重新开框，落回它刚才停着的那个对话——
+    // 不再让人对着「会话已过期，请重新登录」去找「重新载入」。
+    // 一分钟最多一次，而且只在这张框确实是本站替它登录的时候：签不了票时框里本来就是登录页，再开也一样。
+    function reenterChat(path) {
+      const now = Date.now();
+      if (!CHAT.src || !CHAT.sso || now - CHAT.reenteredAt < 60000) return;
+      CHAT.reenteredAt = now;
+      CHAT.back = typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : '';
+      openChat(true);
+    }
 
     // ===== AI 聊天的回复状态 =====
     // 切到别的页面时框只是藏起来、不卸载（见上），于是 HaloWebUI 认为有人在看、不推 Telegram，框里的弹窗和
@@ -2098,6 +2115,7 @@
       // 回复里点到 Vault 里的一篇笔记（HaloWebUI 认出笔记库的绝对路径）：切到「笔记」标签页打开它。
       // 只是换个标签页、打开自己库里的一篇，最坏也就是开错一篇；路径照样过 cleanNotePath。
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
+      if (data.type === 'reauth') { reenterChat(data.path); return; }
       if (data.type !== 'activity' || !CHAT_ACTIVITY_STATES.includes(data.state)) return;
       onChatActivity(data.state);
     });

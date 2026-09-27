@@ -1971,11 +1971,21 @@ def clean_chat_prompt(value):
     return re.sub(r"\n{3,}", "\n\n", text).strip()[:CHAT_PROMPT_MAX]
 
 
-def chat_target_url(base, prompt="", ticket="", model=""):
+# 框里的 HaloWebUI 会话过期后请本站重新登录时，落回它刚才停着的那个对话（见 /api/chat/ticket 的 back）。
+# 只认 /c/<对话 id>：不带查询串——「/?q=」会把那句问题再发一遍。
+CHAT_BACK_RE = re.compile(r"/c/[A-Za-z0-9-]{1,64}")
+
+
+def clean_chat_back(value):
+    return value if isinstance(value, str) and CHAT_BACK_RE.fullmatch(value) else ""
+
+
+def chat_target_url(base, prompt="", ticket="", model="", back=""):
     """iframe / 新标签页要打开的地址。返回 (地址, 真正带过去的问题, 是否被截断)。
 
     没有问题时保持老行为：有票据就 /auth#hub_ticket=…，没有就首页——**也不带 models=**。
     「打开聊天标签页」用的仍是 HaloWebUI 自己的默认模型，这边一个字都不改它。
+    back（已过 clean_chat_back 的 /c/<id>）：登录后落到那个对话，而不是首页；带问题时不用它。
 
     有问题时才在落地地址后面挂 models=<model>（model 为空就不挂）：从这里问出去的是
     一句话的问题，要的是马上回一段话，不该落到对面那个跑长任务的默认 agent 上。
@@ -1997,6 +2007,8 @@ def chat_target_url(base, prompt="", ticket="", model=""):
         return len(build(text)) <= CHAT_URL_MAX and len(landing(text)) <= CHAT_REDIRECT_MAX
 
     if not prompt:
+        if back:
+            return (base + "/auth?redirect=" + quote(back, safe="") + fragment) if ticket else (base + back), "", False
         return plain, "", False
     if fits(prompt):
         return build(prompt), prompt, False
@@ -6485,6 +6497,7 @@ def api_chat_ticket():
     所以是 POST、不可缓存。签不了票时照样回 HaloWebUI 的普通地址和原因——标签页不能因此打不开。
 
     可选的 {"prompt": "..."} 会被编进地址，对面落地就自动发出去（见 chat_target_url）。
+    可选的 {"back": "/c/<id>"}：框里的会话过期、对面请本站重新登录时，登录后回到那个对话。
     带问题的地址里还会挂上 HUB_CHAT_MODEL 指定的模型（默认 gpt-chat）；不带问题时不挂，
     HaloWebUI 的默认模型不受影响。问题过长时后端自己截断并在回包里说明，前端据此提示。
     """
@@ -6495,6 +6508,7 @@ def api_chat_ticket():
         return jsonify({"ok": False, "error": "接口不存在"}), 404
     payload = request.get_json(silent=True)
     prompt = clean_chat_prompt(payload.get("prompt")) if isinstance(payload, dict) else ""
+    back = clean_chat_back(payload.get("back")) if isinstance(payload, dict) else ""
     issuer = request_public_origin()
     blocker = chat_sso_blocker() or ("" if issuer else "issuer_unknown")
     handshake = ensure_chat_handshake(issuer)
@@ -6504,7 +6518,7 @@ def api_chat_ticket():
     if isinstance(handshake["frame_ancestors"], list) and issuer:
         framed_ok = issuer in handshake["frame_ancestors"]
     ticket = "" if blocker else issue_chat_ticket(CHAT_PURPOSE_ENTER, issuer, CHAT_URL)
-    url, sent, truncated = chat_target_url(CHAT_URL, prompt, ticket, CHAT_MODEL)
+    url, sent, truncated = chat_target_url(CHAT_URL, prompt, ticket, CHAT_MODEL, back)
     resp = jsonify({
         "ok": True, "url": url, "sso": not blocker,
         "reason": blocker, "hint": _CHAT_SSO_HINTS.get(blocker, ""),
