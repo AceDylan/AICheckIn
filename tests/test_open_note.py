@@ -20,7 +20,7 @@ VAULT = "https://notes.example"
 def frame_src(path):
     """/vault/open?to= 里的落点：/note/ 后每段各自编码，整个落点再编码一次（与 encodeURIComponent 一致）。"""
     to = "/note/" + "/".join(quote(part, safe="") for part in path.split("/"))
-    return "/vault/open?to=" + quote(to, safe="")
+    return "/vault/open?to=" + quote(to, safe="") + "&theme=dark"   # 本站此刻的深浅色，见 test_frame_theme
 
 SCENARIO = r"""
 const L = {};

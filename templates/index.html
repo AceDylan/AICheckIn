@@ -1054,11 +1054,25 @@
     function setTheme(pref) {
       setCookie(`bh_theme=${pref}; max-age=31536000; path=/; SameSite=Lax`);
       applyTheme(pref);
+      tellFramesTheme();
     }
     $('themeToggle').addEventListener('click', () => setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light'));
     $('themeSeg').addEventListener('click', (e) => { const b = e.target.closest('button[data-theme-opt]'); if (b) setTheme(b.dataset.themeOpt); });
-    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (readTheme() === 'system') applyTheme('system'); });
+    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (readTheme() === 'system') { applyTheme('system'); tellFramesTheme(); } });
     applyTheme(readTheme());
+    // 「AI 聊天」「笔记」两个框跟着本站的深浅色。两边默认「跟随系统」，可本站的主题是自己记着的（默认深色）：
+    // 系统是浅色时，深色的 Hub 里嵌着两块白页面。框也看不到本站选了什么——框元素的 color-scheme 不会传进
+    // 跨源页面的 prefers-color-scheme。所以开框时把此刻的深浅色写进地址的 #（hub_theme=，# 不发给服务器；
+    // 笔记框经 /vault/open 转交），之后本站换主题再发一条消息。两边只在自己设的是「跟随系统」时照办。
+    function frameTheme() { return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+    function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme(); }
+    function tellFramesTheme() {
+      const msg = { source: 'hub', type: 'theme', theme: frameTheme() };
+      // 目标源写死成配置的那个：框要是还停在本站的跳板页上（或别处），浏览器直接丢掉这条消息。
+      [[chatFrame(), chatOrigin()], [vaultFrame(), vaultOrigin()]].forEach(([frame, origin]) => {
+        try { if (frame && frame.contentWindow && origin) frame.contentWindow.postMessage(msg, origin); } catch (_) { /* 下次开框时地址里带着 */ }
+      });
+    }
 
     // ===== 本机偏好（Cookie）=====
     // 打开方式、搜索引擎、首页密度都是「这台设备怎么用」的事：手机和桌面可以各设各的，
@@ -2091,6 +2105,7 @@
           else if (data.ok && !data.sso && data.hint) note = [data.reason, data.hint];
         } catch (_) { /* 拿不到票据不耽误打开：框里自己登录就是了 */ }
         if (!chatAvailable()) return;   // 等票据的工夫被锁定了
+        target = withFrameTheme(target);
         showChatNote(note[0], note[1]);
         closeChat();   // 换一个新的框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
         placeChat(back);   // 落回哪个对话，「新标签页打开」先指向那里；框加载后会自己再报一次
@@ -2197,6 +2212,9 @@
     const VAULT_EMBED = { url: '', to: '', hop: null, seq: 0 };
     function vaultEmbedAvailable() { return !!(STATE.vault_embed && STATE.vault_embed.url) && canEdit(); }
     function vaultFrame() { return $('vaultStage') ? $('vaultStage').querySelector('iframe') : null; }
+    function vaultOrigin() {
+      try { return VAULT_EMBED.url ? new URL(VAULT_EMBED.url).origin : ''; } catch (_) { return ''; }
+    }
     // 请 WebObsidian 结束「由本站登录的」会话（它的密码会话不受影响）。no-cors：回包看不见也不用看；
     // 对面只认本站的 Origin。全站的 no-referrer 会让 no-cors 的 POST 带 Origin: null，所以这一个请求单独用
     // strict-origin（只带出本站的源）。万一没送到，那个会话也会在 12 小时内自己过期。
@@ -2226,7 +2244,8 @@
       $('vaultHost').textContent = base.replace(/^https?:\/\//, '');
       $('vaultLoading').hidden = false;
       closeVault();   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
-      const open = '/vault/open?to=' + encodeURIComponent(to || '/');   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
+      // 本站自己的一页；没解锁、密码不合格时它只回一段说明。theme：本站此刻的深浅色，它转给 WebObsidian（见 frameTheme）
+      const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme();
       const name = 'hub-vault-' + (++VAULT_EMBED.seq);
       const frame = document.createElement('iframe');
       frame.className = 'chat-frame';

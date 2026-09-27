@@ -168,7 +168,9 @@ def admin_desktop(b, halo):
     check("点「AI 聊天」：切到聊天页、整块铺满", active_view(page) == "view-chat" and page.evaluate("() => document.documentElement.classList.contains('chat-on')"))
     src = frame_el.get_attribute("src")
     check("iframe 指向 HaloWebUI 的 /auth，票据在 # 后面", src.startswith(halo + "/auth#hub_ticket=v2.chat."), src)
-    claims = verify_ticket(src.split("/auth#hub_ticket=", 1)[1])
+    # # 后面先是票据，再是本站此刻的深浅色（hub_theme=，框里的 HaloWebUI 在「跟随系统」时照它）。
+    check("框地址带上本站此刻的深浅色", src.endswith("&hub_theme=dark"), src[-30:])
+    claims = verify_ticket(src.split("/auth#hub_ticket=", 1)[1].split("&", 1)[0])
     check("票据验签通过：签发方 = 本站，接收方 = HaloWebUI，60 秒内", bool(claims) and claims["issuer"] == BASE and claims["audience"] == halo and 0 < claims["exp"] - time.time() <= 61, claims)
     sandbox = (frame_el.get_attribute("sandbox") or "").split()
     check("sandbox 不给 allow-top-navigation", sandbox and "allow-top-navigation" not in sandbox and "allow-same-origin" in sandbox, sandbox)
@@ -207,7 +209,7 @@ def admin_desktop(b, halo):
     page.click("#chatReload")
     page.wait_for_function("(old) => { const f = document.querySelector('#chatStage iframe'); return !!(f && f.src && f.src !== old); }", arg=src)
     src2 = page.query_selector("#chatStage iframe").get_attribute("src")
-    claims2 = verify_ticket(src2.split("/auth#hub_ticket=", 1)[1])
+    claims2 = verify_ticket(src2.split("/auth#hub_ticket=", 1)[1].split("&", 1)[0])
     check("「重新载入」换了一张新票（nonce 不同）", bool(claims2) and claims2["nonce"] != claims["nonce"])
     check("「新标签页打开」指向 HaloWebUI 首页（不带票据）", page.get_attribute("#chatPopout", "href") == halo + "/")
 
@@ -265,7 +267,7 @@ def no_secret(b, halo):
     page.click('.tab[data-view="chat"]')
     page.wait_for_function("() => { const f = document.querySelector('#chatStage iframe'); return !!(f && f.src); }")
     src = page.query_selector("#chatStage iframe").get_attribute("src")
-    check("没配密钥：框里是 HaloWebUI 首页，不带票据", src == halo + "/", src)
+    check("没配密钥：框里是 HaloWebUI 首页，不带票据", src == halo + "/#hub_theme=dark", src)
     page.wait_for_timeout(200)
     note = page.evaluate("() => [document.getElementById('chatNote').hidden, document.getElementById('chatNoteText').textContent]")
     check("没配密钥：顶部说明需要自己登录", note[0] is False and "HUB_TRUSTED_EMBED_ADMIN_SECRET" in note[1], note)

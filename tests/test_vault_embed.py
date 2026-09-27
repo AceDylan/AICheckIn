@@ -366,7 +366,7 @@ class PageShapeTest(unittest.TestCase):
         # 票据不经过页面脚本：框里放的是本站的 /vault/open，脚本里没有任何票据的影子。
         # 落点（默认笔记首页，openVaultNote 给的是 /note/<路径>）只作为 ?to= 的值，整段编码。
         # 登录页开在旁边一张看不见的小框里（表单 target 指回还空着的笔记框）；它只回说明时笔记框自己打开同一页。
-        self.assertIn("const open = '/vault/open?to=' + encodeURIComponent(to || '/');", self.js)
+        self.assertIn("const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme();", self.js)
         self.assertNotIn("ticket", self.js.lower().replace("一次性票据", ""))
         self.assertEqual(re.findall(r"\b(?:frame|hop)\.src = ([^;]+);", self.js), ["open", "open + '&target=' + name"])
         self.assertIn('id="vaultPopout" href="/vault/open"', self.html)

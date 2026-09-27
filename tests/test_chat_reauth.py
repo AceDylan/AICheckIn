@@ -107,7 +107,7 @@ class ChatReauthScriptTest(unittest.TestCase):
         step = self.steps["expired"]
         self.assertEqual(step["frames"], 2)
         self.assertEqual(step["body"], {"back": "/c/abc-123"})
-        self.assertEqual(step["src"], HALO + "/auth#hub_ticket=T")
+        self.assertEqual(step["src"], HALO + "/auth#hub_ticket=T&hub_theme=dark")   # 深浅色见 test_frame_theme
 
     def test_at_most_once_a_minute(self):
         self.assertEqual(self.steps["again within a minute"]["frames"], 2)

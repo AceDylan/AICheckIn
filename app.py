@@ -6548,18 +6548,27 @@ _VAULT_SSO_HINTS = {
 _VAULT_FRAME_NAME = re.compile(r"hub-vault-[0-9]{1,9}")
 
 
-def _vault_open_page(state, status, message="", ticket="", to="/", target=""):
+# Hub 此刻的深浅色（见 index.html 的 frameTheme）：只认这两个值，别的当没给。
+_VAULT_THEMES = ("dark", "light")
+
+
+def _vault_open_page(state, status, message="", ticket="", to="/", target="", theme=""):
     """/vault/open 的响应：自己一套收得很紧的响应头。
 
     - frame-ancestors 'self' + SAMEORIGIN：只能待在本站自己的框里（全站其余响应仍是 'none' / DENY）；
     - form-action 只许 WebObsidian 的源，script-src 只许这一页带 nonce 的那一行；
     - no-store：票据一次性、60 秒，不许任何一层缓存留着它；
     - Referrer-Policy: strict-origin（全站是 no-referrer）：no-referrer 会让浏览器在跨源表单 POST 上
-      把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。"""
+      把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。
+
+    theme（dark / light）挂在表单地址的 # 上：对面登录后 303 到笔记页时浏览器把 # 带过去（重定向的
+    Location 没有 # 时沿用原地址的），WebObsidian 据此在「跟随系统」时跟着 Hub 的深浅色。# 不会发给服务器。"""
     nonce = secrets.token_urlsafe(16)
+    theme = theme if theme in _VAULT_THEMES else ""
+    action = VAULT_URL + "/auth/hub/sso" + ("#hub_theme=" + theme if theme else "")
     body = render_template("vault_open.html", state=state, message=message, ticket=ticket, to=to, target=target,
-                           action=VAULT_URL + "/auth/hub/sso", vault_host=VAULT_URL.split("://", 1)[-1],
-                           nonce=nonce)
+                           action=action, vault_host=VAULT_URL.split("://", 1)[-1],
+                           nonce=nonce, theme=theme)
     resp = app.response_class(body, status=status, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -6581,25 +6590,29 @@ def vault_open():
     ?target= 是 Hub 笔记框的名字：本页这时在旁边一张看不见的小框里，表单提交进那张还空着的笔记框，
     登录这一跳就不在整页历史里留条目（只认 hub-vault-<序号>，别的一概当没有）。
 
+    ?theme= 是 Hub 此刻的深浅色（dark / light），转给 WebObsidian（见 _vault_open_page）。
+
     GET 也不怕别的站拿它作文章：浏览器标明是别的站发起的（Sec-Fetch-Site: cross-site）直接拒绝；
     别的站就算把人引到这里，票据也只会被 POST 到配置好的 WebObsidian，登录的还是这个人自己，
     跨源的页面既读不到这一页，也嵌不了它。"""
     if not vault_embed_enabled():
         return jsonify({"ok": False, "error": "接口不存在"}), 404
     to = clean_vault_return(request.args.get("to"))
+    theme = request.args.get("theme") or ""
     if request.headers.get("Sec-Fetch-Site", "").strip().lower() == "cross-site":
-        return _vault_open_page("refused", 403, "只能从本站打开笔记。")
+        return _vault_open_page("refused", 403, "只能从本站打开笔记。", theme=theme)
     if ADMIN_PASSWORD and not admin_ok():
-        return _vault_open_page("locked", 401, "请先在 Bookmark Hub 里解锁，笔记会跟着登录。")
+        return _vault_open_page("locked", 401, "请先在 Bookmark Hub 里解锁，笔记会跟着登录。", theme=theme)
     blocker = vault_sso_blocker()
     issuer = request_public_origin()
     if not blocker and not issuer:
         blocker = "issuer_unknown"
     if blocker:
-        return _vault_open_page("blocked", 403, _VAULT_SSO_HINTS.get(blocker, blocker))
+        return _vault_open_page("blocked", 403, _VAULT_SSO_HINTS.get(blocker, blocker), theme=theme)
     target = request.args.get("target") or ""
     target = target if _VAULT_FRAME_NAME.fullmatch(target) else ""
-    return _vault_open_page("ok", 200, ticket=issue_vault_ticket(issuer, VAULT_URL), to=to, target=target)
+    return _vault_open_page("ok", 200, ticket=issue_vault_ticket(issuer, VAULT_URL), to=to, target=target,
+                            theme=theme)
 
 
 # =========================
