@@ -181,11 +181,13 @@ class OpenPageTest(VaultCase):
         self.assertEqual(claims["issuer"], HUB)
         self.assertEqual(claims["audience"], VAULT)
         self.assertTrue(time.time() < claims["exp"] <= time.time() + 61)
-        # 只有带 nonce 的那一行脚本能跑，它只做「提交表单」这一件事。
+        # 只有带 nonce 的那段脚本能跑，它只做「提交表单」这一件事（被「返回」带回来时改为接着往回退）。
         csp = resp.headers["Content-Security-Policy"]
         nonce = re.search(r"script-src 'nonce-([^']+)'", csp).group(1)
         self.assertEqual(form.script_nonces, [nonce])
-        self.assertIn("document.forms[0].submit();", resp.get_data(as_text=True))
+        page = resp.get_data(as_text=True)
+        self.assertIn("document.forms[0].submit();", page)
+        self.assertIn("nav.type === 'back_forward') addEventListener('load'", page)
 
     def test_every_open_is_a_fresh_ticket(self):
         self.unlock()
