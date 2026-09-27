@@ -1987,8 +1987,9 @@
     // 框里是自己的 HaloWebUI（地址来自部署的 HUB_CHAT_URL，随 /api/configs 只发给已解锁的人）。
     // 第一次点开才加载，之后切到别的标签页也不卸载——聊到一半去翻个收藏再回来，对话还在。
     // back：下一次开框登录后落到哪个对话（见 reenterChat）；sso：当前这张框是不是本站替它登录的；
-    // reenteredAt：上一次应框里的请求重新登录的时间。
-    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0 };
+    // reenteredAt：上一次应框里的请求重新登录的时间；place：框里正开着的对话（框自己报来的 /c/<id>，见 placeChat）。
+    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0, place: '' };
+    function chatPlace(path) { return typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : ''; }
     const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
     function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
     function chatFrame() { return $('chatStage') ? $('chatStage').querySelector('iframe') : null; }
@@ -2002,6 +2003,7 @@
       const frame = chatFrame();
       if (frame) frame.remove();
       CHAT.src = '';
+      CHAT.place = '';
       // 框没了，它报过的状态也就作废（锁定 / 会话过期 / 重新载入）。
       if (CHAT_ACTIVITY.state !== 'idle' || CHAT_ACTIVITY.unseen) {
         CHAT_ACTIVITY.state = 'idle';
@@ -2043,6 +2045,7 @@
         if (!chatAvailable()) return;   // 等票据的工夫被锁定了
         showChatNote(note[0], note[1]);
         closeChat();   // 换一个新的框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
+        placeChat(back);   // 落回哪个对话，「新标签页打开」先指向那里；框加载后会自己再报一次
         const frame = document.createElement('iframe');
         frame.className = 'chat-frame';
         frame.title = 'HaloWebUI';
@@ -2057,7 +2060,15 @@
         CHAT.sso = sso;
       } finally { CHAT.busy = false; }
     }
-    $('chatReload').addEventListener('click', () => openChat(true));
+    // 重新载入 = 换一张新框，但落回框里正开着的那个对话（框卡住了才点它，回到空白新对话等于丢了位置）。
+    $('chatReload').addEventListener('click', () => { CHAT.back = CHAT.place; openChat(true); });
+    // 框里的 HaloWebUI 每换一个对话报一次：「新标签页打开」就打开这个对话，而不是它的首页。
+    function placeChat(path) {
+      CHAT.place = chatPlace(path);
+      if (!STATE.chat || !STATE.chat.url) return;
+      $('chatPopout').href = STATE.chat.url + (CHAT.place || '/');
+      $('chatPopout').title = CHAT.place ? '在新标签页里打开这个对话' : '在新标签页里打开 HaloWebUI';
+    }
     // 本站替它登录的会话 12 小时到期，而本页（浏览器起始页、手机上一直开着的标签页）常常一开好几天。
     // 到期后框里的 HaloWebUI 发来 reauth：换一张新票据重新开框，落回它刚才停着的那个对话——
     // 不再让人对着「会话已过期，请重新登录」去找「重新载入」。
@@ -2066,7 +2077,7 @@
       const now = Date.now();
       if (!CHAT.src || !CHAT.sso || now - CHAT.reenteredAt < 60000) return;
       CHAT.reenteredAt = now;
-      CHAT.back = typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : '';
+      CHAT.back = chatPlace(path);
       openChat(true);
     }
 
@@ -2116,6 +2127,7 @@
       // 只是换个标签页、打开自己库里的一篇，最坏也就是开错一篇；路径照样过 cleanNotePath。
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
       if (data.type === 'reauth') { reenterChat(data.path); return; }
+      if (data.type === 'place') { placeChat(data.path); return; }
       if (data.type !== 'activity' || !CHAT_ACTIVITY_STATES.includes(data.state)) return;
       onChatActivity(data.state);
     });
