@@ -1392,35 +1392,47 @@
     // 退回按条目跳（Navigation API 的 traverseTo），不数步数：框里的页面万一记过条目，也一步越过，
     // 不会出现按了「返回」只是藏着的框在后台翻页、眼前什么都没变。没有这套接口的浏览器维持老样子：只改当前这一条。
     const HISTORY_NAV = typeof navigation === 'object' && navigation && typeof navigation.traverseTo === 'function' ? navigation : null;
-    let HOMING = false;   // 正在退回收藏库那一条：落地之前别处改地址，改的会是要离开的那一条
+    let HOMING = false;   // 正在退回之前的某一条：落地之前别处改地址，改的会是要离开的那一条
     function isHomeHash(hash) {
       const h = String(hash || '').replace(/^#/, '');
       return !h || h === 'bookmarks' || h.startsWith('links/');
     }
-    // 当前这一条正下面紧挨着的、本页自己记的收藏库那一条（刷新过的页面、从别处直接打开 #chat 时没有）。
+    // 往下找本页自己记的、最近的收藏库那一条（刷新过的页面、从别处直接打开 #chat 时没有）。
     function homeEntryBehind() {
       if (!HISTORY_NAV || !HISTORY_NAV.currentEntry) return null;
-      const i = HISTORY_NAV.currentEntry.index;
-      const prev = i > 0 ? HISTORY_NAV.entries()[i - 1] : null;
-      if (!prev || !prev.sameDocument || !prev.url) return null;
-      try { return isHomeHash(new URL(prev.url).hash) ? prev : null; } catch (_) { return null; }
+      const entries = HISTORY_NAV.entries();
+      for (let i = HISTORY_NAV.currentEntry.index - 1; i >= 0; i--) {
+        const entry = entries[i];
+        if (!entry || !entry.sameDocument || !entry.url) return null;
+        try { if (isHomeHash(new URL(entry.url).hash)) return entry; } catch (_) { return null; }
+      }
+      return null;
     }
     function currentViewHash() {
       const view = currentViewName();
       return view === 'bookmarks' ? libHash() : view === 'configs' || view === 'history' ? '#checkin/' + view : '#' + view;
     }
     function replaceHash(hash) { if (!HOMING) history.replaceState(null, '', hash); }
-    function setViewHash(hash, toHome) {
+    // drill：从一页里的内容点进另一页（聊天回复里的笔记路径）——像跟着链接走，「返回」回到点它的那一页。
+    // 刚从那一页点进来（下面紧挨着的就是它）：退回去，而不是叠出两条一样的（「返回」会空按一次）。
+    function entryBehind(hash) {
+      if (!HISTORY_NAV || !HISTORY_NAV.currentEntry) return null;
+      const entry = HISTORY_NAV.entries()[HISTORY_NAV.currentEntry.index - 1];
+      if (!entry || !entry.sameDocument || !entry.url) return null;
+      try { return new URL(entry.url).hash === hash ? entry : null; } catch (_) { return null; }
+    }
+    function setViewHash(hash, toHome, drill) {
       if (HOMING) return;   // 落地时按那时的页面补写
       const fromHome = isHomeHash(location.hash);
-      const home = toHome && !fromHome ? homeEntryBehind() : null;
-      if (home) {
+      const back = fromHome ? null : toHome ? homeEntryBehind() : entryBehind(hash);
+      if (back) {
         HOMING = true;
         const land = () => { HOMING = false; history.replaceState(null, '', currentViewHash()); };
-        HISTORY_NAV.traverseTo(home.key).committed.then(land, land);
-      } else if (!toHome && fromHome && HISTORY_NAV && hash !== location.hash) history.pushState(null, '', hash);
+        HISTORY_NAV.traverseTo(back.key).committed.then(land, land);
+      } else if (!toHome && (fromHome || drill) && HISTORY_NAV && hash !== location.hash) history.pushState(null, '', hash);
       else history.replaceState(null, '', hash);
     }
+    // updateHash：false = 不动地址（按地址路由时）；'drill' 见 setViewHash；其余照上面的规则记历史。
     function switchView(name, updateHash = true) {
       // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
       let section = '';
@@ -1466,7 +1478,7 @@
       if (updateHash) {
         const hash = mainName === 'bookmarks' ? libHash()
           : section && section !== 'overview' ? '#checkin/' + section : '#' + mainName;
-        setViewHash(hash, mainName === 'bookmarks');
+        setViewHash(hash, mainName === 'bookmarks', updateHash === 'drill');
       }
       // 仅在数据就绪后才触发页面自带的加载动作。initRoute() 在脚本顶部就会调用
       // switchView，那时 STATE 还是默认值（canEdit() 恒为 true），而且下方的
@@ -2284,7 +2296,7 @@
       const clean = cleanNotePath(path);
       if (!clean || !vaultEmbedAvailable()) return false;
       VAULT_EMBED.to = '/note/' + clean.split('/').map(encodeURIComponent).join('/');
-      if (currentViewName() === 'vault') openVault(true); else switchView('vault');
+      if (currentViewName() === 'vault') openVault(true); else switchView('vault', 'drill');
       return true;
     }
 

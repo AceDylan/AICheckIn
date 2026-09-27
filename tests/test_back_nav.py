@@ -93,6 +93,11 @@ STEPS_MAIN = r"""
   tab('bookmarks'); await settle(); snap('tap library while on library');
   tab('chat'); snap('library -> chat again');
   await back(); snap('back from chat');
+  tab('chat'); openVaultNote('项目/HaloWebUI.md'); snap('note link in a chat reply');
+  await back(); snap('back from the note');
+  openVaultNote('项目/HaloWebUI.md'); tab('bookmarks'); snap('library from the note');
+  await settle(); snap('landed from the note');
+  tab('chat'); openVaultNote('项目/HaloWebUI.md'); tab('chat'); await settle(); snap('chat tab from the note');
 """
 
 STEPS_NO_NAV = r"""
@@ -181,6 +186,27 @@ class BackNavTest(unittest.TestCase):
         self.assertNotIn("push", " ".join(step["log"]))
         self.assertNotIn("traverse", " ".join(step["log"]))
         self.assertEqual(self.steps["library -> chat again"]["entries"], ["#bookmarks", "#chat"])
+
+    def test_a_note_opened_from_a_chat_reply_goes_back_to_the_chat(self):
+        step = self.steps["note link in a chat reply"]
+        self.assertEqual(step["view"], "vault")
+        self.assertEqual(step["entries"], ["#bookmarks", "#chat", "#vault"])
+        back = self.steps["back from the note"]
+        self.assertEqual(back["view"], "chat")
+        self.assertEqual(back["index"], 1)
+
+    def test_the_library_is_found_below_a_drill_down(self):
+        tap = self.steps["library from the note"]
+        self.assertEqual(tap["entries"], ["#bookmarks", "#chat", "#vault"])
+        self.assertEqual(tap["log"][-1], "traverse k0")
+        landed = self.steps["landed from the note"]
+        self.assertEqual((landed["index"], landed["view"], landed["hash"]), (0, "bookmarks", "#bookmarks"))
+
+    def test_going_back_to_the_page_the_note_was_opened_from_does_not_stack_it_twice(self):
+        step = self.steps["chat tab from the note"]
+        self.assertEqual(step["view"], "chat")
+        self.assertEqual((step["index"], step["hash"]), (1, "#chat"))
+        self.assertEqual(step["entries"], ["#bookmarks", "#chat", "#vault"])
 
     def test_without_the_navigation_api_nothing_changes(self):
         out, steps = run(nav=False, steps=STEPS_NO_NAV)
