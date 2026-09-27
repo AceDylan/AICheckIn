@@ -6668,7 +6668,15 @@
       if (r.enabled && !STATE.scheduler_running) rStatus += '（注意：后台调度未运行，GYQD_SCHEDULER=0）';
       $('refreshStatus').textContent = rStatus;
 
-      $('schedDot').style.display = s.enabled ? 'inline-block' : 'none';
+      // 设置标签上的点只在要人管的时候亮：开着定时签到却不会跑，或今天有账号没签上、补签次数也用完了。
+      // 以前「开着定时签到」就一直亮着——天天开着的人永远有一个消不掉的点，真出事时反而看不出来。
+      // 补签次数是今天那一轮才清零的：今天的定时还没跑时（last_run_date 不是服务器的今天）不算。
+      const schedLeft = Math.max(0, (s.retry_limit || 0) - (s.retry_count || 0));
+      const ranToday = !!(s.clock && s.clock.now && s.last_run_date === s.clock.now.slice(0, 10));
+      const schedAlert = !s.enabled ? '' : !STATE.scheduler_running ? '定时签到开着，但后台调度没有运行'
+        : (ranToday && s.pending_today > 0 && !schedLeft) ? `今天有 ${s.pending_today} 个账号没签上，自动补签次数已用完` : '';
+      $('schedDot').style.display = schedAlert ? 'inline-block' : 'none';
+      $('schedDot').title = schedAlert;
       let status = s.enabled ? `已启用：每天 ${s.time} 自动签到` : '未启用';
       if (s.last_run_time) status += ` · 上次定时执行：${s.last_run_time}`;
       // 补签状态：让「今天到底签上没有」这件事在设置页就能看清，不必翻运行记录。
