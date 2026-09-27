@@ -25,13 +25,13 @@ VIEWS.push('vault');
 let fine = __FINE__;
 globalThis.matchMedia = (q) => ({ matches: q.includes('pointer: fine') ? fine : false, addEventListener() {}, addListener() {} });
 const frames = [];
-let focused = 0;
-el('vaultStage').appendChild = (f) => { f.focus = () => { focused += 1; }; frames.push(f); };
+let focused = 0, windowFocused = 0;
+el('vaultStage').appendChild = (f) => { f.focus = () => { focused += 1; }; f.contentWindow = { focus: () => { windowFocused += 1; } }; frames.push(f); };
 el('vaultStage').querySelector = () => frames.length ? frames[frames.length - 1] : null;
 __SCRIPT__
 setTimeout(() => {
   const out = { steps: [] };
-  const snap = (label) => out.steps.push({ label, focused, frames: frames.length });
+  const snap = (label) => out.steps.push({ label, focused, windowFocused, frames: frames.length });
   const typing = { closest: () => null };           // 本站自己的某个输入框
   const tabButton = { closest: (sel) => sel.includes('.tabs') ? {} : null };
   Object.defineProperty(document, 'activeElement', { configurable: true, get: () => ACTIVE });
@@ -85,6 +85,8 @@ class VaultFocusTest(unittest.TestCase):
         self.assertEqual(self.desk_steps["switched from the tab bar"]["frames"], 1)
         self.assertEqual(self.desk_steps["switched from the tab bar"]["focused"], 1)
         self.assertEqual(self.desk_steps["back again"]["focused"], 2)   # 框没换，回来照样交过去
+        # 框里换过页后光 focus 框元素不够，里面的新页面也要拿到焦点。
+        self.assertEqual(self.desk_steps["back again"]["windowFocused"], 2)
 
     def test_focus_is_not_taken_from_an_input_on_this_page(self):
         self.assertEqual(self.desk_steps["switched while typing elsewhere"]["focused"], 1)

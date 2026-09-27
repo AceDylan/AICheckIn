@@ -2183,7 +2183,11 @@
       if (!(typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches)) return;
       const here = document.activeElement;
       if (here && here !== document.body && here !== frame && !(here.closest && here.closest('.tabs, .chat-bar'))) return;
-      try { frame.focus({ preventScroll: true }); } catch (_) { /* 焦点给不过去就维持原样：点一下框照样能用 */ }
+      try {
+        frame.focus({ preventScroll: true });
+        // 框里换过页（/vault/open → WebObsidian）后，框元素仍是焦点、里面的新页面却没拿到，还得点一下它的窗口。
+        if (frame.contentWindow) frame.contentWindow.focus();
+      } catch (_) { /* 焦点给不过去就维持原样：点一下框照样能用 */ }
     }
     // Vault 里的相对路径（「项目/HaloWebUI.md」）。别处递来的一律先过这一道：不许绝对路径、反斜杠、
     // 空段、.. 与点开头的段（.git / .obsidian）、控制字符。对面打开前还会再验一遍。
