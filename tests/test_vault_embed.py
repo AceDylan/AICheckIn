@@ -348,9 +348,10 @@ class PageShapeTest(unittest.TestCase):
 
     def test_the_frame_only_ever_loads_this_sites_own_page(self):
         # 票据不经过页面脚本：框里放的是本站的 /vault/open，脚本里没有任何票据的影子。
-        self.assertIn("frame.src = '/vault/open?to=%2F';", self.js)
+        # 落点（默认笔记首页，openVaultNote 给的是 /note/<路径>）只作为 ?to= 的值，整段编码。
+        self.assertIn("frame.src = '/vault/open?to=' + encodeURIComponent(to || '/');", self.js)
         self.assertNotIn("ticket", self.js.lower().replace("一次性票据", ""))
-        self.assertEqual(re.findall(r"frame\.src = ([^;]+);", self.js), ["'/vault/open?to=%2F'"])
+        self.assertEqual(re.findall(r"frame\.src = ([^;]+);", self.js), ["'/vault/open?to=' + encodeURIComponent(to || '/')"])
         self.assertIn('id="vaultPopout" href="/vault/open"', self.html)
 
     def test_the_frame_is_sandboxed_without_top_navigation(self):

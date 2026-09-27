@@ -1927,7 +1927,7 @@
         // 页面自带的加载动作被跳过了——这里按当前所在页面补上。
         refreshActiveView(currentViewName());
         // 分享 / 书签小工具带来的参数要等分组与解锁状态就绪后才能处理。
-        if (!SHARE_HANDLED) { SHARE_HANDLED = true; consumeShareParams(); }
+        if (!SHARE_HANDLED) { SHARE_HANDLED = true; if (!consumeNoteParam()) consumeShareParams(); }
         return true;
       } catch (e) {
         // fetch 抛出来的是「Failed to fetch」这类英文原文：换成人话，页面上也换成「连不上」而不是空库引导。
@@ -2094,8 +2094,11 @@
       const frame = chatFrame();
       if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== chatOrigin()) return;
       const data = e.data;
-      if (!data || typeof data !== 'object' || data.source !== 'halowebui' || data.type !== 'activity') return;
-      if (!CHAT_ACTIVITY_STATES.includes(data.state)) return;
+      if (!data || typeof data !== 'object' || data.source !== 'halowebui') return;
+      // 回复里点到 Vault 里的一篇笔记（HaloWebUI 认出笔记库的绝对路径）：切到「笔记」标签页打开它。
+      // 只是换个标签页、打开自己库里的一篇，最坏也就是开错一篇；路径照样过 cleanNotePath。
+      if (data.type === 'open-note') { openVaultNote(data.path); return; }
+      if (data.type !== 'activity' || !CHAT_ACTIVITY_STATES.includes(data.state)) return;
       onChatActivity(data.state);
     });
     window.addEventListener('focus', syncChatActivity);
@@ -2111,7 +2114,8 @@
     // 框先打开本站自己的 /vault/open：后端在那一页里把一次性票据用表单 POST 给 WebObsidian，
     // 对面换成它自己的会话再跳到笔记首页。票据不经过这里的脚本，也不进任何地址。
     // 第一次点开才加载，之后切到别的标签页也不卸载——写到一半去翻个收藏再回来，光标还在。
-    const VAULT_EMBED = { url: '' };   // 框里登录的是哪个 WebObsidian；锁定时凭它请对面结束会话
+    // url：框里登录的是哪个 WebObsidian，锁定时凭它请对面结束会话；to：下一次开框落在哪一页（见 openVaultNote）。
+    const VAULT_EMBED = { url: '', to: '' };
     function vaultEmbedAvailable() { return !!(STATE.vault_embed && STATE.vault_embed.url) && canEdit(); }
     function vaultFrame() { return $('vaultStage') ? $('vaultStage').querySelector('iframe') : null; }
     // 请 WebObsidian 结束「由本站登录的」会话（它的密码会话不受影响）。no-cors：回包看不见也不用看；
@@ -2131,7 +2135,9 @@
       if (signOut) signOutVault(url);
     }
     function openVault(force) {
-      if (!vaultEmbedAvailable() || (VAULT_EMBED.url && !force)) return;
+      const to = VAULT_EMBED.to;
+      VAULT_EMBED.to = '';
+      if (!vaultEmbedAvailable() || (VAULT_EMBED.url && !force && !to)) return;
       const base = STATE.vault_embed.url;
       $('vaultHost').textContent = base.replace(/^https?:\/\//, '');
       $('vaultLoading').hidden = false;
@@ -2144,11 +2150,29 @@
       frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
       frame.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
       frame.addEventListener('load', () => { $('vaultLoading').hidden = true; });
-      frame.src = '/vault/open?to=%2F';   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
+      frame.src = '/vault/open?to=' + encodeURIComponent(to || '/');   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
       $('vaultStage').appendChild(frame);
       VAULT_EMBED.url = base;
     }
     $('vaultReload').addEventListener('click', () => openVault(true));
+    // Vault 里的相对路径（「项目/HaloWebUI.md」）。别处递来的一律先过这一道：不许绝对路径、反斜杠、
+    // 空段、.. 与点开头的段（.git / .obsidian）、控制字符。对面打开前还会再验一遍。
+    function cleanNotePath(value) {
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (!text || text.length > 512 || /^\/|\\|[\x00-\x1f\x7f]/.test(text)) return '';
+      const parts = text.split('/');
+      return parts.some(p => !p || p.startsWith('.')) ? '' : text;
+    }
+    // 在「笔记」标签页里打开某一篇：首页搜到的笔记、刚存进收件箱的那篇、AI 聊天回复里点到的笔记路径。
+    // 换一个新框经 /vault/open 登录并落到 /note/<路径>（WebObsidian 的深链）——对面的会话过期了也照样能开，
+    // 已经打开的其他笔记标签由对面自己恢复。没接笔记框的部署回 false，调用方自己决定退路。
+    function openVaultNote(path) {
+      const clean = cleanNotePath(path);
+      if (!clean || !vaultEmbedAvailable()) return false;
+      VAULT_EMBED.to = '/note/' + clean.split('/').map(encodeURIComponent).join('/');
+      if (currentViewName() === 'vault') openVault(true); else switchView('vault');
+      return true;
+    }
 
 
     // ===== 发送到 AI 聊天 / 存入笔记 =====
@@ -2213,7 +2237,11 @@
       } catch (_) { data = { ok: false, error: '连不上服务器' }; }
       ASK.busy = false;
       $('askVault').disabled = false;
-      if (data && data.ok) { closeAsk(); toast(`已存入「${data.path}」`); }
+      if (data && data.ok) {
+        closeAsk();
+        if (vaultEmbedAvailable()) toastAction(`已存入「${data.path}」`, '查看', () => openVaultNote(data.path), 6000);
+        else toast(`已存入「${data.path}」`);
+      }
       else $('askHint').textContent = (data && data.error) || '写入失败';
     }
 
@@ -7232,7 +7260,8 @@
       if (row.type === 'item') { clearHomeSearch(); omniOpen(row.item, false); return; }
       if (row.type === 'ai') { const q = row.query; clearHomeSearch(); openAsk(q, 'search', '用 AI 回答'); return; }
       if (row.type === 'notes') { runNoteSearch(row.query); return; }   // 不清空搜索框：结果要挂在这几个字下面
-      if (row.type === 'note') { clearHomeSearch(); openUrl(row.hit.url); return; }
+      // 搜到的笔记在「笔记」标签页里打开：不离开本站，也不用再过一遍笔记站自己的密码框。
+      if (row.type === 'note') { clearHomeSearch(); if (!openVaultNote(row.hit.path)) openUrl(row.hit.url); return; }
       if (row.type === 'add') {
         const target = (libGroups()[0] || {}).id;
         if (!target) { toast('请先新建一个分组', 'err'); return; }
@@ -7718,6 +7747,15 @@
       // 有些分享把标题也塞进 text，取第一行当名称总比留空好。
       if (!name && text && text !== fromText) name = text.split(/\r?\n/)[0].trim().slice(0, 60);
       return { url, name };
+    }
+    // ?note=<Vault 相对路径>：别处（独立打开的 AI 聊天）请本站在「笔记」标签页里打开这一篇。有这个参数就不当分享处理。
+    function consumeNoteParam() {
+      const note = new URLSearchParams(location.search).get('note');
+      if (note === null) return false;
+      history.replaceState(null, '', location.pathname + location.hash);
+      if (!canEdit()) { toast('请先在「系统设置」中解锁，笔记会跟着登录', 'err'); switchView('settings'); }
+      else if (!openVaultNote(note)) toast('这台部署没有接笔记，或者笔记路径不对', 'err');
+      return true;
     }
     function consumeShareParams() {
       const share = pendingShare();
