@@ -696,6 +696,11 @@ details > summary::-webkit-details-marker { display: none; }
   opacity: .6; transform: none;
   border-color: var(--tone, var(--accent)); box-shadow: 0 0 0 1px var(--tone, var(--accent));
 }
+/* 刚添加 / 保存的网址闪一下，告诉你它在哪 */
+.link-card.is-flash { animation: link-flash 2.4s ease-out; }
+@keyframes link-flash { 0%, 50% { background-color: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .link-card.is-flash { animation: none; } }
+.modal[tabindex="-1"]:focus { outline: none; }   /* 触屏编辑时焦点落在对话框本身（focusDialogField），不画框 */
 
 /* ---------- 空状态 ---------- */
 .empty { padding: 48px 20px; color: var(--text-3); text-align: center; font-size: 13px; }

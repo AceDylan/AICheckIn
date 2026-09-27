@@ -2696,18 +2696,21 @@
     // 只有把手 [data-card-grip] 能发起拖拽：卡片本体是个 <a>，整卡可拖会和点击打架。
     // 把手上 touch-action:none，所以触摸端也能拖，不会被页面滚动抢走。
     // 搜索过滤时把手禁用——此时看到的只是子集，按可见顺序写回会打乱被过滤掉的那些。
-    const CARD_SORT = { el: null, list: null, start: null, active: false, pointerId: null };
+    const CARD_SORT = { el: null, list: null, start: null, active: false, pointerId: null, x: 0, y: 0, raf: 0 };
 
     function cardsIn(list) { return Array.from(list.querySelectorAll('[data-card-id]')); }
 
     // 网格里的插入点：按 DOM 顺序找第一个「在指针之后」的卡片。
     // 先比行（指针在这张卡上沿之上），同一行再比列（指针在这张卡左半边）。
+    // 只有一列时（手机上的列表）比左右没有意义——把手在右边，永远过不了中线，往上拖会差一位——改比上下半边。
     function cardInsertBefore(list, dragged, x, y) {
-      for (const other of cardsIn(list)) {
+      const cards = cardsIn(list);
+      const oneColumn = new Set(cards.map(c => Math.round(c.getBoundingClientRect().left))).size === 1;
+      for (const other of cards) {
         if (other === dragged) continue;
         const r = other.getBoundingClientRect();
         if (y < r.top) return other;
-        if (y <= r.bottom && x < r.left + r.width / 2) return other;
+        if (y <= r.bottom && (oneColumn ? y < r.top + r.height / 2 : x < r.left + r.width / 2)) return other;
       }
       return null;
     }
@@ -2729,9 +2732,22 @@
       return true;
     }
 
+    function placeCardSort() {
+      const before = cardInsertBefore(CARD_SORT.list, CARD_SORT.el, CARD_SORT.x, CARD_SORT.y);
+      CARD_SORT.list.insertBefore(CARD_SORT.el, before);
+    }
+    // 手指停在视口上下沿就带着页面滚：几十条的分组在手机上一屏放不下，不滚就拖不远。
+    function stepCardScroll() {
+      CARD_SORT.raf = 0;
+      if (!CARD_SORT.active || !dragEdgeScroll(CARD_SORT.y)) return;
+      placeCardSort();
+      CARD_SORT.raf = requestAnimationFrame(stepCardScroll);
+    }
+
     function endCardSort(restore) {
       const el = CARD_SORT.el;
       if (!el) return;
+      if (CARD_SORT.raf) { cancelAnimationFrame(CARD_SORT.raf); CARD_SORT.raf = 0; }
       if (CARD_SORT.pointerId !== null) { try { el.releasePointerCapture(CARD_SORT.pointerId); } catch (_) {} }
       el.classList.remove('is-dragging');
       CARD_SORT.list.classList.remove('is-sorting');
@@ -2766,8 +2782,9 @@
         CARD_SORT.list.classList.add('is-sorting');
       }
       e.preventDefault();
-      const before = cardInsertBefore(CARD_SORT.list, CARD_SORT.el, e.clientX, e.clientY);
-      CARD_SORT.list.insertBefore(CARD_SORT.el, before);
+      CARD_SORT.x = e.clientX; CARD_SORT.y = e.clientY;
+      placeCardSort();
+      if (!CARD_SORT.raf) CARD_SORT.raf = requestAnimationFrame(stepCardScroll);
     }
 
     async function onCardPointerUp(e) {
@@ -2810,6 +2827,21 @@
       list.addEventListener('keydown', onCardKeyDown);
     });
 
+    // 刚添加 / 改过的网址：不在视口里就滚过去，再闪一下——新网址排在分组最后，只有一句「已添加」的话得自己往下翻着找。
+    // fromTop：刚 openLibPage 换了页，页面正平滑滚回顶部，按滚到顶之后的位置判断看不看得见。
+    function revealLinks(ids, fromTop) {
+      const want = new Set((ids || []).filter(Boolean));
+      const cards = Array.from($('linkList').querySelectorAll('[data-link-id]')).filter(el => want.has(el.dataset.linkId));
+      if (!cards.length) return;
+      const r = cards[0].getBoundingClientRect(), shift = fromTop ? window.scrollY : 0;
+      if (r.top + shift < 0 || r.bottom + shift > viewFloor()) cards[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      cards.forEach(el => {
+        el.classList.remove('is-flash');
+        void el.offsetWidth;   // 同一张卡连着闪两次也要重新播放动画
+        el.classList.add('is-flash');
+        el.addEventListener('animationend', () => el.classList.remove('is-flash'), { once: true });
+      });
+    }
     function openLibPage(page) {
       LIB.page = page;
       history.replaceState(null, '', libHash());
@@ -4811,17 +4843,23 @@
       }
       announceArrange(tile, grid);
     }
-    // 拖到视口上下沿附近时带着页面滚（手机上要让开底部标签栏）。
-    function stepArrangeScroll() {
-      ARRANGE.raf = 0;
-      if (!ARRANGE.active) return;
+    // 视口里真正能看到内容的下沿：手机上固定的底部标签栏会盖住最下面一截。
+    function viewFloor() {
       const nav = document.querySelector('.sidebar');
-      const floor = nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
-      const edge = 70, y = ARRANGE.lastY;
+      return nav && getComputedStyle(nav).position === 'fixed' ? nav.getBoundingClientRect().top : window.innerHeight;
+    }
+    // 拖到视口上下沿附近时带着页面滚（手机上要让开底部标签栏）；真滚动了才返回 true。
+    function dragEdgeScroll(y) {
+      const floor = viewFloor(), edge = 70;
       const over = y < edge ? y - edge : y > floor - edge ? y - (floor - edge) : 0;
       const from = window.scrollY;
-      if (over) window.scrollBy(0, Math.max(-18, Math.min(18, Math.round(over / 4) || Math.sign(over))));
-      if (window.scrollY === from) return;
+      // 必须 instant：全站 scroll-behavior: smooth 下 scrollBy 是动画，同步读 scrollY 没变，这里就以为到头了、第一帧就停。
+      if (over) window.scrollBy({ top: Math.max(-18, Math.min(18, Math.round(over / 4) || Math.sign(over))), behavior: 'instant' });
+      return window.scrollY !== from;
+    }
+    function stepArrangeScroll() {
+      ARRANGE.raf = 0;
+      if (!ARRANGE.active || !dragEdgeScroll(ARRANGE.lastY)) return;
       placeArrangeTile(); followArrangePointer();
       ARRANGE.raf = requestAnimationFrame(stepArrangeScroll);
     }
@@ -6334,7 +6372,7 @@
       refreshDupHint();
       setLinkMode(l ? 'single' : (mode || 'single'));
       $('linkModal').classList.add('show');
-      (linkEdit.mode === 'bulk' ? $('lk_bulk') : $('lk_url')).focus();
+      focusDialogField($('linkModal'), linkEdit.mode === 'bulk' ? $('lk_bulk') : $('lk_url'), !!l);
     }
     function editLink(gid, lid) { openLinkModal(gid, lid, 'single'); }
     $('addLinkBtn').addEventListener('click', () => openLinkModal(LIB.page, null, 'single'));
@@ -6408,7 +6446,9 @@
           $('linkModal').classList.remove('show');
           const skipped = rows.length - good.length;
           toast(`已添加 ${good.length} 条${skipped ? `，跳过 ${skipped} 行（无效或已存在）` : ''}`, 'ok');
-          openLibPage(target);
+          const fromTop = target !== LIB.page;
+          if (fromTop) openLibPage(target); else renderLibrary();
+          revealLinks((data.links || []).map(l => l.id), fromTop);
           return;
         }
         const body = {
@@ -6428,8 +6468,19 @@
         }
         if (!data.ok) { showLinkError(data.error || '保存失败'); return; }
         $('linkModal').classList.remove('show');
-        toast(linkEdit.lid ? '已保存' : '已添加', 'ok');
-        if (target !== LIB.page && LIB.page !== '@home') openLibPage(target); else renderLibrary();
+        const done = linkEdit.lid ? '已保存' : '已添加';
+        const lid = linkEdit.lid || ((data.links || [])[0] || {}).id;
+        if (LIB.page === '@home') {
+          renderLibrary();
+          // 首页上看不到不上首页的网址：告诉它进了哪个分组，给个「查看」直接过去。
+          if (body.show_on_home) toast(done, 'ok');
+          else toastAction(`${done}到「${(findGroup(target) || {}).name || '分组'}」`, '查看', () => { openLibPage(target); revealLinks([lid], true); }, 6000);
+        } else {
+          toast(done, 'ok');
+          const fromTop = target !== LIB.page;
+          if (fromTop) openLibPage(target); else renderLibrary();
+          revealLinks([lid], fromTop);
+        }
       } catch (e) {
         showLinkError('网络错误：' + e.message);
       } finally {
@@ -6442,6 +6493,15 @@
     function renderGroupPickers() {
       $('gp_icons').innerHTML = GROUP_ICONS.map(n => `<button type="button" class="tone-${groupEdit.color}${groupEdit.icon === n ? ' active' : ''}" data-icon="${n}" title="${n}" aria-pressed="${groupEdit.icon === n}">${icon(n)}</button>`).join('');
       $('gp_colors').innerHTML = GROUP_COLORS.map(c => `<button type="button" class="tone-${c}${groupEdit.color === c ? ' active' : ''}" data-color="${c}" title="${c}" aria-pressed="${groupEdit.color === c}"></button>`).join('');
+    }
+    // 弹窗打开时把光标放进第一个输入框。但触屏上「编辑」多半是来改分组、置顶、颜色、顺序的，
+    // 一聚焦软键盘就弹起来盖住半个弹窗——这时只把焦点给对话框本身（读屏照样进得去），要改文字自己点。
+    function focusDialogField(mask, field, editing) {
+      if (!editing || finePointer()) { field.focus(); return; }
+      const box = mask.querySelector('[role="dialog"]');
+      if (!box) return;
+      box.setAttribute('tabindex', '-1');
+      box.focus({ preventScroll: true });
     }
     function openGroupModal(gid) {
       if (!guardAdmin()) return;
@@ -6459,7 +6519,7 @@
       $('groupDown').disabled = pos < 0 || pos >= libGroups().length - 1;
       renderGroupPickers();
       $('groupModal').classList.add('show');
-      $('gp_name').focus();
+      focusDialogField($('groupModal'), $('gp_name'), !!g);
     }
     $('editGroupBtn').addEventListener('click', () => openGroupModal(LIB.page));
     $('groupCancel').addEventListener('click', () => $('groupModal').classList.remove('show'));

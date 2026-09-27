@@ -77,13 +77,13 @@ class InsertPointTest(unittest.TestCase):
         end = blob.index("// 把当前 DOM 顺序写回后端")
         cls.logic = blob[start:end]
 
-    def where(self, x, y, dragged="a"):
-        # 3 列 × 2 行，每格 100x50，列间距 10。
+    def where(self, x, y, dragged="a", cols=3):
+        # 默认 3 列 × 2 行，每格 100x50，列间距 10；cols=1 是手机上的单列列表（每行 300 宽）。
         rects = {}
         ids = ["a", "b", "c", "d", "e", "f"]
         for i, cid in enumerate(ids):
-            row, col = divmod(i, 3)
-            rects[cid] = {"left": col * 110, "top": row * 60, "width": 100, "height": 50}
+            row, col = divmod(i, cols)
+            rects[cid] = {"left": col * 110, "top": row * 60, "width": 100 if cols > 1 else 300, "height": 50}
         script = """
 const RECTS = %s;
 const IDS = %s;
@@ -123,6 +123,16 @@ console.log(JSON.stringify(hit ? hit.id : null));
 
     def test_second_row_is_reachable(self):
         self.assertEqual(self.where(10, 85), "d")    # 第二行第一格的左半边
+
+    def test_one_column_upper_half_inserts_before(self):
+        # 单列列表：把手在右侧（x 远过中线），往上拖到 b 的上半边应落在 b 之前，而不是差一位落到 b 之后。
+        self.assertEqual(self.where(280, 65, dragged="e", cols=1), "b")
+
+    def test_one_column_lower_half_inserts_after(self):
+        self.assertEqual(self.where(280, 100, dragged="e", cols=1), "c")
+
+    def test_one_column_first_row_is_reachable(self):
+        self.assertEqual(self.where(280, 10, dragged="d", cols=1), "a")
 
     def test_dragged_card_never_matches_itself(self):
         # 指针停在自己身上时不应返回自己，否则 insertBefore(self, self) 白折腾。
