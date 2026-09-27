@@ -97,6 +97,49 @@ def seed_dashboard(store):
         f.setdefault("method", "GET"); f.setdefault("url", "https://relay-a.example.com/api"); f.setdefault("headers", {}); f.setdefault("body", ""); f.setdefault("json_path", "data.x")
     bf = store["bookmarks"][1]["fields"][0]
     bf.update({"error": "HTTP 401", "method": "GET", "url": "https://relay-b.example.com/api/balance", "headers": {}, "body": "", "json_path": "data.balance"})
+    # 这些用例看的是「给定的取数结果怎么显示」：都记成刚取过，免得页面「看见时自动刷新」真的去取、把预设状态换掉；
+    # 时间字段补上界面保存时一定会有的 ts_unit / tz——缺了的话在编辑弹窗里一保存配置签名就变，取值会被清掉重取。
+    fresh = time.strftime("%Y-%m-%d %H:%M:%S")
+    for bm in store["bookmarks"]:
+        for f in bm.get("fields") or []:
+            f["updated_at"] = fresh
+            if f.get("type") == "time":
+                f.setdefault("ts_unit", "auto"); f.setdefault("tz", "Asia/Shanghai")
+
+
+def auto_fresh(b):
+    """看见的时候是新的：首页上超过 10 分钟没取过数的站点一打开就在后台刷一次（小组件变淡、不弹提示）；刚取过的不碰。"""
+    reset()
+    def mutate(store):
+        seed_dashboard(store)
+        store["bookmarks"][0]["fields"][0]["updated_at"] = "2026-09-26 10:00:00"   # 中转站 A 的余额：一天多以前
+    write_store(mutate)
+    ctx = new_context(b, 1440, 900)
+    ctx.add_cookies([{"name": "bh_theme", "value": "dark", "url": BASE}, {"name": "bh_wallpaper", "value": "off", "url": BASE}])
+    sent, held = [], []
+    ctx.route("**/refresh_balance*", lambda r: held.append(r))   # 先扣住，好看清刷新中的样子
+    page = ctx.new_page()
+    page.on("pageerror", lambda e: ERRORS.append("pageerror: " + str(e)))
+    page.on("request", lambda r: sent.append(r.url.split(BASE)[-1]) if "/refresh_balance" in r.url else None)
+    page.goto(BASE + "/")
+    page.wait_for_selector('#homeList .home-widget.is-busy[data-bm-index="0"]', timeout=5000)
+    page.wait_for_timeout(300)   # 等淡出的过渡走完
+    busy = page.evaluate("""() => { const w = document.querySelector('#homeList .home-widget[data-bm-index="0"]');
+        return [w.getAttribute('aria-busy'), getComputedStyle(w.querySelector('.widget-value')).opacity, document.querySelectorAll('#homeList .home-widget.is-busy').length]; }""")
+    check("首页打开：太旧的那个站点在后台刷新，小组件标忙、数值变淡；刚取过的不动", busy[0] == "true" and float(busy[1]) < 0.9 and busy[2] == 1, busy)
+    shot(page, "0927-auto-fresh-busy")
+    for r in held:
+        r.continue_()
+    ctx.unroute("**/refresh_balance*")
+    page.wait_for_function("() => !document.querySelector('#homeList .home-widget.is-busy')", timeout=8000)
+    page.wait_for_timeout(300)
+    toasts = page.evaluate("() => [...document.querySelectorAll('.toast')].map(t => t.innerText).join(' | ')")
+    check("只刷了那一个，带 max_age，且不弹提示", len(sent) == 1 and sent[0].startswith("/api/bookmarks/0/refresh_balance?expect=") and sent[0].endswith("&max_age=600") and not toasts, (sent, toasts))
+    stamp = page.evaluate("() => STATE.bookmarks[0].fields[0].updated_at")
+    check("取完就地换上新数据（这里的测试环境连不上对方接口，记下的是这次的时间）", stamp != "2026-09-26 10:00:00", stamp)
+    page.reload(); page.wait_for_selector("#homeList .home-widget", timeout=8000); page.wait_for_timeout(1200)
+    check("刚刷过：重新打开不再刷", len(sent) == 1, sent)
+    ctx.close()
 
 
 def dashboard(b):
@@ -406,4 +449,4 @@ def quiet_shortcut(b):
 
 
 if __name__ == "__main__":
-    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps, snooze, dashboard_more))
+    main((icons, boot_states, dashboard, quiet_editor, locked, pinyin, group_tiles, short_screen, todo_fade, shell_update, quiet_shortcut, start_steps, snooze, dashboard_more, auto_fresh))

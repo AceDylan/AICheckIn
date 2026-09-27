@@ -3675,8 +3675,32 @@ def api_bookmark_refresh_balance(idx):
     bookmark = bookmarks[idx]
     if not [f for f in bookmark.get("fields") or [] if f.get("enabled", True)]:
         return jsonify({"ok": False, "error": "该收藏没有启用的接口字段"}), 400
+    # 页面「看见时自动刷新」带 max_age（秒）：别的设备 / 标签页刚取过数，就把现有的值回给它，不再打扰对方接口。
+    max_age = request.args.get("max_age", type=int) or 0
+    if 0 < max_age <= 86400 and _fields_fetched_within(bookmark, max_age):
+        return jsonify({"ok": True, "fresh": True, "results": [], "bookmark": public_bookmark(bookmark),
+                        "balance": bookmark.get("balance"), "balance_updated_at": bookmark.get("balance_updated_at")})
     results = refresh_bookmark_fields(bookmark, store.get("proxy_url", ""))
     return _bookmark_refresh_response(store, bookmark, results)
+
+
+def _fields_fetched_within(bookmark, seconds):
+    """启用的字段是不是都在 seconds 秒内取过数（失败也算：_apply_field 失败时同样写 updated_at）。
+
+    按服务器时钟算，页面所在时区和服务器不一致也不会误判；时间在未来（改过系统时钟）按没取过处理。
+    """
+    fields = [f for f in bookmark.get("fields") or [] if f.get("enabled", True)]
+    if not fields:
+        return False
+    now = datetime.datetime.now()
+    for field in fields:
+        try:
+            at = datetime.datetime.strptime(str(field.get("updated_at") or "")[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return False
+        if not 0 <= (now - at).total_seconds() < seconds:
+            return False
+    return True
 
 
 @app.post("/api/bookmarks/<int:idx>/fields/<field_id>/refresh")

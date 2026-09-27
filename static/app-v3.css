@@ -1303,6 +1303,11 @@ input[type="search"]::-webkit-search-cancel-button:hover { opacity: .9; }
 .widget-value.is-error { color: var(--danger); font-size: 14px; }
 .widget-value.is-stale { color: var(--text-3); font-size: 14px; }
 .widget-value.is-past { color: var(--danger); }
+/* 正在取数（手点「刷新数据」或看见时自动刷新）：数值先淡下去、状态点轻轻闪，取完重画就恢复。 */
+.home-widget.is-busy .widget-value, .home-widget.is-busy .widget-sub { opacity: .45; transition: opacity .2s; }
+.home-widget.is-busy .widget-dot { animation: widget-busy .8s ease-in-out infinite alternate; }
+@keyframes widget-busy { to { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .home-widget.is-busy .widget-dot { animation: none; } }
 .widget-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 11px; font-weight: 500; }
 .home-widget.is-warning .widget-sub { color: var(--warning); }
 .home-widget.is-error .widget-sub { color: var(--danger); }

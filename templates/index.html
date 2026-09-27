@@ -1529,6 +1529,7 @@
       else if (name === 'settings') loadDiagnostics();
       else if (name === 'chat') openChat();
       else if (name === 'vault') { openVault(); focusVaultFrame(); }
+      else if (name === 'bookmarks') scheduleAutoFresh();
     }
     function currentViewName() {
       const view = document.querySelector('.view.active');
@@ -2995,6 +2996,7 @@
       $('bmSearch').placeholder = isMonitor ? '搜索站点名称、域名或字段' : '搜索名称、域名、描述或标签';
       applyLook();   // 自定义壁纸的版本号随配置数据到达，这里跟着刷新一次
       renderCurrentLibraryPage();
+      scheduleAutoFresh();   // 首页 / 看板上太旧的数，看见时顺手刷新
     }
     function renderCurrentLibraryPage() {
       if (LIB.page === '@home') renderHome();
@@ -5650,11 +5652,9 @@
       toast(failed.length ? `刷新完成：${succeeded}/${indexes.length} 个站点成功；没刷成：${failed.slice(0, 4).join('、')}${failed.length > 4 ? ` 等 ${failed.length} 个` : ''}` : `刷新完成：${indexes.length} 个站点全部成功`, failed.length ? 'err' : 'ok');
     });
 
-    // 刷新单个收藏的全部启用字段；后端返回最新 bookmark 对象，就地替换后重绘。
-    async function refreshBmBalance(i, quiet = false) {
-      if (!guardAdmin()) return false;
-      const bms = STATE.bookmarks || [];
-      if (i < 0 || i >= bms.length) return false;
+    // 发一次刷新请求：卡片标成忙，返回的最新站点就地换进 STATE。返回接口数据；下标错位（409）时重新加载并返回 null。
+    // auto：页面自己发起的（见下方「看见的时候是新的」），错位时静悄悄重新加载，不弹提示。
+    async function postBmRefresh(i, auto) {
       const setBusy = (busy) => {
         // 同一个站点可能同时出现在看板页和首页的卡片视图里，两边一起标记。
         document.querySelectorAll(`#bmList [data-bm-index="${i}"], #homeList [data-bm-index="${i}"]`).forEach(card => {
@@ -5667,10 +5667,27 @@
       setBusy(true);
       const timeoutId = setTimeout(() => setBusy(false), 30000);  // 30s 强制恢复
       try {
-        const resp = await fetch(`/api/bookmarks/${i}/refresh_balance` + expectQ(STATE.bookmarks[i]), { method: 'POST', headers: adminHeaders() });
+        const q = expectQ(STATE.bookmarks[i]);
+        const extra = auto ? `${q ? '&' : '?'}max_age=${AUTO_FRESH.minutes * 60}` : '';
+        const resp = await fetch(`/api/bookmarks/${i}/refresh_balance` + q + extra, { method: 'POST', headers: adminHeaders() });
         const data = await resp.json();
-        if (staleReload(resp, data)) return false;
+        if (auto && resp.status === 409 && data && data.stale) { loadConfigs({ quiet: true }); return null; }
+        if (staleReload(resp, data)) return null;
         if (data.bookmark) STATE.bookmarks[i] = data.bookmark;
+        return data;
+      } finally {
+        clearTimeout(timeoutId);
+        setBusy(false);
+      }
+    }
+    // 刷新单个收藏的全部启用字段；后端返回最新 bookmark 对象，就地替换后重绘。
+    async function refreshBmBalance(i, quiet = false) {
+      if (!guardAdmin()) return false;
+      const bms = STATE.bookmarks || [];
+      if (i < 0 || i >= bms.length) return false;
+      try {
+        const data = await postBmRefresh(i, false);
+        if (!data) return false;
         if (LIB.page === 'monitor' || LIB.page === '@home') renderCurrentLibraryPage();
         if (!data.ok) { if (!quiet) toast(data.error || '刷新失败', 'err'); return false; }
         if (!quiet) {
@@ -5682,10 +5699,63 @@
       } catch (e) {
         if (!quiet) toast('网络错误：' + e.message, 'err');
         return false;
-      } finally {
-        clearTimeout(timeoutId);
-        setBusy(false);
       }
+    }
+
+    // ===== 看板数据：看见的时候是新的 =====
+    // 后台几个小时才取一次数，首页小组件上的余额常常是几小时前的——访问日志里最常看的那个站点一天被手点
+    // 「刷新数据」八九次。现在首页 / 站点看板一显示出来（打开、切回来、换到这一页），这页上超过 minutes 分钟
+    // 没取过数的站点就在后台悄悄刷一次，刷完一起重绘，不弹提示。
+    //  - 只在已解锁、页面看得见时做；字段全都失败且被「先不管」的站点不碰；
+    //  - 同一站点在这一页里 minutes 分钟内只试一次（请求没发出去也算）；服务端再按 max_age 兜一道：
+    //    别的设备 / 标签页刚刷过，就直接回现有的值；
+    //  - 手上有活（菜单开着、编辑首页、弹窗）先不重绘，等空下来再画，免得菜单在手指底下消失。
+    const AUTO_FRESH = { minutes: 10, tried: new Map(), timer: 0, busy: false };
+    function stampMs(s) {
+      const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(s || ''));
+      return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime() : NaN;
+    }
+    function autoFreshTargets() {
+      if (LIB.page !== '@home' && LIB.page !== 'monitor') return [];
+      const now = Date.now(), maxAge = AUTO_FRESH.minutes * 60000;
+      const sites = LIB.page === '@home' ? homeSites() : (STATE.bookmarks || []).map((b, i) => ({ b, i }));
+      return sites.filter(({ b }) => {
+        const fields = enabledFields(b);
+        if (!fields.length || fields.every(f => f.error && fieldSnoozed(f))) return false;
+        if (now - (AUTO_FRESH.tried.get(b.key || b.url) || 0) < maxAge) return false;
+        return fields.some(f => !(now - stampMs(f.updated_at) < maxAge));   // 没取过（NaN）也算旧
+      }).map(({ i }) => i);
+    }
+    function scheduleAutoFresh() {
+      if (!STATE_LOADED) return;
+      clearTimeout(AUTO_FRESH.timer);
+      AUTO_FRESH.timer = setTimeout(autoFreshen, 400);   // 先让页面画出来，也把紧挨着的几次触发并成一次
+    }
+    async function autoFreshen() {
+      if (AUTO_FRESH.busy || !STATE_LOADED || !canEdit() || document.hidden || currentViewName() !== 'bookmarks') return false;
+      const queue = autoFreshTargets();
+      if (!queue.length) return false;
+      AUTO_FRESH.busy = true;
+      const now = Date.now();
+      queue.forEach(i => AUTO_FRESH.tried.set(STATE.bookmarks[i].key || STATE.bookmarks[i].url, now));
+      let changed = false;
+      const worker = async () => {
+        for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
+          try { if (await postBmRefresh(i, true)) changed = true; } catch (e) { /* 断网：不出声，下次看见再说 */ }
+        }
+      };
+      try { await Promise.all(Array.from({ length: Math.min(BM_REFRESH_PARALLEL, queue.length) }, worker)); }
+      finally { AUTO_FRESH.busy = false; }
+      if (changed) redrawAfterFresh(0);
+      return changed;
+    }
+    function redrawAfterFresh(tries) {
+      if (currentViewName() !== 'bookmarks' || !['@home', 'monitor'].includes(LIB.page)) return;   // 已经走开：回来时会重画
+      if (ARRANGE.on || document.querySelector('details.action-menu[open], .modal-mask.show')) {
+        if (tries < 30) setTimeout(() => redrawAfterFresh(tries + 1), 1000);
+        return;
+      }
+      renderCurrentLibraryPage();
     }
 
     let bmEditIdx = -1, bmEditKey = null;
@@ -6762,8 +6832,9 @@
       $('refreshInterval').innerHTML = intervals.map(m =>
         `<option value="${m}"${m === r.interval_minutes ? ' selected' : ''}>${intervalLabel(m)}</option>`).join('');
       $('refreshEnabled').checked = !!r.enabled;
-      let rStatus = r.enabled ? `已启用：每 ${intervalLabel(r.interval_minutes)} 刷新一次` : '未启用（仅在手动点「刷新」或定时签到时取数）';
+      let rStatus = r.enabled ? `已启用：每 ${intervalLabel(r.interval_minutes)} 刷新一次` : '未启用（后台只在定时签到时顺带取数）';
       if (r.last_run_time) rStatus += ` · 上次刷新：${r.last_run_time}`;
+      rStatus += ` · 打开首页或看板时，超过 ${AUTO_FRESH.minutes} 分钟没更新的站点也会顺手刷新`;
       if (r.enabled && !STATE.scheduler_running) rStatus += '（注意：后台调度未运行，GYQD_SCHEDULER=0）';
       $('refreshStatus').textContent = rStatus;
 
@@ -8063,7 +8134,8 @@
     async function revisitRefresh() {
       const away = REVISIT.hiddenAt ? Date.now() - REVISIT.hiddenAt : 0;
       REVISIT.hiddenAt = 0;
-      if (away < REVISIT.minAwayMs || revisitBlocked()) return false;
+      // 不重取也看一眼看板数据旧不旧（重取的话，取完重画时会自己看）。
+      if (away < REVISIT.minAwayMs || revisitBlocked()) { scheduleAutoFresh(); return false; }
       REVISIT.busy = true;
       try { return await loadConfigs({ quiet: true }); } finally { REVISIT.busy = false; }
     }
