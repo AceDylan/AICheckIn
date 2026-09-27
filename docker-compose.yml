@@ -6,9 +6,10 @@ services:
       dockerfile: Dockerfile
     image: aicheckin:latest
     container_name: aicheckin
-    # 公网部署建议改为 "127.0.0.1:5525:5525" 或内网 IP，仅本机/内网可访问。
+    # 只听本机：公网经 nginx 的 TLS 端口反代进来（hk-vps 是 5526）。
+    # 要在局域网里直接访问，改成 "5525:5525" 或 "<内网 IP>:5525:5525"。
     ports:
-      - "5525:5525"
+      - "127.0.0.1:5525:5525"
     environment:
       # 定时签到按服务器本地时间触发，设置时区以匹配北京时间。
       TZ: "Asia/Shanghai"
