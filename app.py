@@ -6544,7 +6544,11 @@ _VAULT_SSO_HINTS = {
 }
 
 
-def _vault_open_page(state, status, message="", ticket="", to="/"):
+# 表单提交进哪张框（Hub 的笔记框各有一个 hub-vault-<序号> 的名字，见 index.html 的 openVault）。
+_VAULT_FRAME_NAME = re.compile(r"hub-vault-[0-9]{1,9}")
+
+
+def _vault_open_page(state, status, message="", ticket="", to="/", target=""):
     """/vault/open 的响应：自己一套收得很紧的响应头。
 
     - frame-ancestors 'self' + SAMEORIGIN：只能待在本站自己的框里（全站其余响应仍是 'none' / DENY）；
@@ -6553,7 +6557,7 @@ def _vault_open_page(state, status, message="", ticket="", to="/"):
     - Referrer-Policy: strict-origin（全站是 no-referrer）：no-referrer 会让浏览器在跨源表单 POST 上
       把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。"""
     nonce = secrets.token_urlsafe(16)
-    body = render_template("vault_open.html", state=state, message=message, ticket=ticket, to=to,
+    body = render_template("vault_open.html", state=state, message=message, ticket=ticket, to=to, target=target,
                            action=VAULT_URL + "/auth/hub/sso", vault_host=VAULT_URL.split("://", 1)[-1],
                            nonce=nonce)
     resp = app.response_class(body, status=status, mimetype="text/html")
@@ -6574,6 +6578,9 @@ def vault_open():
     把票据 POST 给 <HUB_VAULT_URL>/auth/hub/sso——票据只在这一页的响应体里，不进任何地址，
     页面脚本也不经手。?to= 是登录后落在笔记的哪一页（只许对面站内的路径）。
 
+    ?target= 是 Hub 笔记框的名字：本页这时在旁边一张看不见的小框里，表单提交进那张还空着的笔记框，
+    登录这一跳就不在整页历史里留条目（只认 hub-vault-<序号>，别的一概当没有）。
+
     GET 也不怕别的站拿它作文章：浏览器标明是别的站发起的（Sec-Fetch-Site: cross-site）直接拒绝；
     别的站就算把人引到这里，票据也只会被 POST 到配置好的 WebObsidian，登录的还是这个人自己，
     跨源的页面既读不到这一页，也嵌不了它。"""
@@ -6590,7 +6597,9 @@ def vault_open():
         blocker = "issuer_unknown"
     if blocker:
         return _vault_open_page("blocked", 403, _VAULT_SSO_HINTS.get(blocker, blocker))
-    return _vault_open_page("ok", 200, ticket=issue_vault_ticket(issuer, VAULT_URL), to=to)
+    target = request.args.get("target") or ""
+    target = target if _VAULT_FRAME_NAME.fullmatch(target) else ""
+    return _vault_open_page("ok", 200, ticket=issue_vault_ticket(issuer, VAULT_URL), to=to, target=target)
 
 
 # =========================

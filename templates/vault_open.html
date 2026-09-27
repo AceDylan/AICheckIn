@@ -23,21 +23,26 @@
 <body>
   <main>
   {% if state == "ok" %}
-    <form method="post" action="{{ action }}">
+    <form method="post" action="{{ action }}"{% if target %} target="{{ target }}"{% endif %}>
       <input type="hidden" name="ticket" value="{{ ticket }}">
       <input type="hidden" name="to" value="{{ to }}">
       <p>正在打开笔记…</p>
       <p class="muted">{{ vault_host }}</p>
       <noscript><button type="submit">继续</button></noscript>
     </form>
-    <!-- 表单提交会在整页的历史里留下本页这一条：在笔记里按「返回」（手机的返回手势）会回到这里。
-         这时不再登录一遍、把人送回笔记，而是接着往回退——一次「返回」就离开，和收藏库页一样。 -->
+    <!-- 带 target 时本页在 Hub 旁边一张看不见的小框里，表单提交进那张还空着的笔记框（它的第一次导航不留历史）。
+         提交前确认那张框还在：名字对不上的 target 会让浏览器新开一个窗口。
+         不带 target（「新标签页打开」、旧页面）时本页自己就是框里的第一页，表单提交会在整页历史里留下本页这一条：
+         在笔记里按「返回」（手机的返回手势）会回到这里。这时不再登录一遍、把人送回笔记，而是接着往回退。 -->
     <script nonce="{{ nonce }}">
       var nav = window.performance && performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
+      var target = document.forms[0].target;
       // 由外层的 Hub 来退（同源）：框带着 sandbox、不许动顶层，框里自己调 history.back() 会被浏览器忽略。
       // 要等这一次「返回」本身走完（load 之后）再退。
       function back() { try { parent.history.back(); } catch (e) { history.back(); } }
-      if (nav && nav.type === 'back_forward') addEventListener('load', function () { setTimeout(back, 0); });
+      function hasTarget() { try { return parent !== window && parent.document.getElementsByName(target).length > 0; } catch (e) { return false; } }
+      if (target) { if (hasTarget()) document.forms[0].submit(); }
+      else if (nav && nav.type === 'back_forward') addEventListener('load', function () { setTimeout(back, 0); });
       else document.forms[0].submit();
     </script>
   {% else %}

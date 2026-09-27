@@ -51,6 +51,7 @@ let activeView = 'bookmarks';
 
 globalThis.document = {
   documentElement: makeEl('html'),
+  body: makeEl('body'),
   cookie: '',
   getElementById: (id) => el(id),
   createElement: () => makeEl(''),

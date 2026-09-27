@@ -31,16 +31,22 @@ for (const n of ['chat', 'vault']) {
   v.id = 'view-' + n;
   v.classList.toggle = function (cls, on) { if (cls === 'active' && on) activeView = n; origToggle.call(this, cls, on); };
 }
-const frames = [];
+const frames = [], hops = [];
 el('vaultStage').appendChild = (f) => { frames.push(f); };
 el('vaultStage').querySelector = () => frames.length ? frames[frames.length - 1] : null;
+document.body.appendChild = (h) => { hops.push(h); };   // 替笔记框登录的那张看不见的小框
 __SCRIPT__
 setTimeout(() => {
   const out = { steps: [] };
   const chat = { contentWindow: { name: 'halo' }, remove() {} };
   el('chatStage').querySelector = () => chat;
-  const snap = (label) => out.steps.push({ label, view: currentViewName(), frames: frames.length,
-                                           src: frames.length ? frames[frames.length - 1].src : '' });
+  // 笔记框自己是空框（名字 hub-vault-<序号>），登录那一页开在小框里、表单 target 指回它。
+  const snap = (label) => {
+    const frame = frames[frames.length - 1], hop = hops[hops.length - 1];
+    const m = hop ? /^(.*)&target=(hub-vault-[0-9]+)$/.exec(hop.src) : null;
+    out.steps.push({ label, view: currentViewName(), frames: frames.length, hops: hops.length,
+                     src: m ? m[1] : '', target: m ? m[2] : '', name: frame ? frame.name : '', frameSrc: frame ? (frame.src || '') : '' });
+  };
   const send = (path, extra) => (L.message || []).forEach((fn) => fn(Object.assign({
     source: chat.contentWindow, origin: __HALO__, data: { source: 'halowebui', type: 'open-note', path },
   }, extra || {})));
@@ -116,6 +122,16 @@ class OpenNoteTest(unittest.TestCase):
         self.assertEqual(step["view"], "vault")
         self.assertEqual(step["frames"], 1)
         self.assertEqual(step["src"], frame_src("项目/HaloWebUI.md"))
+
+    def test_the_sign_in_hop_posts_into_the_blank_frame_it_was_opened_for(self):
+        # 笔记框本身不带地址（空框的第一次导航不在整页历史里记条目），登录页在小框里打开、表单 target 指回它。
+        for label in ("from chat", "again while on the vault tab", "search hit", "note param"):
+            step = self.steps[label]
+            self.assertEqual(step["frameSrc"], "", label)
+            self.assertRegex(step["name"], r"^hub-vault-[0-9]+$", label)
+            self.assertEqual(step["target"], step["name"], label)
+            self.assertEqual(step["hops"], step["frames"], label)
+        self.assertNotEqual(self.steps["from chat"]["name"], self.steps["again while on the vault tab"]["name"])
 
     def test_already_on_the_vault_tab_a_fresh_frame_lands_on_the_new_note(self):
         step = self.steps["again while on the vault tab"]

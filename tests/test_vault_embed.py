@@ -189,6 +189,20 @@ class OpenPageTest(VaultCase):
         self.assertIn("document.forms[0].submit();", page)
         self.assertIn("nav.type === 'back_forward') addEventListener('load'", page)
 
+    def test_the_hub_can_have_the_form_post_into_its_blank_note_frame(self):
+        # Hub 的笔记框是一张还空着的框（名字 hub-vault-<序号>），本页开在旁边的小框里、表单提交进它：
+        # 空框的第一次导航不在整页历史里记条目。只认这种名字，别的 target 一概当没有（提交回本页自己的框）。
+        self.unlock()
+        page = self.open_page("?to=%2F&target=hub-vault-7").get_data(as_text=True)
+        self.assertIn('<form method="post" action="' + VAULT + '/auth/hub/sso" target="hub-vault-7">', page)
+        for bad in ("_top", "_blank", "_parent", "hub-vault-", "hub-vault-1x", 'hub-vault-1" onload="x', "x" * 40, "hub-vault-" + "1" * 10):
+            page = self.open_page("?" + app_module.urlencode({"to": "/", "target": bad})).get_data(as_text=True)
+            self.assertIn('<form method="post" action="' + VAULT + '/auth/hub/sso">', page, repr(bad))
+            self.assertNotIn("target=", page.split("<script")[0], repr(bad))
+        # 提交前先确认那张框还在：名字对不上的 target 会让浏览器新开一个窗口。
+        self.assertIn("if (target) { if (hasTarget()) document.forms[0].submit(); }", page)
+        self.assertIn("parent.document.getElementsByName(target).length > 0", page)
+
     def test_every_open_is_a_fresh_ticket(self):
         self.unlock()
         one = verify_like_webobsidian(parse(self.open_page()).fields["ticket"])
@@ -351,9 +365,10 @@ class PageShapeTest(unittest.TestCase):
     def test_the_frame_only_ever_loads_this_sites_own_page(self):
         # 票据不经过页面脚本：框里放的是本站的 /vault/open，脚本里没有任何票据的影子。
         # 落点（默认笔记首页，openVaultNote 给的是 /note/<路径>）只作为 ?to= 的值，整段编码。
-        self.assertIn("frame.src = '/vault/open?to=' + encodeURIComponent(to || '/');", self.js)
+        # 登录页开在旁边一张看不见的小框里（表单 target 指回还空着的笔记框）；它只回说明时笔记框自己打开同一页。
+        self.assertIn("const open = '/vault/open?to=' + encodeURIComponent(to || '/');", self.js)
         self.assertNotIn("ticket", self.js.lower().replace("一次性票据", ""))
-        self.assertEqual(re.findall(r"frame\.src = ([^;]+);", self.js), ["'/vault/open?to=' + encodeURIComponent(to || '/')"])
+        self.assertEqual(re.findall(r"\b(?:frame|hop)\.src = ([^;]+);", self.js), ["open", "open + '&target=' + name"])
         self.assertIn('id="vaultPopout" href="/vault/open"', self.html)
 
     def test_the_frame_is_sandboxed_without_top_navigation(self):

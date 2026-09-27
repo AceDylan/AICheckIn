@@ -1385,6 +1385,42 @@
     const CHECKIN_PAGES = ['overview', 'configs', 'history'];
     const MAIN_VIEWS = ['bookmarks', 'chat', 'checkin', 'settings', 'vault'];
     function libHash() { return LIB.page === '@home' ? '#bookmarks' : '#links/' + LIB.page; }
+    // 浏览器的「返回」：收藏库是首页。从它切到别的页面（AI 聊天、笔记、签到、设置）时记一条历史，
+    // 那些页面之间互相切换、在收藏库里翻分组都只改当前这一条。于是在别的页面按「返回」（手机的返回手势）
+    // 回到收藏库，在收藏库再按一次才离开本站——和手机应用底栏一个习惯。从别的页面点回「收藏库」是退回
+    // 那一条、不是再记一条，否则「返回」会在收藏库和刚才那页之间来回跳。
+    // 退回按条目跳（Navigation API 的 traverseTo），不数步数：框里的页面万一记过条目，也一步越过，
+    // 不会出现按了「返回」只是藏着的框在后台翻页、眼前什么都没变。没有这套接口的浏览器维持老样子：只改当前这一条。
+    const HISTORY_NAV = typeof navigation === 'object' && navigation && typeof navigation.traverseTo === 'function' ? navigation : null;
+    let HOMING = false;   // 正在退回收藏库那一条：落地之前别处改地址，改的会是要离开的那一条
+    function isHomeHash(hash) {
+      const h = String(hash || '').replace(/^#/, '');
+      return !h || h === 'bookmarks' || h.startsWith('links/');
+    }
+    // 当前这一条正下面紧挨着的、本页自己记的收藏库那一条（刷新过的页面、从别处直接打开 #chat 时没有）。
+    function homeEntryBehind() {
+      if (!HISTORY_NAV || !HISTORY_NAV.currentEntry) return null;
+      const i = HISTORY_NAV.currentEntry.index;
+      const prev = i > 0 ? HISTORY_NAV.entries()[i - 1] : null;
+      if (!prev || !prev.sameDocument || !prev.url) return null;
+      try { return isHomeHash(new URL(prev.url).hash) ? prev : null; } catch (_) { return null; }
+    }
+    function currentViewHash() {
+      const view = currentViewName();
+      return view === 'bookmarks' ? libHash() : view === 'configs' || view === 'history' ? '#checkin/' + view : '#' + view;
+    }
+    function replaceHash(hash) { if (!HOMING) history.replaceState(null, '', hash); }
+    function setViewHash(hash, toHome) {
+      if (HOMING) return;   // 落地时按那时的页面补写
+      const fromHome = isHomeHash(location.hash);
+      const home = toHome && !fromHome ? homeEntryBehind() : null;
+      if (home) {
+        HOMING = true;
+        const land = () => { HOMING = false; history.replaceState(null, '', currentViewHash()); };
+        HISTORY_NAV.traverseTo(home.key).committed.then(land, land);
+      } else if (!toHome && fromHome && HISTORY_NAV && hash !== location.hash) history.pushState(null, '', hash);
+      else history.replaceState(null, '', hash);
+    }
     function switchView(name, updateHash = true) {
       // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
       let section = '';
@@ -1430,7 +1466,7 @@
       if (updateHash) {
         const hash = mainName === 'bookmarks' ? libHash()
           : section && section !== 'overview' ? '#checkin/' + section : '#' + mainName;
-        history.replaceState(null, '', hash);
+        setViewHash(hash, mainName === 'bookmarks');
       }
       // 仅在数据就绪后才触发页面自带的加载动作。initRoute() 在脚本顶部就会调用
       // switchView，那时 STATE 还是默认值（canEdit() 恒为 true），而且下方的
@@ -2141,11 +2177,12 @@
 
     // ===== 笔记 =====
     // 框里是自己的 WebObsidian（地址来自部署的 HUB_VAULT_URL，随 /api/configs 只发给已解锁的人）。
-    // 框先打开本站自己的 /vault/open：后端在那一页里把一次性票据用表单 POST 给 WebObsidian，
+    // 登录走本站自己的 /vault/open：后端在那一页里把一次性票据用表单 POST 给 WebObsidian，
     // 对面换成它自己的会话再跳到笔记首页。票据不经过这里的脚本，也不进任何地址。
     // 第一次点开才加载，之后切到别的标签页也不卸载——写到一半去翻个收藏再回来，光标还在。
     // url：框里登录的是哪个 WebObsidian，锁定时凭它请对面结束会话；to：下一次开框落在哪一页（见 openVaultNote）。
-    const VAULT_EMBED = { url: '', to: '' };
+    // hop：替笔记框登录的那张看不见的小框（见 openVault）；seq：给每张笔记框起不重样的名字。
+    const VAULT_EMBED = { url: '', to: '', hop: null, seq: 0 };
     function vaultEmbedAvailable() { return !!(STATE.vault_embed && STATE.vault_embed.url) && canEdit(); }
     function vaultFrame() { return $('vaultStage') ? $('vaultStage').querySelector('iframe') : null; }
     // 请 WebObsidian 结束「由本站登录的」会话（它的密码会话不受影响）。no-cors：回包看不见也不用看；
@@ -2156,10 +2193,15 @@
       try { fetch(url + '/auth/hub/logout', { method: 'POST', mode: 'no-cors', credentials: 'include', keepalive: true, referrerPolicy: 'strict-origin' }).catch(() => {}); }
       catch (_) { /* 同上：只是少了一次提前结束 */ }
     }
+    function dropVaultHop() {
+      if (VAULT_EMBED.hop) VAULT_EMBED.hop.remove();
+      VAULT_EMBED.hop = null;
+    }
     // signOut：锁定 / 会话过期时顺带让对面也退出；换一个新框（重新载入）时不用。
     function closeVault(signOut) {
       const frame = vaultFrame();
       if (frame) frame.remove();
+      dropVaultHop();
       const url = VAULT_EMBED.url || (signOut && STATE.vault_embed && STATE.vault_embed.url) || '';
       VAULT_EMBED.url = '';
       if (signOut) signOutVault(url);
@@ -2172,17 +2214,43 @@
       $('vaultHost').textContent = base.replace(/^https?:\/\//, '');
       $('vaultLoading').hidden = false;
       closeVault();   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
+      const open = '/vault/open?to=' + encodeURIComponent(to || '/');   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
+      const name = 'hub-vault-' + (++VAULT_EMBED.seq);
       const frame = document.createElement('iframe');
       frame.className = 'chat-frame';
       frame.title = '笔记（WebObsidian）';
+      frame.name = name;
       frame.setAttribute('referrerpolicy', 'no-referrer');
       // 与「AI 聊天」同样不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
       frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
       frame.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
-      frame.addEventListener('load', () => { $('vaultLoading').hidden = true; focusVaultFrame(); });
-      frame.src = '/vault/open?to=' + encodeURIComponent(to || '/');   // 本站自己的一页；没解锁、密码不合格时它只回一段说明
+      frame.addEventListener('load', () => {
+        if (frameIsBlank(frame)) return;   // 刚插进来的空框自己也报一次 load
+        $('vaultLoading').hidden = true;
+        dropVaultHop();
+        focusVaultFrame();
+      });
       $('vaultStage').appendChild(frame);
+      // 登录那一跳放在旁边一张看不见的小框里：/vault/open 的表单带 target=<这张框的名字>，把票据 POST 进
+      // 这张还空着的框。空框的第一次导航不在整页历史里记条目；要是框自己先打开 /vault/open 再提交，
+      // 就多出一条——在笔记里按「返回」会先退到那张跳板页上，而不是回收藏库。
+      // 那一页要是只回了一段说明（没解锁、密码不合格……）、没有表单，就让笔记框自己打开它，说明显示在框里。
+      const hop = document.createElement('iframe');
+      hop.hidden = true;
+      hop.tabIndex = -1;
+      hop.setAttribute('aria-hidden', 'true');
+      hop.addEventListener('load', () => {
+        let form = null;
+        try { form = hop.contentDocument && hop.contentDocument.querySelector('form'); } catch (_) { /* 读不到就当没有 */ }
+        if (!form && vaultFrame() === frame && frameIsBlank(frame)) { frame.src = open; dropVaultHop(); }
+      });
+      hop.src = open + '&target=' + name;
+      document.body.appendChild(hop);
+      VAULT_EMBED.hop = hop;
       VAULT_EMBED.url = base;
+    }
+    function frameIsBlank(frame) {
+      try { return frame.contentWindow.location.href === 'about:blank'; } catch (_) { return false; }   // 跨源了＝已经不是空框
     }
     $('vaultReload').addEventListener('click', () => openVault(true));
     // 有鼠标键盘的设备上，到了笔记页就把键盘交给框。不然焦点还停在本站的标签按钮上，框里提示的
@@ -2856,15 +2924,15 @@
     }
     function openLibPage(page) {
       LIB.page = page;
-      history.replaceState(null, '', libHash());
+      replaceHash(libHash());
       $('bmSearch').value = '';
       renderLibrary();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     function renderLibrary() {
       if (ARRANGE.on && LIB.page !== '@home') leaveArrange();
-      if (!['@home', 'monitor'].includes(LIB.page) && STATE_LOADED && !findGroup(LIB.page)) { LIB.page = '@home'; history.replaceState(null, '', libHash()); }
-      if (STATE_LOADED && libraryLocked() && LIB.page !== '@home') { LIB.page = '@home'; history.replaceState(null, '', libHash()); }
+      if (!['@home', 'monitor'].includes(LIB.page) && STATE_LOADED && !findGroup(LIB.page)) { LIB.page = '@home'; replaceHash(libHash()); }
+      if (STATE_LOADED && libraryLocked() && LIB.page !== '@home') { LIB.page = '@home'; replaceHash(libHash()); }
       renderLibNav();
       syncDocTitle();
       const isHome = LIB.page === '@home';
