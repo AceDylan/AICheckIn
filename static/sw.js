@@ -34,7 +34,7 @@
 // v36：取数失败可「先不管 7 天」。
 // v37：看板金额走势与日均用量、空站点的「添加字段」、刷新进度。
 // v38：搜到的笔记、刚存进收件箱的那篇、AI 聊天回复里点到的笔记，都在「笔记」标签页里打开。
-const CACHE_VERSION = 'bh-shell-v47';
+const CACHE_VERSION = 'bh-shell-v48';
 const SHELL = [
   '/',
   '/static/app-v3.css',

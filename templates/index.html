@@ -1633,7 +1633,13 @@
     // 单一序列：不要图例，线用正文次要色（不借状态色），末点一个圆点；数值写在旁边的文字里，悬停有原生提示。
     function balanceTrend(c) { return trendHtml(c.metrics && c.metrics.daily); }
     // 签到账户和看板的金额字段共用：points = [["YYYY-MM-DD", 数值], …]；noPlot = 只要那一句日均，不画线。
-    function trendHtml(points, noPlot) {
+    // 按日均算还能用多久：不到 1 天别写成「0 天」，太久的也不必精确到天。
+    function runwayText(days) {
+      if (days < 1) return '照这个速度不到 1 天用完';
+      return days > 365 ? '约还能用一年以上' : `约还能用 ${Math.floor(days)} 天`;
+    }
+    // opts.resets：这个站点的额度会按「刷新 / 重置时间」回满，每天记的只是某一刻的余量——不估日均和还能用几天，只画线。
+    function trendHtml(points, noPlot, opts) {
       const pts = (points || [])
         .filter(p => Array.isArray(p) && p.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(p[0]) && /\d/.test(String(p[1])))
         .map(([d, v]) => [d, parseNum(v)]);
@@ -1644,9 +1650,9 @@
       const first = recent[0];
       const days = Math.round((dayMs(last[0]) - dayMs(first[0])) / 86400000);
       let note = '';
-      if (days >= 1) {
+      if (days >= 1 && !(opts && opts.resets)) {
         const perDay = (first[1] - last[1]) / days;
-        if (perDay > 0.005) note = `近 ${days} 天日均用 ${fmtNum(perDay)}` + (last[1] > 0 ? ` · 约还能用 ${Math.max(0, Math.floor(last[1] / perDay))} 天` : '');
+        if (perDay > 0.005) note = `近 ${days} 天日均用 ${fmtNum(perDay)}` + (last[1] > 0 ? ` · ${runwayText(last[1] / perDay)}` : '');
         else if (perDay < -0.005) note = `近 ${days} 天余额在增加`;
         else note = `近 ${days} 天余额没变`;
       }
@@ -1657,7 +1663,8 @@
       const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
       const [lx, ly] = xy[xy.length - 1];
       const label = `余额走势：${pts[0][0]} ${fmtNum(pts[0][1])} → ${last[0]} ${fmtNum(last[1])}，共 ${pts.length} 天的记录`;
-      if (noPlot) return note ? `<div class="trend"><div class="trend-note">${escapeHtml(note)}</div></div>` : '';
+      // 一条平线（每天都是同一个数）不带任何信息，只留那一句「余额没变」。
+      if (noPlot || hi === lo) return note ? `<div class="trend"><div class="trend-note">${escapeHtml(note)}</div></div>` : '';
       return `<div class="trend"><div class="trend-plot">
           <svg class="trend-line" viewBox="-2 0 104 26" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(label)}"><title>${escapeHtml(label)}</title>
             <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
@@ -1756,7 +1763,7 @@
         : `<button class="btn sm" disabled>无网址</button>`;
       return `<div class="dcard" data-idx="${i}" style="--hue:${hueOf(siteHost(c.base_url))}">
         <div class="dcard-main">
-          <div class="card-name">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}${escapeHtml(c.name)} <span class="badge gray">已停用</span></div>
+          <div class="card-name" title="自动签到已关：不参与一键 / 定时签到，要自己去站点签">${siteAvatarHtml(c.name, c.base_url, 'mini-avatar')}${escapeHtml(c.name)}</div>
           ${urlLink(c.base_url)}
           <div class="dmetrics">${[['余额', m.wallet_balance], ['已用', m.used_quota], ['请求', m.request_count]].filter(([, v]) => v && v !== '-').map(([k, v]) => `${k} ${escapeHtml(v)}`).join(' · ') || '还没有数据'}${stamp}</div>
         </div>
@@ -3131,11 +3138,18 @@
         if (m && quiet) { value = m[2]; unit = m[3] + (m[1] === '还有' ? '后' : '前'); }
         else if (m) { value = m[2]; unit = m[3] + (m[1] === '已过期' ? '前过期' : '后到期'); past = m[1] === '已过期'; } else value = text;
       } else value = compactFieldValue(primary);
-      let sub;
-      if (secondary) sub = `${secondary.label} · ${secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary)}`;
-      else sub = primary.updated_at ? `${primary.label} · ${agoStamp(primary.updated_at)}更新` : primary.label;
+      let sub, subTitle = '';
+      if (secondary) {
+        const val = secondary.error ? '取数失败' : fieldBlank(secondary) ? '待刷新' : compactFieldValue(secondary);
+        sub = `${secondary.label} · ${val}`;
+        // 桌面上副行只有百来像素：「刷新时间 · 还有 2 小时」会被截成「刷新时间 · 还有 2…」。
+        // 名字是「××时间 / 日期」的时间字段换个说法「2 小时后刷新」，完整的放在悬停提示里。
+        const verb = (secondary.type || 'amount') === 'time' && /^(.{1,4}?)(时间|日期|时刻)$/.exec(String(secondary.label || '').trim());
+        const m = verb && /^(已过期|已过|还有) (\d+) (.+)$/.exec(val);
+        if (m) { subTitle = sub; sub = `${m[2]} ${m[3]}${m[1] === '还有' ? '后' : '前'}${verb[1]}`; }
+      } else sub = primary.updated_at ? `${primary.label} · ${agoStamp(primary.updated_at)}更新` : primary.label;
       const ago = !secondary && primary.updated_at ? primary.updated_at : '';   // 渲染时换成会自己走的 agoSpan
-      return { state, value, unit, sub, ago, label: primary.label, valueCls: primary.error ? (fieldSnoozed(primary) ? ' is-stale' : ' is-error') : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
+      return { state, value, unit, sub, subTitle, ago, label: primary.label, valueCls: primary.error ? (fieldSnoozed(primary) ? ' is-stale' : ' is-error') : fieldBlank(primary) ? ' is-stale' : past ? ' is-past' : '' };
     }
     function homeSiteWidgetHtml(b, i) {
       const host = siteHost(b.url) || '未设置域名';
@@ -3148,7 +3162,7 @@
           <span class="widget-body">
             <span class="widget-head"><span class="widget-name">${escapeHtml(b.name)}</span><span class="widget-dot" role="img" aria-label="状态：${escapeHtml(st.label)}" title="${escapeHtml(st.label)}"></span></span>
             <span class="widget-value${w.valueCls}" title="${escapeHtml(w.label)}">${escapeHtml(w.value)}${w.unit ? `<small>${escapeHtml(w.unit)}</small>` : ''}</span>
-            <span class="widget-sub">${w.ago ? `${escapeHtml(w.label)} · ${agoSpan(w.ago)}更新` : escapeHtml(w.sub)}</span>
+            <span class="widget-sub"${w.subTitle ? ` title="${escapeHtml(w.subTitle)}"` : ''}>${w.ago ? `${escapeHtml(w.label)} · ${agoSpan(w.ago)}更新` : escapeHtml(w.sub)}</span>
           </span>
         </a>
         ${tileExtrasHtml(o)}
@@ -3193,13 +3207,35 @@
       setCssVar($('homeBody'), '--cols', String(cols));
       return changed;
     }
-    // 窗口 / 侧栏宽度变了：重新量；列数真变了才去改各分组的跨度。
+    // 窗口 / 侧栏宽度变了：重新量；列数真变了才去改各分组的跨度。量完（会把列数放回「放得下」的那么多）再按内容收一次。
     function relayoutHomeGrid() {
-      if (!measureHomeGrid()) return;
-      $('homeList').querySelectorAll('.home-section').forEach(sec => {
-        setCssVar(sec, '--span', String(Math.min(Number(sec.dataset.units) || 1, HOME_GRID.cols)));
+      if (measureHomeGrid()) {
+        $('homeList').querySelectorAll('.home-section').forEach(sec => {
+          setCssVar(sec, '--span', String(Math.min(Number(sec.dataset.units) || 1, HOME_GRID.cols)));
+        });
+        $('homeList').querySelectorAll('[data-freq-i]').forEach(tile => { tile.hidden = Number(tile.dataset.freqI) >= HOME_GRID.cols; });
+      }
+      fitHomeGrid();
+    }
+    // 分组按顺序排、这一行放不下就整组换行：某些宽度下每一行都填不满（如 8 列里排成 4+2、3+3），
+    // 图标和右侧组件之间就空出一两列。画完后把网格收到实际用到的列数，「图标 + 组件」仍作为一个整体居中。
+    // 顺序换行是贪心的：用 U（< 放得下的列数）重新排，每一行的分组和原来完全一样，所以只是收窄、不会重新洗牌。
+    // HOME_GRID.cols 仍是量出来的「放得下几列」，分组跨度和「常用」一行放几个都照它算。手机固定 4 列，不收。
+    function fitHomeGrid() {
+      const body = $('homeBody'), list = $('homeList');
+      if (!body.classList.contains('is-tiles') || (window.matchMedia && window.matchMedia(HOME_PHONE_QUERY).matches)) return;
+      const cols = HOME_GRID.cols;
+      let used = 0, row = 0;
+      list.querySelectorAll('.home-section').forEach(sec => {
+        const span = Math.min(Number(sec.dataset.units) || 1, cols);
+        row = row + span > cols ? span : row + span;
+        used = Math.max(used, row);
       });
-      $('homeList').querySelectorAll('[data-freq-i]').forEach(tile => { tile.hidden = Number(tile.dataset.freqI) >= HOME_GRID.cols; });
+      const fit = used && used < cols ? used : cols;
+      const css = typeof getComputedStyle === 'function' ? getComputedStyle(list) : null;
+      const tile = (css && parseFloat(css.getPropertyValue('--tile-w'))) || 96, gap = (css && parseFloat(css.getPropertyValue('--tile-gap'))) || 10;
+      setCssVar(body, '--cols', String(fit));
+      setCssVar(body, '--grid-w', (fit * (tile + gap) - gap) + 'px');
     }
     if (typeof ResizeObserver === 'function') new ResizeObserver(relayoutHomeGrid).observe($('homeBody'));
     else window.addEventListener('resize', relayoutHomeGrid);
@@ -3385,6 +3421,7 @@
         ? `<div class="tile-grid" data-arrange-group="${escapeHtml(g.id)}">${g.links.map(l => homeLinkTileHtml(l, g)).join('')}</div>`
         : `<div class="link-grid">${g.links.map((l, i) => linkCardHtml(l, i, g, g.links.length, true)).join('')}</div>`, 0, { folded: folds.includes(g.id) }));
       $('homeList').innerHTML = sections.join('');
+      fitHomeGrid();
       if (count) hideEmpty($('homeEmpty'));
       else showEmpty($('homeEmpty'), homeEmptyOpts(total));
       pumpFavicons();
@@ -4486,6 +4523,13 @@
       el.classList.toggle('fade-bottom', el.scrollTop + el.clientHeight < el.scrollHeight - 2);
     }
     ['todoList', 'todoDoneList'].forEach(id => $(id).addEventListener('scroll', () => syncScrollFade($(id)), { passive: true }));
+    // 宽屏右侧那一列组件自己滚动：滚动时、内容变高变矮（翻月份、加待办、折叠卡片）或窗口变了都重新判断两端要不要淡出。
+    $('homeDeck').addEventListener('scroll', () => syncScrollFade($('homeDeck')), { passive: true });
+    if (typeof ResizeObserver === 'function') {
+      const deckFade = new ResizeObserver(() => syncScrollFade($('homeDeck')));
+      deckFade.observe($('homeDeck'));
+      deckFade.observe($('deckCards'));
+    }
     // 重绘会把焦点丢回 <body>：键盘用户每勾一条就得从页头重新 Tab 过来。这里把焦点放回同一条（或相邻的一条）。
     function focusTodo(id, selector) {
       const row = id && $('homeTodo').querySelector(`[data-todo="${CSS.escape(id)}"]`);
@@ -5347,7 +5391,7 @@
       const text = String(v == null ? '' : v).trim();
       return /^-?[\d,]*\.?\d+$/.test(text) ? fmtNum(parseNum(text)) : text;
     }
-    function fieldItemHtml(f, primary, bi) {
+    function fieldItemHtml(f, primary, bi, resets) {
       const type = f.type || 'amount';
       const old = !f.error && f.value != null && f.value !== '' && fieldOld(f);
       let head = f.updated_at ? `<span class="field-time${old ? ' is-old' : ''}" title="上次更新 ${escapeHtml(f.updated_at)}${old ? ' · 已经很久没更新，数值可能过时' : ''}">${old ? `较旧 · ${agoSpan(f.updated_at)}` : agoSpan(f.updated_at)}</span>` : '';
@@ -5379,7 +5423,7 @@
       } else if (type === 'amount') {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(amountText(f.value))}</span>` + (f.unit ? `<span class="field-unit">${escapeHtml(f.unit)}</span>` : '');
         // 每天一个点（服务端记在 field_history.json），满两天才画；主字段给整条走势，其它字段只写一句日均。
-        extra += trendHtml(f.daily, !primary);
+        extra += trendHtml(f.daily, !primary, { resets });
         if (fieldAlert(f) === 'low') { valueCls = 'is-soon'; head = `<span class="field-badge is-soon" title="低于提醒阈值 ${escapeHtml(String(f.warn_below))}">余额偏低</span>`; }
       } else {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(f.value)}</span>`;
@@ -5399,8 +5443,9 @@
         return `<div class="bm-fields-block is-empty"><span class="fields-empty-text">${hint}</span>${add}</div>`;
       }
       const head = fields.slice(0, CARD_FIELD_LIMIT), rest = fields.slice(CARD_FIELD_LIMIT);
-      let html = head.map((f, k) => fieldItemHtml(f, k === 0, bi)).join('');
-      if (rest.length) html += `<details class="fields-more"><summary>+${rest.length} 项 ▾</summary><div class="fields-more-grid">${rest.map(f => fieldItemHtml(f, false, bi)).join('')}</div></details>`;
+      const resets = fields.some(f => (f.type || 'amount') === 'time' && RESET_LABEL_RE.test(String(f.label || '')));
+      let html = head.map((f, k) => fieldItemHtml(f, k === 0, bi, resets)).join('');
+      if (rest.length) html += `<details class="fields-more"><summary>+${rest.length} 项 ▾</summary><div class="fields-more-grid">${rest.map(f => fieldItemHtml(f, false, bi, resets)).join('')}</div></details>`;
       return `<div class="bm-fields-block">${html}</div>`;
     }
 

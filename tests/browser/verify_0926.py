@@ -297,6 +297,13 @@ def group_tiles(b):
         if (!c) return null; const h = c.querySelector('.link-host').getBoundingClientRect(), t = c.querySelector('.link-tags').getBoundingClientRect();
         return [Math.round(Math.abs((h.top + h.bottom) / 2 - (t.top + t.bottom) / 2)), Math.round(c.getBoundingClientRect().height)]; }""")
     check("手机列表：标签并到域名那一行（行高不再多出一整行标签）", st is not None and st[0] <= 6, st)
+    # 有备注的网址：备注在 DOM 里夹在域名和标签之间，标签也得留在域名那一行、贴着域名，不能掉到下一行悬在中间。
+    api(ctx, "PUT", "/api/link_groups/daily/links/l002", {"tags": ["论坛"], "desc": "VPS 论坛"})
+    page.reload(); page.wait_for_selector("#linkList .link-desc"); page.wait_for_timeout(300)
+    st = page.evaluate("""() => { const c = [...document.querySelectorAll('#linkList .link-card')].find(x => x.querySelector('.link-desc') && x.querySelector('.link-tags'));
+        if (!c) return null; const h = c.querySelector('.link-host').getBoundingClientRect(), t = c.querySelector('.link-tags').getBoundingClientRect(), d = c.querySelector('.link-desc').getBoundingClientRect();
+        return [Math.round(Math.abs((h.top + h.bottom) / 2 - (t.top + t.bottom) / 2)), Math.round(t.left - h.right), Math.round(d.top - h.bottom)]; }""")
+    check("手机列表：有备注时标签仍在域名那一行、紧跟域名，备注在下一行", st is not None and st[0] <= 6 and 0 <= st[1] <= 12 and st[2] >= 0, st)
     ctx.close()
 
 
@@ -330,14 +337,19 @@ def dashboard_more(b):
     import datetime as _dt
     def mutate(store):
         seed_dashboard(store)
+        bf = store["bookmarks"][1]["fields"][0]   # 中转站 B：没有重置时间的普通余额，用它看日均和还能用几天
+        bf.pop("error", None); bf["value"] = "40"
         store["bookmarks"].append({"name": "只是书签", "url": "https://plain.example.com", "fields": [], "show_on_home": False})
     write_store(mutate)
     days = [(_dt.date.today() - _dt.timedelta(days=d)).isoformat() for d in (6, 3, 0)]
     with open(os.path.join(DATA, "field_history.json"), "w", encoding="utf-8") as fh:
-        json.dump({"https://relay-a.example.com|中转站 A|bal": [[days[0], 25.0], [days[1], 19.0], [days[2], 13.46]]}, fh)
+        json.dump({"https://relay-a.example.com|中转站 A|bal": [[days[0], 25.0], [days[1], 19.0], [days[2], 13.46]],
+                   "https://relay-b.example.com|中转站 B|bal": [[days[0], 60.0], [days[1], 50.0], [days[2], 40.0]]}, fh)
     ctx, page = open_at(b, 1440, 900, "/#links/monitor", cookies={"bh_theme": "dark", "bh_wallpaper": "off"})
+    card = page.locator('#bmList [data-bm-index="1"]')
+    check("看板金额有走势：线 + 近 N 天日均用量 + 约还能用几天", card.locator(".trend-line").count() == 1 and "近 6 天日均用 3.33" in card.inner_text() and "约还能用 12 天" in card.inner_text(), card.inner_text()[:200])
     card = page.locator('#bmList [data-bm-index="0"]')
-    check("看板金额有走势：线 + 近 N 天日均用量 + 约还能用几天", card.locator(".trend-line").count() == 1 and "日均用" in card.inner_text() and "约还能用" in card.inner_text(), card.inner_text()[:200])
+    check("额度会按「刷新时间」重置的站点：只画线，不估日均和还能用几天", card.locator(".trend-line").count() == 1 and "日均用" not in card.inner_text() and "还能用" not in card.inner_text(), card.inner_text()[:200])
     empty = page.locator('#bmList [data-bm-index="3"]')
     btn = empty.get_by_role("button", name="＋ 添加余额 / 到期字段")
     check("没配字段的站点：一行说明 + 「添加余额 / 到期字段」", "还没配监控字段" in empty.inner_text() and btn.count() == 1)

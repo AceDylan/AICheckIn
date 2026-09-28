@@ -175,7 +175,10 @@ class DashboardDisplayTest(unittest.TestCase):
             // 小组件把倒计时当副标题，主值是余额。
             const parts = siteWidgetParts(b);
             assert.equal(parts.value, '13.46');
-            assert.ok(parts.sub.includes('刷新时间 · 还有 3 小时'), parts.sub);
+            // 桌面上副行只有百来像素：「刷新时间 · 还有 3 小时」换成「3 小时后刷新」，原话放在悬停提示里。
+            assert.equal(parts.sub, '3 小时后刷新');
+            assert.equal(parts.subTitle, '刷新时间 · 还有 3 小时');
+            assert.ok(homeSiteWidgetHtml(b, 0).includes('title="刷新时间 · 还有 3 小时">3 小时后刷新<'));
             assert.equal(parts.state, 'ok');
         """)
 

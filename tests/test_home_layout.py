@@ -218,6 +218,45 @@ class HomeLayoutScriptTest(unittest.TestCase):
             assert.equal($('homeBody').style['--grid-w'], '');
         """)
 
+    def test_grid_shrinks_to_the_columns_it_actually_uses(self):
+        """分组整组换行，某些宽度下每一行都填不满（8 列里 4+2、3+3）：收到实际用到的列数，「图标 + 组件」整体居中。"""
+        self.run_js("""
+            const vars = { '--tile-w': '96px', '--tile-gap': '10px' };
+            globalThis.getComputedStyle = () => ({ getPropertyValue: k => vars[k] || '', display: 'grid', columnGap: '32px' });
+            $('homeBody').classList.add('is-tiles');
+            const secs = (units) => units.map(u => ({ dataset: { units: String(u) }, hidden: false }));
+            let fake = secs([4, 2, 3, 3]);
+            $('homeList').querySelectorAll = (sel) => sel === '.home-section' ? fake : [];
+            setHomeCols(8); fitHomeGrid();
+            assert.equal($('homeBody').style['--cols'], '6');
+            assert.equal($('homeBody').style['--grid-w'], '626px');        // 6 × 106 − 10
+            assert.equal(HOME_GRID.cols, 8);                               // 「放得下几列」不变：跨度、「常用」一行仍照它算
+            fake = secs([4, 3, 1]); setHomeCols(8); fitHomeGrid();          // 有一行正好排满：不收
+            assert.equal($('homeBody').style['--cols'], '8');
+            assert.equal($('homeBody').style['--grid-w'], '838px');
+            fake = secs([11, 2]); setHomeCols(8); fitHomeGrid();            // 大分组跨满整行
+            assert.equal($('homeBody').style['--cols'], '8');
+            fake = secs([2, 3]); setHomeCols(8); fitHomeGrid();             // 内容本来就少：收到 5 列
+            assert.equal($('homeBody').style['--cols'], '5');
+            fake = []; setHomeCols(8); fitHomeGrid();                        // 没有分组（锁定 / 加载中）：放回放得下的列数
+            assert.equal($('homeBody').style['--cols'], '8');
+            $('homeBody').classList.remove('is-tiles');                      // 卡片密度不用列网格：不动
+            fake = secs([2]); setHomeCols(8); fitHomeGrid();
+            assert.equal($('homeBody').style['--cols'], '8');
+            $('homeBody').classList.add('is-tiles');
+            globalThis.matchMedia = (q) => ({ matches: q === HOME_PHONE_QUERY, addEventListener() {} });
+            setHomeCols(4); fitHomeGrid();                                   // 手机固定 4 列，不收
+            assert.equal($('homeBody').style['--cols'], '4');
+        """)
+
+    def test_render_and_relayout_both_fit_the_grid(self):
+        html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("      $('homeList').innerHTML = sections.join('');\n      fitHomeGrid();", html)
+        body = html[html.index('function relayoutHomeGrid() {'):html.index('function fitHomeGrid() {')]
+        # 量宽度会把列数放回「放得下」的那么多：无论列数变没变，最后都要再收一次。
+        self.assertIn("      fitHomeGrid();\n    }", body)
+        self.assertNotIn("if (!measureHomeGrid()) return;", body)
+
     def test_arrange_mode_renders_draggable_non_link_tiles(self):
         self.run_js("""
             assert.ok($('homeList').innerHTML.includes('href="https://s0.example"'));

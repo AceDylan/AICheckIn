@@ -48,6 +48,7 @@
   --avatar-sat: 55%;
   --avatar-l: 70%;
   --avatar-bg-a: .14;
+  --avatar-ink-l: 70%;            /* 首字母的亮度：深色场景和底板同一个亮度就够亮 */
   --scrim: rgba(8, 6, 4, .7);
   --toast-bg: #201e1a;
 }
@@ -98,6 +99,7 @@ html[data-theme="light"] {
   --avatar-sat: 52%;
   --avatar-l: 42%;
   --avatar-bg-a: .11;
+  --avatar-ink-l: 28%;            /* 浅色底上首字母要更深：42% 时黄绿色相只有 2.8:1，28% 各色相都 ≥ 4.5:1 */
   --scrim: rgba(30, 24, 16, .4);
   --toast-bg: #fffefd;
 }
@@ -115,6 +117,10 @@ html[data-theme="light"] .tone-violet { --tone: #7c3aed; --tone-soft: rgba(124, 
 html[data-theme="light"] .tone-amber { --tone: #d97706; --tone-soft: rgba(217, 119, 6, .12); }
 html[data-theme="light"] .tone-rose { --tone: #e11d48; --tone-soft: rgba(225, 29, 72, .12); }
 html[data-theme="light"] .tone-slate { --tone: #475569; --tone-soft: rgba(71, 85, 105, .12); }
+/* 浅色主题下 11px 的标签字直接用分组色只有 3:1 左右（青、琥珀最差）：字色往黑里压一截到 ≥ 4.5:1，底色不动。
+   壁纸场景整块固定深色，不跟这条。不认 color-mix 的旧浏览器保持原样。 */
+html[data-theme="light"]:not(.wall-on) .tag { color: color-mix(in srgb, var(--tone, var(--accent)) 72%, #000); }
+html[data-theme="light"]:not(.wall-on) :is(.badge, .pill).green { color: color-mix(in srgb, var(--success) 85%, #000); }
 
 /* ---------- 基础 ---------- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -463,7 +469,7 @@ details > summary::-webkit-details-marker { display: none; }
   display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px;
   border-radius: 13px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
-  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
+  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-ink-l));
   font-size: 14.5px; font-weight: 650; text-transform: uppercase; letter-spacing: -.02em;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
   border: 1px solid transparent;
@@ -474,7 +480,7 @@ details > summary::-webkit-details-marker { display: none; }
   display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px;
   border-radius: 8px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
-  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
+  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-ink-l));
   font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: -.02em;
   border: 1px solid rgba(255, 255, 255, .06);
 }
@@ -627,7 +633,7 @@ details > summary::-webkit-details-marker { display: none; }
   position: relative; overflow: hidden;
   display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; border-radius: 12px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
-  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
+  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-ink-l));
   font-size: 13.5px; font-weight: 650; text-transform: uppercase; letter-spacing: -.02em;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
   border: 1px solid transparent;
@@ -1244,7 +1250,7 @@ input[type="search"]::-webkit-search-cancel-button:hover { opacity: .9; }
   position: relative; overflow: hidden; display: grid; place-items: center; width: 60px; height: 60px; flex: 0 0 60px; margin-bottom: 8px;
   border-radius: 16px;
   background: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l) / var(--avatar-bg-a));
-  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-l));
+  color: hsl(var(--hue, 165) var(--avatar-sat) var(--avatar-ink-l));
   font-size: 19px; font-weight: 520; letter-spacing: -.02em; text-transform: uppercase;
   box-shadow: 0 1px 2px rgba(0, 0, 0, .18), 0 6px 16px -8px rgba(0, 0, 0, .45), inset 0 0 0 1px var(--icon-ring, rgba(255, 255, 255, .08));
   transition: transform .2s var(--ease), box-shadow .2s var(--ease);
@@ -1281,7 +1287,7 @@ input[type="search"]::-webkit-search-cancel-button:hover { opacity: .9; }
 .home-widget { grid-column: span 2; }
 .home-widget { padding-left: 18px; }
 .widget-link {
-  display: flex; align-items: center; gap: 12px; min-height: 88px; padding: 12px 14px;
+  display: flex; align-items: center; gap: 10px; min-height: 88px; padding: 12px;
   border: 1px solid var(--border); border-radius: inherit; background: var(--surface);
   box-shadow: var(--shadow-1), var(--highlight);
   color: inherit; text-decoration: none;
@@ -1289,7 +1295,8 @@ input[type="search"]::-webkit-search-cancel-button:hover { opacity: .9; }
 }
 .home-widget:hover .widget-link { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: var(--shadow-2); }
 .home-widget.is-busy .widget-link { opacity: .6; }
-.tile-avatar.widget-avatar { width: 44px; height: 44px; flex: 0 0 44px; margin: 0; border-radius: 13px; font-size: 15px; }
+/* 两格宽的小组件里文字只剩百来像素：头像、内边距各让一点，副行「余额 · 37 分钟前更新」这类才放得下（98 → 108px）。 */
+.tile-avatar.widget-avatar { width: 40px; height: 40px; flex: 0 0 40px; margin: 0; border-radius: 12px; font-size: 14.5px; }
 .home-widget:hover .widget-avatar { transform: none; }
 .widget-body { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
 .widget-head { display: flex; align-items: center; gap: 6px; }
@@ -1434,7 +1441,7 @@ html.wall-on .app-shell {
   --info: #7dd3fc; --info-soft: rgba(56, 189, 248, .2);
   --shadow-1: 0 1px 3px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .2);
   --shadow-2: 0 10px 28px -4px rgba(0, 0, 0, .5), 0 3px 8px -2px rgba(0, 0, 0, .3);
-  --avatar-sat: 70%; --avatar-l: 74%; --avatar-bg-a: .34;
+  --avatar-sat: 70%; --avatar-l: 74%; --avatar-ink-l: 74%; --avatar-bg-a: .34;
   color: var(--text);
 }
 html.wall-on .app-shell .tone-mint { --tone: #5eead4; --tone-soft: rgba(94, 234, 212, .2); }
@@ -1991,6 +1998,9 @@ label.set-row { cursor: pointer; }
 .cal-day.is-off .cal-badge { color: var(--success); }
 .cal-day.is-work { background: var(--warning-soft); }
 .cal-day.is-work .cal-badge { color: var(--warning); }
+/* 调休上班那一格铺了琥珀底：农历小字用 --text-3 只有 4.2:1，提一档；浅色下「班」字也压深一点（9px）。 */
+.cal-day.is-work .cal-sub { color: var(--text-2); }
+html[data-theme="light"]:not(.wall-on) .cal-day.is-work:not(.is-picked) .cal-badge { color: color-mix(in srgb, var(--warning) 80%, #000); }
 .cal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .cal-day.is-today .cal-num { color: var(--accent); }
 .cal-day.is-picked, .cal-day.is-picked:hover { background: var(--accent-strong); box-shadow: none; color: var(--accent-ink); }
@@ -2435,6 +2445,9 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   .link-body > .link-name, .link-body > .link-desc { grid-column: 1 / -1; }
   .link-body > .link-host { grid-column: 1; }
   .link-body > .link-tags { grid-column: 2; flex-wrap: nowrap; overflow: hidden; margin-top: 3px; }
+  /* 行号写死：有备注时备注在 DOM 里夹在域名和标签之间，不写的话标签会被挤到下一行的第 2 列、悬在行中间。 */
+  .link-body > .link-host, .link-body > .link-tags { grid-row: 2; }
+  .link-body > .link-desc { grid-row: 3; }
 }
 
 /* 矮屏（笔记本 150% 缩放再扣掉浏览器工具栏，可视区常只有 650px 高）：时钟和问候并成一行、字号收小，
@@ -2451,6 +2464,11 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 .todo-list.fade-top { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px); mask-image: linear-gradient(180deg, transparent 0, #000 24px); }
 .todo-list.fade-bottom { -webkit-mask-image: linear-gradient(0deg, transparent 0, #000 28px); mask-image: linear-gradient(0deg, transparent 0, #000 28px); }
 .todo-list.fade-top.fade-bottom { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 28px), transparent 100%); mask-image: linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 28px), transparent 100%); }
+/* 宽屏右侧那一列组件自己滚动（日历 + 待办常常比一屏高）：同样哪端还有就在哪端淡出，不然底边像被硬切了一刀。
+   类只在它真能滚的时候挂（syncScrollFade），窄屏组件不滚、不受影响。 */
+.home-deck.fade-top { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px); mask-image: linear-gradient(180deg, transparent 0, #000 20px); }
+.home-deck.fade-bottom { -webkit-mask-image: linear-gradient(0deg, transparent 0, #000 36px); mask-image: linear-gradient(0deg, transparent 0, #000 36px); }
+.home-deck.fade-top.fade-bottom { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 36px), transparent 100%); mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 36px), transparent 100%); }
 
 /* 看板工具条上的「没开自动刷新」：链接色、不加下划线，指上去才有。 */
 .toolbar-meta .meta-link { color: var(--accent); text-decoration: none; }
