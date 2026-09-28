@@ -65,7 +65,7 @@ def desktop(b):
 
     # 组件弹窗：添加、排序（箭头 + 拖动）、移除
     page.click("#homeDeckBtn")
-    check("manager: modal opens listing all six kinds", page.locator("#deckPicker .deck-pick").count() == 6)
+    check("manager: modal opens listing all ten kinds", page.locator("#deckPicker .deck-pick").count() == 10)
     page.locator('[data-deck-pick="days"] .switch').click()
     page.locator('[data-deck-pick="memo"] .switch').click()
     check("manager: switching on adds cards immediately", visible_cards(page) == ["calendar", "todo", "days", "memo"], visible_cards(page))
@@ -209,5 +209,40 @@ def visitor(b):
     ctx.close()
 
 
+def widgets(b):
+    """第二批组件：天气（不设城市，不连外网）、余额概览、世界时钟（添加 / 移除走真实接口）、时间进度。"""
+    reset()
+    # 种子里的取数时间是旧的：页面「看见时自动刷新」会真的去取（隔离实例连不上 → 取数失败），余额概览就空了。记成刚取过。
+    from verify_0926 import seed_dashboard, write_store
+    write_store(seed_dashboard)
+    admin = new_context(b, 800, 600)
+    request(admin, "PUT", "/api/deck/clocks", {"clocks": [{"name": "东京", "tz": "Asia/Tokyo"}, {"name": "伦敦", "tz": "Europe/London"}]})
+    ctx, page = new_page(b, {"width": 1440, "height": 900}, cookies={"bh_home_deck": "weather.balance.clocks.progress"})
+    check("widgets: four new cards in the side column", visible_cards(page) == ["weather", "balance", "clocks", "progress"], visible_cards(page))
+    check("widgets: weather without a city offers the search box", page.is_visible("#weatherQuery") and "搜一个城市" in page.inner_text("#weatherState"))
+    check("widgets: clocks list the saved cities", page.locator("#clockList .clock-item").count() == 2 and "东京" in page.inner_text("#clockList"))
+    page.click("#clocksEdit")
+    page.select_option("#clockAddSel", "America/New_York")
+    page.click("#clockAddBtn")
+    page.wait_for_function("() => document.querySelectorAll('#clockList .clock-item').length === 3")
+    saved = request(admin, "GET", "/api/deck")[1]["deck"]["clocks"]
+    check("widgets: adding a city saves it on the server", [c["tz"] for c in saved] == ["Asia/Tokyo", "Europe/London", "America/New_York"], saved)
+    page.click('[data-clock-del="Europe/London"]')
+    page.wait_for_function("() => document.querySelectorAll('#clockList .clock-item').length === 2")
+    check("widgets: removing a city saves it too", [c["tz"] for c in request(admin, "GET", "/api/deck")[1]["deck"]["clocks"]] == ["Asia/Tokyo", "America/New_York"])
+    check("widgets: time progress has four bars", page.locator("#progressList .prog-row").count() == 4 and "第" in page.inner_text("#deckProgressMeta"))
+    check("widgets: balance lists dashboard amounts", page.locator("#balanceList .balance-item").count() >= 1 and "去站点看板" in page.inner_text("#balanceList"), page.inner_text("#deckBalance"))
+    wide = page.evaluate("""() => Array.from(document.querySelectorAll('#deckWeather, #deckBalance, #deckClocks, #deckProgress'))
+        .filter(el => el.scrollWidth > el.clientWidth + 1).map(el => el.id)""")
+    check("widgets: no card overflows the side column", wide == [], wide)
+    page.screenshot(path=SHOTS + "/w-desk-widgets.png")
+    check("widgets: no console errors", page.errors == [], page.errors)
+    ctx.close()
+    ctx, page = new_page(b, {"width": 1440, "height": 900}, cookies={"bh_home_deck": "weather.clocks"}, unlocked=False)
+    check("widgets: visitors get an unlock prompt for weather", "管理员可见" in page.inner_text("#weatherState") and not page.is_visible("#weatherQuery"))
+    check("widgets: visitors see clocks but cannot edit them", page.locator("#clockList .clock-item").count() >= 2 and not page.is_visible("#clocksEdit"))
+    ctx.close()
+
+
 if __name__ == "__main__":
-    main((desktop, phone, visitor))
+    main((desktop, phone, visitor, widgets))

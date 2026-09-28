@@ -5589,8 +5589,8 @@ def api_todo_move(tid):
 # 首页组件数据（倒数日 / 便签）
 # =========================
 #
-# 首页组件里，日历、到期提醒、签到状态都是拿现成数据现算的；只有「倒数日」和「便签」有自己的内容，
-# 存在 data/deck.json。不进 config.json 的理由和待办一样（高频小改动不该去冲那份装着凭据的文件的 .bak），
+# 首页组件里，日历、到期提醒、签到状态、余额概览、时间进度都是拿现成数据现算的；「倒数日」「便签」有自己的内容，
+# 「天气」的城市和「世界时钟」的城市列表是设置，都存在 data/deck.json。不进 config.json 的理由和待办一样（高频小改动不该去冲那份装着凭据的文件的 .bak），
 # 读改写全程持锁、自己留一份 .bak，「导出 JSON」带 deck 键、导入时有这个键才覆盖。
 # 同样比收藏更私人：设了管理密码时读写都要解锁，开放的 /api/configs 也不会下发。
 #
@@ -5600,6 +5600,13 @@ DECK_DAY_NAME_MAX = 40
 DECK_MEMO_MAX = 2000
 # none：只这一次；year：每年公历同月同日；lunar：每年农历同月同日（换算在浏览器里做，这里只存一个公历基准日）。
 DECK_DAY_REPEATS = ("none", "year", "lunar")
+# 天气：城市名 / 所在地区（省、国家）；世界时钟：最多 6 座城市，时区只收 IANA 名（Asia/Tokyo 这种形状），
+# 真认不认由浏览器的 Intl 判断——认不出的那一行页面上不显示，不会报错。
+DECK_WEATHER_NAME_MAX = 40
+DECK_WEATHER_REGION_MAX = 60
+DECK_CLOCKS_MAX = 6
+DECK_CLOCK_NAME_MAX = 16
+_CLOCK_TZ_RE = re.compile(r"^(?:UTC|[A-Z][A-Za-z_]+(?:/[A-Za-z0-9_+\-]+){1,2})$")
 _DECK_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 _deck_lock = threading.Lock()
 
@@ -5669,7 +5676,61 @@ def _coerce_deck(raw):
     memo = raw.get("memo") if isinstance(raw.get("memo"), dict) else {}
     return {"days": days,
             "memo": {"text": _memo_text(memo.get("text"))[:DECK_MEMO_MAX],
-                     "updated_at": _todo_stamp(memo.get("updated_at"))}}
+                     "updated_at": _todo_stamp(memo.get("updated_at"))},
+            "weather": _coerce_weather_place(raw.get("weather")),
+            "clocks": _coerce_clocks(raw.get("clocks"))}
+
+
+def _coerce_weather_place(raw):
+    """天气组件的城市：{name, region, lat, lon}；没设过 / 不成形回 None。"""
+    try:
+        return _clean_weather_place(raw)
+    except ValueError:
+        return None
+
+
+def _clean_weather_place(raw):
+    """写接口的严格校验：抛 ValueError。经纬度只留三位小数（约百米），不需要更准，也不多存用户的位置。"""
+    if not isinstance(raw, dict):
+        raise ValueError("城市信息无效")
+    name = _squash_text(raw.get("name"), DECK_WEATHER_NAME_MAX)
+    region = _squash_text(raw.get("region"), DECK_WEATHER_REGION_MAX)
+    try:
+        lat, lon = float(raw.get("lat")), float(raw.get("lon"))
+    except (TypeError, ValueError):
+        raise ValueError("经纬度无效")
+    if not name:
+        raise ValueError("城市名称不能为空")
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180) or lat != lat or lon != lon:
+        raise ValueError("经纬度超出范围")
+    return {"name": name, "region": region, "lat": round(lat, 3), "lon": round(lon, 3)}
+
+
+def _coerce_clocks(raw):
+    """世界时钟：[{name, tz}]，最多 DECK_CLOCKS_MAX 个。None = 没设过（页面用默认的几座城市），[] = 一个都不要。"""
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for item in raw:
+        try:
+            out.append(_clean_clock(item))
+        except ValueError:
+            continue
+        if len(out) >= DECK_CLOCKS_MAX:
+            break
+    return out
+
+
+def _clean_clock(item):
+    if not isinstance(item, dict):
+        raise ValueError("时钟格式无效")
+    name = _squash_text(item.get("name"), DECK_CLOCK_NAME_MAX)
+    tz = str(item.get("tz") or "").strip()
+    if not name:
+        raise ValueError("城市名称不能为空")
+    if not _CLOCK_TZ_RE.match(tz):
+        raise ValueError("时区无效：{0}".format(tz[:40]))
+    return {"name": name, "tz": tz}
 
 
 def read_deck():
@@ -5784,6 +5845,232 @@ def api_deck_memo():
             raise ValueError("便签过长（最多 {0} 字）".format(DECK_MEMO_MAX))
         deck["memo"] = {"text": text, "updated_at": _now_str()}
     return _deck_call(change)
+
+
+@app.put("/api/deck/clocks")
+def api_deck_clocks():
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(deck):
+        items = payload.get("clocks")
+        if not isinstance(items, list):
+            raise ValueError("clocks 需为列表")
+        if len(items) > DECK_CLOCKS_MAX:
+            raise ValueError("世界时钟最多 {0} 个".format(DECK_CLOCKS_MAX))
+        clocks = [_clean_clock(item) for item in items]
+        if len({c["tz"] for c in clocks}) != len(clocks):
+            raise ValueError("同一个时区只放一次")
+        deck["clocks"] = clocks
+    return _deck_call(change)
+
+
+@app.put("/api/deck/weather")
+def api_deck_weather_place():
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(deck):
+        deck["weather"] = _clean_weather_place(payload)
+    return _deck_call(change)
+
+
+@app.delete("/api/deck/weather")
+def api_deck_weather_clear():
+    return _deck_call(lambda deck: deck.update(weather=None))
+
+
+# ----- 天气：由服务端去 Open-Meteo 取 -----
+# 页面 CSP 的 connect-src 只有本站，浏览器不直接连外部服务；也不想让每个打开首页的标签页各问一遍。
+# 只连两个固定地址（预报、城市搜索），参数是这里拼的经纬度 / 关键字，不接受任意网址——不是通用代理。
+# Open-Meteo 免费、不要密钥（非商业用途），数据按 CC BY 4.0 署名：组件底部写着「Open-Meteo」并链到官网。
+# 同一个地点 20 分钟内只问一次；取不到时 6 小时内的旧数据照给（标上 stale），总比一片空白强。
+WEATHER_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
+WEATHER_HOSTS = ("api.open-meteo.com", "geocoding-api.open-meteo.com")
+WEATHER_TIMEOUT = 8
+WEATHER_MAX_BYTES = 256 * 1024
+WEATHER_TTL = 20 * 60
+WEATHER_STALE_MAX = 6 * 3600
+WEATHER_FORCE_MIN = 60
+WEATHER_PLACE_QUERY_MAX = 40
+_weather_lock = threading.Lock()
+_weather_cache = {}          # (lat, lon) -> (取到的时间, 规整后的预报)
+_weather_place_cache = {}    # 关键字 -> (时间, [城市])
+
+
+class WeatherError(Exception):
+    pass
+
+
+class _WeatherRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if (urlparse(newurl).hostname or "") not in WEATHER_HOSTS:
+            raise urllib.error.HTTPError(newurl, code, "redirect outside whitelist", headers, fp)
+        return urllib.request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, headers, newurl)
+
+
+def _weather_get(base, params):
+    """GET 白名单里的一个接口，返回解析好的 JSON；失败抛 WeatherError。直连不通且系统设置里配了 http 代理时再走代理试一次。"""
+    url = base + "?" + urlencode(params)
+    if urlparse(url).scheme != "https" or (urlparse(url).hostname or "") not in WEATHER_HOSTS:
+        raise WeatherError("只连 Open-Meteo")
+    try:
+        proxy = str(read_store().get("proxy_url") or "").strip()
+    except RuntimeError:
+        proxy = ""
+    routes = [None] + ([proxy] if proxy and not proxy.lower().startswith("socks") else [])
+    headers = {"User-Agent": FAVICON_UA, "Accept": "application/json"}
+    reason = ""
+    for route in routes:
+        handlers = [_WeatherRedirectHandler()]
+        if route:
+            handlers.append(urllib.request.ProxyHandler({"http": route, "https": route}))
+        try:
+            with urllib.request.build_opener(*handlers).open(urllib.request.Request(url, headers=headers),
+                                                              timeout=WEATHER_TIMEOUT) as resp:
+                data = resp.read(WEATHER_MAX_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            raise WeatherError("Open-Meteo 返回 HTTP {0}".format(exc.code))
+        except Exception as exc:  # noqa: BLE001 - DNS / 超时 / TLS：换条路再试
+            reason = exc.__class__.__name__
+            continue
+        if len(data) > WEATHER_MAX_BYTES:
+            raise WeatherError("Open-Meteo 返回的内容大得不正常")
+        try:
+            return json.loads(data.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            raise WeatherError("Open-Meteo 返回了看不懂的内容")
+    raise WeatherError("连不上 Open-Meteo（{0}）".format(reason or "网络错误"))
+
+
+def _num_or_none(value, digits=1):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return None
+    return round(float(value), digits)
+
+
+def _hhmm(value):
+    m = re.search(r"T(\d{2}:\d{2})", str(value or ""))
+    return m.group(1) if m else ""
+
+
+def _normalize_forecast(raw):
+    """只留组件要画的几样，形状固定、类型干净；上游多给少给都不影响页面。"""
+    if not isinstance(raw, dict):
+        raise WeatherError("Open-Meteo 返回了看不懂的内容")
+    cur = raw.get("current") if isinstance(raw.get("current"), dict) else {}
+    temp = _num_or_none(cur.get("temperature_2m"))
+    code = cur.get("weather_code")
+    if temp is None or not isinstance(code, int) or isinstance(code, bool):
+        raise WeatherError("Open-Meteo 没给出当前天气")
+    now = {"temp": temp, "feels": _num_or_none(cur.get("apparent_temperature")),
+           "humidity": _num_or_none(cur.get("relative_humidity_2m"), 0), "wind": _num_or_none(cur.get("wind_speed_10m")),
+           "code": code, "is_day": cur.get("is_day") == 1, "time": str(cur.get("time") or "")[:16]}
+    daily = raw.get("daily") if isinstance(raw.get("daily"), dict) else {}
+
+    def col(src, key):
+        v = src.get(key)
+        return v if isinstance(v, list) else []
+
+    days = []
+    dates = col(daily, "time")
+    for i, date in enumerate(dates[:7]):
+        if not isinstance(date, str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            continue
+        pick = lambda key, digits=1: _num_or_none(col(daily, key)[i], digits) if i < len(col(daily, key)) else None  # noqa: E731
+        dcode = col(daily, "weather_code")[i] if i < len(col(daily, "weather_code")) else None
+        days.append({"date": date, "code": dcode if isinstance(dcode, int) and not isinstance(dcode, bool) else None,
+                     "max": pick("temperature_2m_max"), "min": pick("temperature_2m_min"),
+                     "pop": pick("precipitation_probability_max", 0)})
+    # 接下来 12 小时里最可能下雨的那个钟点（概率 ≥ 30% 才算），给一句「几点前后可能下雨」。
+    hourly = raw.get("hourly") if isinstance(raw.get("hourly"), dict) else {}
+    rain, times, pops = None, col(hourly, "time"), col(hourly, "precipitation_probability")
+    for t, pop in list(zip(times, pops))[:12]:
+        pop = _num_or_none(pop, 0)
+        if pop is not None and pop >= 30 and (rain is None or pop > rain["pop"]):
+            rain = {"pop": pop, "at": _hhmm(t)}
+    sunrise, sunset = col(daily, "sunrise"), col(daily, "sunset")
+    return {"now": now, "days": days, "rain": rain,
+            "sun": {"rise": _hhmm(sunrise[0]) if sunrise else "", "set": _hhmm(sunset[0]) if sunset else ""},
+            "tz": str(raw.get("timezone") or "")[:64]}
+
+
+def fetch_weather(place, force=False):
+    """返回 (预报, 取到的时间戳, 是否旧数据)。"""
+    key = (place["lat"], place["lon"])
+    now = time.time()
+    with _weather_lock:
+        hit = _weather_cache.get(key)
+        # 「重试」会带 force：一分钟内刚取过的照样复用，连点也不会去敲 Open-Meteo。
+        if hit and now - hit[0] < (WEATHER_FORCE_MIN if force else WEATHER_TTL):
+            return hit[1], hit[0], False
+        try:
+            raw = _weather_get(WEATHER_FORECAST_URL, (
+                ("latitude", place["lat"]), ("longitude", place["lon"]),
+                ("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day"),
+                ("hourly", "precipitation_probability"), ("forecast_hours", "12"),
+                ("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset"),
+                ("forecast_days", "5"), ("timezone", "auto")))
+            data = _normalize_forecast(raw)
+        except WeatherError:
+            if hit and now - hit[0] < WEATHER_STALE_MAX:
+                return hit[1], hit[0], True
+            raise
+        if len(_weather_cache) > 32:
+            _weather_cache.clear()
+        _weather_cache[key] = (now, data)
+        return data, now, False
+
+
+@app.get("/api/deck/weather")
+def api_deck_weather():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    try:
+        place = read_deck().get("weather")
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    if not place:
+        return jsonify({"ok": True, "place": None, "weather": None})
+    try:
+        data, fetched, stale = fetch_weather(place, force=request.args.get("force") == "1")
+    except WeatherError as exc:
+        return jsonify({"ok": False, "place": place, "error": str(exc)}), 502
+    # age = 这份数据取回来多少秒了：页面按自己的钟换算「几分钟前」，不受服务器和浏览器时区不同的影响。
+    return jsonify({"ok": True, "place": place, "weather": data, "stale": stale, "age": int(max(0, time.time() - fetched))})
+
+
+@app.get("/api/deck/weather/places")
+def api_deck_weather_places():
+    guard = _guard_admin()
+    if guard:
+        return guard
+    q = _squash_text(request.args.get("q"), WEATHER_PLACE_QUERY_MAX)
+    if not q:
+        return jsonify({"ok": False, "error": "先输入城市名"}), 400
+    now = time.time()
+    hit = _weather_place_cache.get(q)
+    if hit and now - hit[0] < 3600:
+        return jsonify({"ok": True, "places": hit[1]})
+    try:
+        raw = _weather_get(WEATHER_GEOCODE_URL, (("name", q), ("count", "8"), ("language", "zh"), ("format", "json")))
+    except WeatherError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+    places = []
+    for item in raw.get("results") if isinstance(raw, dict) and isinstance(raw.get("results"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        region = "，".join(x for x in (_squash_text(item.get("admin1"), 30), _squash_text(item.get("country"), 30)) if x)
+        place = _coerce_weather_place({"name": item.get("name"), "region": region,
+                                       "lat": item.get("latitude"), "lon": item.get("longitude")})
+        if place and place not in places:
+            places.append(place)
+    if len(_weather_place_cache) > 64:
+        _weather_place_cache.clear()
+    _weather_place_cache[q] = (now, places)
+    return jsonify({"ok": True, "places": places})
 
 
 # =========================

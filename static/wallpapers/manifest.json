@@ -16,5 +16,29 @@
     "name": "晨雾山林",
     "color": "#284e53",
     "lum": 0.167
+  },
+  {
+    "id": "inkhill",
+    "name": "月夜墨山",
+    "color": "#2e3135",
+    "lum": 0.094
+  },
+  {
+    "id": "galaxy",
+    "name": "星河",
+    "color": "#12151f",
+    "lum": 0.053
+  },
+  {
+    "id": "seabay",
+    "name": "海湾落日",
+    "color": "#443b46",
+    "lum": 0.258
+  },
+  {
+    "id": "flow",
+    "name": "流光",
+    "color": "#101c1d",
+    "lum": 0.037
   }
 ]

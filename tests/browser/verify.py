@@ -313,7 +313,7 @@ def layout(b):
     ctx, page = open_page(b, 1440, 900)
     c1 = page.evaluate("() => HOME_GRID.cols")
     page.locator("#homeDeckBtn").click(); page.wait_for_timeout(300)
-    check("「组件」弹窗：默认开着日历和待办两项", page.locator("#deckPicker [data-deck-toggle]:checked").count() == 2 and page.locator("#deckPicker [data-deck-pick]").count() == 6)
+    check("「组件」弹窗：默认开着日历和待办两项", page.locator("#deckPicker [data-deck-toggle]:checked").count() == 2 and page.locator("#deckPicker [data-deck-pick]").count() == 10)
     page.locator('[data-deck-pick="calendar"] .switch').click(); page.wait_for_timeout(200)
     c_mid = page.evaluate("() => HOME_GRID.cols")
     page.locator('[data-deck-pick="todo"] .switch').click(); page.wait_for_timeout(300)

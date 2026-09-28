@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）：页面结构、偏好白名单、样式护栏，
+"""首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态 / 天气 / 余额概览 / 世界时钟 / 时间进度）：页面结构、偏好白名单、样式护栏，
 以及把真实页面脚本放进 node 里跑：组件的添加 / 移除 / 排序、日历与节日、倒数日的重复规则、便签自动保存。"""
 import copy
 import json
+import os
 import re
 import subprocess
 import unittest
@@ -13,9 +14,10 @@ from tests.test_script_boot import NODE, STUB, RESPONSES, _inline_script
 from app import app  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-KINDS = ["calendar", "todo", "days", "memo", "expiry", "checkin"]
+KINDS = ["calendar", "todo", "days", "memo", "expiry", "checkin", "weather", "balance", "clocks", "progress"]
 CARD_IDS = {"calendar": "deckCalendar", "todo": "homeTodo", "days": "deckDays", "memo": "deckMemo",
-            "expiry": "deckExpiry", "checkin": "deckCheckin"}
+            "expiry": "deckExpiry", "checkin": "deckCheckin", "weather": "deckWeather", "balance": "deckBalance",
+            "clocks": "deckClocks", "progress": "deckProgress"}
 
 
 def deck_section(script):
@@ -182,11 +184,13 @@ class DeckScriptCase(unittest.TestCase):
     # 夹具里的「今天」：2026-09-20（周日，国庆调休上班日），离中秋节（9 月 25 日）5 天。
     NOW = "CAL.now = () => new Date(2026, 8, 20, 10, 30);"
 
-    def run_js(self, assertions, configs=None, cookies=None, wide=False):
+    def run_js(self, assertions, configs=None, cookies=None, wide=False, tz=None, extra=None):
+        """tz：给 node 进程设时区（世界时钟要比「这里」早晚几小时）；extra：其它接口的桩响应 {路径: 响应体}。"""
         responses = copy.deepcopy(RESPONSES)
         responses["/api/configs"].update({"todos": [], "todos_locked": False, "todos_error": "",
                                           "deck": copy.deepcopy(self.DECK), "deck_locked": False, "deck_error": ""})
         responses["/api/configs"].update(configs or {})
+        responses.update(copy.deepcopy(extra or {}))
         script = "\n".join([
             Path(STUB).read_text(),
             "globalThis.__RESPONSES = " + json.dumps(responses) + ";",
@@ -207,7 +211,8 @@ class DeckScriptCase(unittest.TestCase):
             "assert.deepEqual(__CALLS.errors, []); assert.deepEqual(__CALLS.rejections, []);",
             "console.log('ok'); } catch(e) { console.error(e); process.exitCode = 1; } }, 30);",
         ])
-        proc = subprocess.run([NODE], input=script, text=True, capture_output=True, timeout=20)
+        env = dict(os.environ, TZ=tz) if tz else None
+        proc = subprocess.run([NODE], input=script, text=True, capture_output=True, timeout=20, env=env)
         self.assertEqual(proc.returncode, 0, proc.stderr[-3000:])
         self.assertIn("ok", proc.stdout)
 
@@ -327,7 +332,7 @@ class DeckLayoutScriptTest(DeckScriptCase):
             renderDeckPicker();
             const html = $('deckPicker').innerHTML;
             const order = Array.from(html.matchAll(/data-deck-pick="(\\w+)"/g)).map(m => m[1]);
-            assert.deepEqual(order, ['memo', 'calendar', 'todo', 'days', 'expiry', 'checkin']);
+            assert.deepEqual(order, ['memo', 'calendar', 'todo', 'days', 'expiry', 'checkin', 'weather', 'balance', 'clocks', 'progress']);
             assert.equal((html.match(/ is-on"/g) || []).length, 2);
             assert.equal((html.match(/data-deck-grip/g) || []).length, 2);       // 只有已添加的能排序
             assert.equal((html.match(/data-deck-toggle checked/g) || []).length, 2);

@@ -2093,6 +2093,74 @@ a.expiry-name:hover { color: var(--accent); }
 .checkin-deck-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; margin-top: 10px; color: var(--text-3); font-size: 12px; }
 @media (forced-colors: active) { .checkin-deck-bar { border: 1px solid CanvasText; } .checkin-deck-bar i { background: Highlight; } }
 
+/* ---------- 天气 ---------- */
+.weather-box[hidden], .weather-form[hidden], .deck-foot[hidden], .clock-editor[hidden], .balance-list[hidden] { display: none; }
+.wx-now { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: center; }
+.wx-now .wx-now-icon { grid-row: span 2; width: 40px; height: 40px; color: var(--text-2); stroke-width: 1.5; }
+.wx-now-main { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.wx-temp { color: var(--text); font-size: 30px; font-weight: 620; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.wx-text { overflow: hidden; color: var(--text-2); font-size: 14px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.wx-now-sub { overflow: hidden; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.wx-line { margin-top: 10px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.wx-line.is-rain { color: var(--accent); }
+.wx-days { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 12px 0 0; padding: 0; list-style: none; }
+.wx-day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0 7px; border-radius: 10px; font-size: 12px; }
+.wx-day:first-child { background: var(--surface-hover); }
+.wx-day-name { color: var(--text-3); font-weight: 520; }
+.wx-day .wx-day-icon { width: 20px; height: 20px; color: var(--text-2); }
+.wx-day-temp { display: flex; gap: 3px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.wx-day-temp b { color: var(--text); font-weight: 600; }
+.wx-stale { color: var(--warning); }
+.deck-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 10px; margin-top: 10px; color: var(--text-3); font-size: 12px; }
+.deck-foot > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-foot .deck-link { flex: 0 0 auto; color: var(--text-3); font-size: 11.5px; text-decoration: none; }
+.deck-foot .deck-link:hover { color: var(--accent); }
+.weather-form { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.weather-form-row { display: flex; gap: 8px; }
+.weather-form-row .todo-input { flex: 1 1 auto; min-width: 0; }
+.weather-places { display: flex; flex-direction: column; gap: 2px; max-height: 220px; margin: 0 -6px; padding: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.weather-places:empty { display: none; }
+.weather-place { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 7px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.weather-place b { flex: 0 0 auto; font-weight: 560; }
+.weather-place span { min-width: 0; overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.weather-place:hover { background: var(--surface-hover); }
+.weather-place:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--surface-hover); }
+.weather-form-actions { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- 余额概览 ---------- */
+.balance-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 1px; align-items: baseline; }
+.balance-val { color: var(--text); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.balance-val small { margin-left: 3px; color: var(--text-3); font-size: 11px; font-weight: 520; }
+.balance-note { grid-column: 1 / -1; min-width: 0; overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.balance-item.is-soon .balance-note { color: var(--warning); }
+.balance-item.is-past .balance-note, .balance-item.is-past .balance-val { color: var(--danger); }
+
+/* ---------- 世界时钟 ---------- */
+.clock-list { margin: 0 -6px; padding: 0; list-style: none; }
+.clock-item { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 10px; }
+.clock-item:hover { background: var(--surface-hover); }
+.clock-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.clock-name { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.clock-sub { overflow: hidden; color: var(--text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.clock-time { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--text); font-size: 20px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.clock-time .clock-dn { width: 14px; height: 14px; color: var(--text-3); }
+.clock-item.is-night .clock-time { color: var(--text-2); }
+.clock-empty { padding: 6px; color: var(--text-3); font-size: 13px; }
+.clock-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.clock-editor select { flex: 1 1 120px; min-width: 0; padding-right: 6px; }
+.clock-editor .days-form-hint { flex-basis: 100%; }
+.clock-editor .days-form-hint:empty { display: none; }
+
+/* ---------- 时间进度 ---------- */
+.progress-list { display: flex; flex-direction: column; gap: 11px; }
+.prog-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.prog-name { flex: 0 0 auto; color: var(--text); font-size: 13px; font-weight: 560; }
+.prog-num { min-width: 0; overflow: hidden; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.prog-num b { color: var(--text); font-weight: 600; }
+.prog-bar { height: 6px; margin-top: 5px; overflow: hidden; border-radius: 999px; background: var(--surface-hover); }
+.prog-bar i { display: block; height: 100%; border-radius: inherit; background: var(--text-2); transition: width .3s ease; }
+@media (forced-colors: active) { .prog-bar { border: 1px solid CanvasText; } .prog-bar i { background: Highlight; } }
+
 /* ---------- 「首页组件」弹窗 ---------- */
 .deck-picker { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
 .deck-pick { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 12px 8px 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); transition: border-color .14s ease, opacity .14s ease; }

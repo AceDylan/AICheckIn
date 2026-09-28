@@ -163,7 +163,7 @@
             </div>
             <div class="sr-only" id="homeArrangeLive" aria-live="polite"></div>
             <div class="home-body" id="homeBody">
-              <!-- 首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）。哪些上首页、排什么顺序记在本机 Cookie 里，
+              <!-- 首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态 / 天气 / 余额概览 / 世界时钟 / 时间进度）。哪些上首页、排什么顺序记在本机 Cookie 里，
                    由 renderDeck() 决定各卡片的 hidden 与先后（挪动节点，不重写 HTML）。卡片全是静态节点：
                    renderHome() 只重绘 #homeList，输入到一半的字和焦点不会被搜索 / 刷新冲掉。
                    宽屏是图标右侧的一列；窄屏和手机收成一行标签条，点哪个展开哪个，不把图标挤出首屏。
@@ -289,6 +289,72 @@
                     <div class="deck-body" id="deckCheckinBody">
                       <div class="deck-state" id="checkinDeckState" hidden></div>
                       <div class="checkin-deck" id="checkinDeck"></div>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-weather" id="deckWeather" data-deck="weather" aria-labelledby="deckWeatherTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckWeatherTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3.5v1.5M3.5 8H2M4.8 4.8l1 1M12.2 4.8l-1 1"/><path d="M10.9 9.4A3.5 3.5 0 1 0 5.2 11"/><path d="M8.5 20a3.5 3.5 0 0 1-.4-7A5 5 0 0 1 17.8 12 3.8 3.8 0 0 1 17.5 20z"/></svg>天气</h2>
+                      <span class="deck-meta" id="deckWeatherMeta"></span>
+                      <button type="button" class="deck-icon-btn" id="weatherEdit" hidden title="换一个城市" aria-label="天气：换城市" aria-expanded="false" aria-controls="weatherForm"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="weather" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="天气：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="weather" aria-expanded="true" aria-controls="deckWeatherBody" title="收起天气"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckWeatherBody">
+                      <div class="deck-state" id="weatherState" hidden></div>
+                      <div class="weather-box" id="weatherBox" aria-live="polite" hidden></div>
+                      <!-- 城市搜索由服务端去 Open-Meteo 查，这里只提交关键字；选中后存进 data/deck.json（要管理权限）。 -->
+                      <form class="weather-form" id="weatherForm" role="search" action="#" autocomplete="off" novalidate hidden>
+                        <label class="sr-only" for="weatherQuery">搜索城市</label>
+                        <div class="weather-form-row">
+                          <input class="todo-input" id="weatherQuery" name="weather-city" type="search" maxlength="40" autocomplete="off" enterkeyhint="search" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" placeholder="城市名，例如：上海、杭州、东京">
+                          <button type="submit" class="btn sm" id="weatherSearch">搜索</button>
+                        </div>
+                        <ul class="weather-places" id="weatherPlaces" aria-label="搜到的城市"></ul>
+                        <div class="weather-form-actions"><span class="days-form-hint" id="weatherHint" aria-live="polite"></span><button type="button" class="btn ghost sm" id="weatherCancel">取消</button></div>
+                      </form>
+                      <div class="deck-foot" id="weatherFoot" hidden><span id="weatherFootText"></span><a class="deck-link" href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" title="天气数据来自 Open-Meteo（CC BY 4.0）">Open-Meteo</a></div>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-balance" id="deckBalance" data-deck="balance" aria-labelledby="deckBalanceTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckBalanceTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M17 12h4v4h-4a2 2 0 0 1 0-4z"/></svg>余额概览</h2>
+                      <span class="deck-meta" id="deckBalanceMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="balance" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="余额概览：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="balance" aria-expanded="true" aria-controls="deckBalanceBody" title="收起余额概览"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckBalanceBody">
+                      <div class="deck-state" id="balanceState" hidden></div>
+                      <ul class="expiry-list balance-list" id="balanceList" aria-label="看板站点的余额，快用完的排在前面"></ul>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-clocks" id="deckClocks" data-deck="clocks" aria-labelledby="deckClocksTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckClocksTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>世界时钟</h2>
+                      <span class="deck-meta" id="deckClocksMeta"></span>
+                      <button type="button" class="deck-icon-btn" id="clocksEdit" hidden title="添加或移除城市" aria-label="世界时钟：添加或移除城市" aria-expanded="false" aria-controls="clocksEditor"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="clocks" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="世界时钟：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="clocks" aria-expanded="true" aria-controls="deckClocksBody" title="收起世界时钟"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckClocksBody">
+                      <ul class="clock-list" id="clockList" aria-label="各地时间"></ul>
+                      <div class="clock-editor" id="clocksEditor" hidden>
+                        <label class="sr-only" for="clockAddSel">添加城市</label>
+                        <select class="todo-input" id="clockAddSel"></select>
+                        <button type="button" class="btn sm" id="clockAddBtn">添加</button>
+                        <button type="button" class="btn ghost sm" id="clocksDone">完成</button>
+                        <span class="days-form-hint" id="clocksHint" aria-live="polite"></span>
+                      </div>
+                    </div>
+                  </section>
+                  <section class="deck-card deck-progress" id="deckProgress" data-deck="progress" aria-labelledby="deckProgressTitle" hidden>
+                    <div class="deck-head">
+                      <h2 class="deck-title" id="deckProgressTitle"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 8.5 11.9L12 12z"/></svg>时间进度</h2>
+                      <span class="deck-meta" id="deckProgressMeta"></span>
+                      <button type="button" class="deck-icon-btn" data-deck-menu="progress" aria-haspopup="menu" aria-expanded="false" title="移动或移除这个组件" aria-label="时间进度：移动或移除"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></button>
+                      <button type="button" class="deck-icon-btn deck-fold" data-deck-fold="progress" aria-expanded="true" aria-controls="deckProgressBody" title="收起时间进度"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+                    </div>
+                    <div class="deck-body" id="deckProgressBody">
+                      <div class="progress-list" id="progressList"></div>
                     </div>
                   </section>
                 </div>
@@ -626,7 +692,7 @@
       </div>
       <div class="field"><label id="homeDeckLabel">首页组件</label>
         <div class="freq-row"><span class="note" id="homeDeckSummary" style="margin:0"></span><button type="button" class="btn ghost sm" id="openDeckModal">选择与排序…</button></div>
-        <div class="hint">日历（下一个节日）、待办、倒数日、便签、到期提醒、签到状态。宽屏排在图标右侧一列，手机上收成一行标签、点哪个展开哪个。</div>
+        <div class="hint">日历（下一个节日）、待办、倒数日、便签、到期提醒、签到状态、天气、余额概览、世界时钟、时间进度。宽屏排在图标右侧一列，手机上收成一行标签、点哪个展开哪个。</div>
       </div>
       <div class="field"><label id="homeFreqLabel">常用一行</label>
         <div class="freq-row"><div class="segmented" id="homeFreqSeg" role="radiogroup" aria-labelledby="homeFreqLabel"><button type="button" data-home-freq="on">显示</button><button type="button" data-home-freq="off">关闭</button></div><button type="button" class="btn ghost sm" id="homeFreqClear">清空记录</button></div>
@@ -1024,6 +1090,8 @@
       hourglass: '<path d="M7 3h10M7 21h10M8 3v4.2a4 4 0 0 0 1.4 3L12 12l2.6-1.8a4 4 0 0 0 1.4-3V3M8 21v-4.2a4 4 0 0 1 1.4-3L12 12l2.6 1.8a4 4 0 0 1 1.4 3V21"/>',
       note: '<path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M14 20v-5a1 1 0 0 1 1-1h5M8 9h8M8 13h4"/>',
       bell: '<path d="M12 4a6 6 0 0 0-6 6v3.5L4.5 16v1h15v-1L18 13.5V10a6 6 0 0 0-6-6zM10 20a2 2 0 0 0 4 0"/>',
+      weather: '<path d="M8 3.5v1.5M3.5 8H2M4.8 4.8l1 1M12.2 4.8l-1 1"/><path d="M10.9 9.4A3.5 3.5 0 1 0 5.2 11"/><path d="M8.5 20a3.5 3.5 0 0 1-.4-7A5 5 0 0 1 17.8 12 3.8 3.8 0 0 1 17.5 20z"/>',
+      progress: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 8.5 11.9L12 12z"/>',
       widgets: '<rect x="4" y="4" width="7" height="9" rx="2"/><rect x="13" y="4" width="7" height="5" rx="2"/><rect x="13" y="11" width="7" height="9" rx="2"/><rect x="4" y="15" width="7" height="5" rx="2"/>',
       gear: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7.7 7.7 0 0 0 14.8 6L14.5 3h-5l-.3 3a7.7 7.7 0 0 0-1.7 1L5.1 6.1l-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.7 7.7 0 0 0 1.7 1l.3 3h5l.3-3a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/>',
       moon: '<path d="M19.5 14.2A7.8 7.8 0 0 1 9.8 4.5a7.8 7.8 0 1 0 9.7 9.7z"/>',
@@ -1115,8 +1183,12 @@
       { id: 'aurora', name: '极光', color: '#112f49', lum: 0.121 },
       { id: 'dusk', name: '暮色群山', color: '#573352', lum: 0.217 },
       { id: 'mist', name: '晨雾山林', color: '#284e53', lum: 0.167 },
+      { id: 'inkhill', name: '月夜墨山', color: '#2e3135', lum: 0.094 },
+      { id: 'galaxy', name: '星河', color: '#12151f', lum: 0.053 },
+      { id: 'seabay', name: '海湾落日', color: '#443b46', lum: 0.258 },
+      { id: 'flow', name: '流光', color: '#101c1d', lum: 0.037 },
     ];
-    // 默认不开壁纸：三张内置壁纸都是深色，一开整页就固定成深色场景，和默认的「纸与墨」浅 / 深主题不是一回事。
+    // 默认不开壁纸：内置壁纸都是深色，一开整页就固定成深色场景，和默认的「纸与墨」浅 / 深主题不是一回事。
     // 想要壁纸的人在「壁纸 / 遮罩 / 导航…」里手动打开，选择记在 Cookie 里。
     const WALL_DEFAULT = 'off';
     const WALL_BUILTIN = 'aurora';   // 选了「自定义」但服务器上没有时，回落到这张内置壁纸
@@ -1639,19 +1711,30 @@
       return days > 365 ? '约还能用一年以上' : `约还能用 ${Math.floor(days)} 天`;
     }
     // opts.resets：这个站点的额度会按「刷新 / 重置时间」回满，每天记的只是某一刻的余量——不估日均和还能用几天，只画线。
-    function trendHtml(points, noPlot, opts) {
-      const pts = (points || [])
+    function trendPoints(points) {
+      return (points || [])
         .filter(p => Array.isArray(p) && p.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(p[0]) && /\d/.test(String(p[1])))
         .map(([d, v]) => [d, parseNum(v)]);
-      if (pts.length < 2) return null;
-      const dayMs = (d) => new Date(d + 'T00:00:00').getTime();
+    }
+    function trendDayMs(d) { return new Date(d + 'T00:00:00').getTime(); }
+    // 近 14 天的日均用量：{ days: 跨了几天, perDay: 每天少了多少（负数 = 在增加） }；不到两个点或不满一天回 null。
+    // 走势卡片和首页「余额概览」共用这一处。
+    function dailyUse(pts) {
+      if (!pts || pts.length < 2) return null;
       const last = pts[pts.length - 1];
-      const recent = pts.filter(p => dayMs(last[0]) - dayMs(p[0]) <= 14 * 86400000);
-      const first = recent[0];
-      const days = Math.round((dayMs(last[0]) - dayMs(first[0])) / 86400000);
+      const first = pts.filter(p => trendDayMs(last[0]) - trendDayMs(p[0]) <= 14 * 86400000)[0];
+      const days = Math.round((trendDayMs(last[0]) - trendDayMs(first[0])) / 86400000);
+      return days >= 1 ? { days, perDay: (first[1] - last[1]) / days } : null;
+    }
+    function trendHtml(points, noPlot, opts) {
+      const pts = trendPoints(points);
+      if (pts.length < 2) return null;
+      const dayMs = trendDayMs;
+      const last = pts[pts.length - 1];
+      const use = dailyUse(pts), days = use ? use.days : 0;
       let note = '';
-      if (days >= 1 && !(opts && opts.resets)) {
-        const perDay = (first[1] - last[1]) / days;
+      if (use && !(opts && opts.resets)) {
+        const perDay = use.perDay;
         if (perDay > 0.005) note = `近 ${days} 天日均用 ${fmtNum(perDay)}` + (last[1] > 0 ? ` · ${runwayText(last[1] / perDay)}` : '');
         else if (perDay < -0.005) note = `近 ${days} 天余额在增加`;
         else note = `近 ${days} 天余额没变`;
@@ -3438,12 +3521,13 @@
       return { icon: 'star', title: '从第一个网址开始', text: '网址按分组收纳，勾选「展示到首页」的会出现在这里。已有 JSON 导出或备份的话，也可以一次导入。', actions: [first, { label: '导入 JSON / 备份', ghost: true, onclick: "$('importCfg').click()" }] };
     }
     // ===== 首页组件 =====
-    // 日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态。哪些上首页、排什么顺序、谁收着，都是「这台设备怎么用」的事
+    // 日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态 / 天气 / 余额概览 / 世界时钟 / 时间进度。哪些上首页、排什么顺序、谁收着，都是「这台设备怎么用」的事
     // （手机和电脑可以各摆各的），和其它本机偏好一样记在 Cookie 里，读的时候按组件 id 白名单过滤：
     //  bh_home_deck       已添加的组件，按顺序用 . 连接；一个都不要记作 none
     //  bh_home_deck_fold  右侧一列（宽屏）里被收起的组件
     //  bh_home_deck_open  标签条（窄屏 / 手机）里当前展开的那一个；none = 全收着
-    // 组件里的内容在服务端：待办 → todos.json，倒数日 / 便签 → deck.json（都要管理权限）；日历、到期提醒、签到状态拿现成数据现算。
+    // 组件里的内容在服务端：待办 → todos.json，倒数日 / 便签 / 天气的城市 / 世界时钟的城市 → deck.json（都要管理权限）；
+    // 日历、到期提醒、签到状态、余额概览、时间进度拿现成数据现算；天气由服务端去 Open-Meteo 取（浏览器不连外部服务）。
     // 旧版首页只有待办一张卡片，偏好在 bh_home_todo（open / closed / off）里：新 Cookie 还没写过时按它推默认值，
     // 老用户升级后待办原来是藏着 / 收着的，现在还是。
     const DECK_KINDS = [
@@ -3453,6 +3537,10 @@
       { id: 'memo', el: 'deckMemo', name: '便签', icon: 'note', desc: '随手记点什么，停笔自动保存' },
       { id: 'expiry', el: 'deckExpiry', name: '到期提醒', icon: 'bell', desc: '看板里带到期时间的站点，按先后排' },
       { id: 'checkin', el: 'deckCheckin', name: '签到状态', icon: 'check', desc: '今天签到了几个，定时签到开没开' },
+      { id: 'weather', el: 'deckWeather', name: '天气', icon: 'weather', desc: '选一个城市：现在的天气、几点可能下雨、未来五天' },
+      { id: 'balance', el: 'deckBalance', name: '余额概览', icon: 'wallet', desc: '看板里各站点的余额，按「约还能用几天」排，快用完的在前' },
+      { id: 'clocks', el: 'deckClocks', name: '世界时钟', icon: 'globe', desc: '几座城市现在几点、比这里早 / 晚几个小时' },
+      { id: 'progress', el: 'deckProgress', name: '时间进度', icon: 'progress', desc: '今天、本周、本月、今年各过去了多少' },
     ];
     const DECK_IDS = DECK_KINDS.map(k => k.id);
     const DECK_DEFAULT = ['calendar', 'todo'];
@@ -3514,6 +3602,10 @@
       if (order.includes('memo')) renderMemo();
       if (order.includes('expiry')) renderExpiry();
       if (order.includes('checkin')) renderCheckinDeck();
+      if (order.includes('weather')) renderWeather();
+      if (order.includes('balance')) renderBalance();
+      if (order.includes('clocks')) renderClocks();
+      if (order.includes('progress')) renderProgress();
       renderDeckTabs(order, open);
     }
     // 标签条（窄屏 / 手机）：每个组件一枚标签，带一句要紧的话（下个节日还有几天、几项待办……），不展开也看得到。
@@ -3539,6 +3631,19 @@
         const s = checkinStats();
         return s.total ? `${s.done}/${s.total}` : '';
       }
+      if (id === 'weather') {
+        const w = !deckLocked() && weatherPlace() && WEATHER.data;
+        return w ? `${Math.round(w.now.temp)}° ${wmoInfo(w.now.code).text}` : '';
+      }
+      if (id === 'balance') {
+        const low = balanceRows().filter(r => r.low).length;
+        return low ? `${low} 个偏低` : '';
+      }
+      if (id === 'clocks') {
+        const c = clockRows(CAL.now())[0];
+        return c ? `${c.name} ${c.time}` : '';
+      }
+      if (id === 'progress') return `今年 ${Math.floor(progressRows(CAL.now())[3].pct)}%`;
       return '';
     }
     function renderDeckTabs(order, open) {
@@ -4195,9 +4300,17 @@
       if (e.key === 'Escape' && HSYNC.open) { e.stopPropagation(); closeCalSync(); }
     });
     // 过了零点：今天换了一格，「还有几天」全都少一天。时钟每分钟醒一次，顺路看一眼，不另设定时器。
+    // 每分钟（和首页时钟同一个节拍）：过了零点整个重画；平时只走一走世界时钟和时间进度，
+    // 顺便看看天气是不是放太久了（切回这个标签页时也会走到这里）。
     function deckTick() {
-      if (!DECK.today || todayNum() === DECK.today) return;
-      if (STATE_LOADED) renderDeck();
+      if (!DECK.today || !STATE_LOADED) return;
+      if (todayNum() !== DECK.today) { renderDeck(); return; }
+      if (STATE.private && STATE.locked) return;
+      const order = deckOrder();
+      if (order.includes('clocks')) renderClocks();
+      if (order.includes('progress')) renderProgress();
+      if (order.includes('weather')) maybeLoadWeather();
+      if (order.some(id => id === 'clocks' || id === 'progress')) renderDeckTabs(order, deckOpenId());
     }
 
     // ===== 首页组件：倒数日 =====
@@ -4453,6 +4566,361 @@
         <div class="checkin-deck-foot"><span>${plan}${sch.last_run_time ? ` · 上次 ${agoSpan(sch.last_run_time)}` : ''}</span><button type="button" class="deck-link" data-checkin-go>去签到中心</button></div>`;
     }
     $('deckCheckin').addEventListener('click', (e) => { if (e.target.closest('[data-checkin-go]')) switchView('checkin'); });
+
+    // ===== 首页组件：天气 =====
+    // 城市存在 deck.json（管理员设），预报由服务端去 Open-Meteo 取并缓存 20 分钟；这里只问本站。
+    // 组件在首页上、页面在前台时才取：打开页面、切回标签页、每分钟的时钟节拍都会看一眼是不是放太久了。
+    const WEATHER = { data: null, key: '', at: 0, loading: false, error: '', stale: false, fetched: '', formOpen: false, searching: false, places: null, sig: '' };
+    const WEATHER_FRESH_MS = 20 * 60000, WEATHER_RETRY_MS = 2 * 60000;
+    // WMO 天气代码 → 中文 + 图标（Open-Meteo 用的就是这套代码）。
+    const WMO = [
+      [[0], '晴', 'clear'], [[1], '晴间多云', 'partly'], [[2], '多云', 'partly'], [[3], '阴', 'cloud'],
+      [[45, 48], '雾', 'fog'], [[51, 53, 55, 56, 57], '毛毛雨', 'drizzle'], [[61], '小雨', 'rain'], [[63], '中雨', 'rain'],
+      [[65], '大雨', 'rain'], [[66, 67], '冻雨', 'rain'], [[71], '小雪', 'snow'], [[73], '中雪', 'snow'], [[75], '大雪', 'snow'],
+      [[77], '雪粒', 'snow'], [[80], '阵雨', 'rain'], [[81], '强阵雨', 'rain'], [[82], '暴雨', 'rain'], [[85, 86], '阵雪', 'snow'],
+      [[95], '雷阵雨', 'storm'], [[96, 99], '雷阵雨伴冰雹', 'storm'],
+    ];
+    const WX_ICONS = {
+      clear: ICONS.sun,
+      night: ICONS.moon,
+      partly: '<path d="M7.5 3v1.4M3 7.5H1.6M4.3 4.3l1 1M10.7 4.3l-1 1"/><path d="M10.3 9A3.2 3.2 0 1 0 4.7 10.6"/><path d="M8.5 20a3.5 3.5 0 0 1-.4-7A5 5 0 0 1 17.8 12 3.8 3.8 0 0 1 17.5 20z"/>',
+      partlyNight: '<path d="M10.6 8.6A3.6 3.6 0 0 1 5.4 3.4a3.8 3.8 0 1 0 5.2 5.2z"/><path d="M8.5 20a3.5 3.5 0 0 1-.4-7A5 5 0 0 1 17.8 12 3.8 3.8 0 0 1 17.5 20z"/>',
+      cloud: ICONS.cloud,
+      fog: '<path d="M7 13a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 3.5a4.5 4.5 0 0 1 1.6 8.7"/><path d="M4 16h16M6 19.5h12"/>',
+      drizzle: '<path d="M7 15a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 5.5a4.5 4.5 0 0 1-.5 9.5z"/><path d="M8 18.5v.5M12 19v.5M16 18.5v.5"/>',
+      rain: '<path d="M7 15a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 5.5a4.5 4.5 0 0 1-.5 9.5z"/><path d="m8.5 17.5-1 3M12.5 17.5l-1 3M16.5 17.5l-1 3"/>',
+      snow: '<path d="M7 15a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 5.5a4.5 4.5 0 0 1-.5 9.5z"/><path d="M8 18.5h.01M12 20.5h.01M16 18.5h.01M10 22h.01M14 22h.01" stroke-width="2.4"/>',
+      storm: '<path d="M7 15a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 5.5a4.5 4.5 0 0 1-.5 9.5z"/><path d="m12.5 14-2.5 4h3l-2 4"/>',
+    };
+    function wmoInfo(code, night) {
+      const hit = WMO.find(row => row[0].includes(Number(code)));
+      const kind = hit ? hit[2] : 'cloud';
+      const art = night && kind === 'clear' ? 'night' : night && kind === 'partly' ? 'partlyNight' : kind;
+      return { text: hit ? hit[1] : '未知', kind, art };
+    }
+    function wxIcon(code, night, cls) { return `<svg class="${cls || 'ic'}" viewBox="0 0 24 24" aria-hidden="true">${WX_ICONS[wmoInfo(code, night).art]}</svg>`; }
+    function weatherPlace() { const w = STATE.deck && STATE.deck.weather; return w && typeof w.name === 'string' && isFinite(Number(w.lat)) && isFinite(Number(w.lon)) ? w : null; }
+    function placeKey(w) { return w ? `${w.lat},${w.lon}` : ''; }
+    function weatherWanted() { return !deckLocked() && !STATE.deck_error && !!weatherPlace() && deckOrder().includes('weather'); }
+    async function loadWeather(force) {
+      if (WEATHER.loading || !weatherWanted()) return;
+      WEATHER.loading = true;
+      renderWeather();
+      let data;
+      try { data = await deckApi('/api/deck/weather' + (force ? '?force=1' : ''), 'GET'); } catch (err) { data = { ok: false, error: err.message }; }
+      WEATHER.loading = false;
+      if (data.ok && data.weather) {
+        const got = new Date(Date.now() - Math.max(0, Number(data.age) || 0) * 1000), pad = (n) => String(n).padStart(2, '0');
+        const fetched = `${localDateKey(got)} ${pad(got.getHours())}:${pad(got.getMinutes())}:${pad(got.getSeconds())}`;   // 浏览器本地时间，给 agoSpan 用
+        Object.assign(WEATHER, { data: data.weather, key: placeKey(data.place), at: Date.now(), error: '', stale: !!data.stale, fetched });
+      } else {
+        // 出错了两分钟后再试，不要每分钟都去敲；旧数据先留着，标一句取不到。
+        Object.assign(WEATHER, { key: placeKey(weatherPlace()), at: Date.now() - WEATHER_FRESH_MS + WEATHER_RETRY_MS, error: data.error || '网络错误' });
+        if (data.ok && !data.place) WEATHER.data = null;
+      }
+      WEATHER.sig = '';
+      renderWeather();
+      renderDeckTabs(deckOrder(), deckOpenId());
+    }
+    function maybeLoadWeather() {
+      if (!weatherWanted() || document.hidden) return;
+      if (WEATHER.key !== placeKey(weatherPlace())) { WEATHER.data = null; WEATHER.error = ''; loadWeather(); return; }
+      if (Date.now() - WEATHER.at > WEATHER_FRESH_MS) loadWeather();
+    }
+    function tempText(v) { return v == null || !isFinite(Number(v)) ? '–' : `${Math.round(Number(v))}°`; }
+    function weatherDayName(date, i) {
+      if (i === 0) return '今天';
+      if (i === 1) return '明天';
+      const d = parseDayKey(date);
+      return d ? '周' + '日一二三四五六'[new Date(d.y, d.m - 1, d.d).getDay()] : '';
+    }
+    function weatherBoxHtml(w) {
+      const now = w.now, info = wmoInfo(now.code, !now.is_day), today = (w.days || [])[0];
+      const bits = [];
+      if (now.feels != null) bits.push(`体感 ${tempText(now.feels)}`);
+      if (now.humidity != null) bits.push(`湿度 ${Math.round(now.humidity)}%`);
+      if (now.wind != null) bits.push(`风 ${Math.round(now.wind)} km/h`);
+      const lines = [];
+      if (today) lines.push(`今天 ${tempText(today.min)} ~ ${tempText(today.max)}`);
+      if (w.rain) lines.push(`${escapeHtml(w.rain.at)} 前后可能下雨（${Math.round(w.rain.pop)}%）`);
+      else if (today && today.pop != null && today.pop < 30) lines.push('12 小时内不太会下雨');
+      const days = (w.days || []).slice(0, 5).map((d, i) => {
+        const di = wmoInfo(d.code);
+        return `<li class="wx-day" title="${escapeHtml(d.date)} ${escapeHtml(di.text)}${d.pop != null ? ` · 降雨概率 ${Math.round(d.pop)}%` : ''}">
+          <span class="wx-day-name">${weatherDayName(d.date, i)}</span>${wxIcon(d.code, false, 'ic wx-day-icon')}<span class="wx-day-temp"><b>${tempText(d.max)}</b>${tempText(d.min)}</span></li>`;
+      }).join('');
+      return `<div class="wx-now">${wxIcon(now.code, !now.is_day, 'ic wx-now-icon')}
+          <div class="wx-now-main"><span class="wx-temp">${tempText(now.temp)}</span><span class="wx-text">${escapeHtml(info.text)}</span></div>
+          <div class="wx-now-sub">${bits.join(' · ')}</div></div>
+        ${lines.length ? `<div class="wx-line${w.rain ? ' is-rain' : ''}">${lines.join(' · ')}</div>` : ''}
+        ${days ? `<ul class="wx-days" aria-label="未来五天">${days}</ul>` : ''}`;
+    }
+    function renderWeather() {
+      const locked = deckLocked(), broken = STATE.deck_error || '', place = weatherPlace(), w = WEATHER.data;
+      const current = w && WEATHER.key === placeKey(place);
+      const sig = JSON.stringify([locked, broken, place, current ? WEATHER.at : 0, WEATHER.loading, WEATHER.error, WEATHER.formOpen, canEdit()]);
+      if (!locked && !broken && place && !current && !WEATHER.loading && !WEATHER.error) maybeLoadWeather();
+      if (sig === WEATHER.sig) return;
+      WEATHER.sig = sig;
+      const state = $('weatherState'), box = $('weatherBox'), form = $('weatherForm'), edit = $('weatherEdit');
+      edit.hidden = locked || !!broken || !canEdit() || !place;
+      edit.setAttribute('aria-expanded', String(WEATHER.formOpen));
+      $('deckWeatherMeta').textContent = locked || broken || !place ? '' : place.name;
+      form.hidden = locked || !!broken || !canEdit() || !(WEATHER.formOpen || !place);
+      box.hidden = locked || !!broken || !place || !current;
+      $('weatherFoot').hidden = box.hidden;
+      let msg = '';
+      if (locked) msg = deckLockedHtml('天气');
+      else if (broken) msg = escapeHtml(broken);
+      else if (!place) msg = canEdit() ? '<span>搜一个城市，首页就能看到那里的天气。</span>' : '<span>还没有选城市。</span>';
+      else if (!current && WEATHER.loading) msg = '<span>正在取天气…</span>';
+      else if (!current && WEATHER.error) msg = `<span>暂时取不到天气：${escapeHtml(WEATHER.error)}</span><button type="button" class="btn ghost sm" data-weather-retry>重试</button>`;
+      state.hidden = !msg;
+      state.innerHTML = msg;
+      if (current) {
+        box.innerHTML = weatherBoxHtml(w);
+        const when = WEATHER.fetched ? agoSpan(WEATHER.fetched) : '';
+        $('weatherFootText').innerHTML = `${escapeHtml(place.region || place.name)}${when ? ' · ' + when : ''}${WEATHER.stale || WEATHER.error ? ' · <span class="wx-stale">暂时取不到新的，这是之前的数据</span>' : ''}`;
+      }
+    }
+    function openWeatherForm(open) {
+      WEATHER.formOpen = open;
+      WEATHER.places = null;
+      $('weatherPlaces').innerHTML = '';
+      $('weatherHint').textContent = '';
+      WEATHER.sig = '';
+      renderWeather();
+      if (open) $('weatherQuery').focus();
+      else if (!$('weatherEdit').hidden) $('weatherEdit').focus();
+    }
+    $('weatherEdit').addEventListener('click', () => openWeatherForm(!WEATHER.formOpen));
+    $('weatherCancel').addEventListener('click', () => openWeatherForm(false));
+    $('weatherForm').addEventListener('keydown', (e) => { if (e.key === 'Escape' && weatherPlace()) { e.preventDefault(); e.stopPropagation(); openWeatherForm(false); } });
+    $('weatherForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = $('weatherQuery').value.trim();
+      if (!q || WEATHER.searching) return;
+      WEATHER.searching = true;
+      $('weatherHint').textContent = '搜索中…';
+      let data;
+      try { data = await deckApi('/api/deck/weather/places?q=' + encodeURIComponent(q), 'GET'); } catch (err) { data = { ok: false, error: err.message }; }
+      WEATHER.searching = false;
+      WEATHER.places = data.ok ? data.places || [] : null;
+      $('weatherHint').textContent = !data.ok ? (data.error || '搜索失败') : WEATHER.places.length ? '' : '没搜到，换个写法试试（中文、拼音或英文都行）';
+      $('weatherPlaces').innerHTML = (WEATHER.places || []).map((pl, i) =>
+        `<li><button type="button" class="weather-place" data-weather-pick="${i}"><b>${escapeHtml(pl.name)}</b><span>${escapeHtml(pl.region || '')}</span></button></li>`).join('');
+      const first = $('weatherPlaces').querySelector('[data-weather-pick]');
+      if (first) first.focus();
+    });
+    $('weatherPlaces').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-weather-pick]');
+      const pl = btn && WEATHER.places && WEATHER.places[Number(btn.dataset.weatherPick)];
+      if (!pl) return;
+      $('weatherHint').textContent = '保存中…';
+      let data;
+      try { data = await deckApi('/api/deck/weather', 'PUT', pl); } catch (err) { data = { ok: false, error: err.message }; }
+      if (!data.ok) { $('weatherHint').textContent = '保存失败：' + (data.error || '网络错误'); return; }
+      STATE.deck = data.deck;
+      Object.assign(WEATHER, { data: null, key: '', at: 0, error: '', formOpen: false, places: null });
+      $('weatherQuery').value = '';
+      openWeatherForm(false);
+      loadWeather();
+    });
+    $('deckWeather').addEventListener('click', (e) => { if (e.target.closest('[data-weather-retry]')) loadWeather(true); });
+
+    // ===== 首页组件：余额概览 =====
+    // 看板里每个站点取第一个启用的金额字段，按「约还能用几天」从少到多排；低于提醒阈值的排最前。
+    // 日均用量和走势卡片同一套算法（近 14 天、每天一个点）；额度会按重置时间回满的站点不估算，只列余额。
+    const BALANCE = { limit: 6, sig: '' };
+    function balanceRows() {
+      const rows = [];
+      (STATE.bookmarks || []).forEach((b, i) => {
+        const fields = enabledFields(b);
+        const f = fields.find(x => (x.type || 'amount') === 'amount' && !x.error && x.value != null && /\d/.test(String(x.value)) && isFinite(parseNum(x.value)));
+        if (!f) return;
+        const resets = fields.some(x => (x.type || 'amount') === 'time' && RESET_LABEL_RE.test(String(x.label || '')));
+        const use = resets ? null : dailyUse(trendPoints(f.daily));
+        const value = parseNum(f.value);
+        const runway = use && use.perDay > 0.005 && value > 0 ? value / use.perDay : null;
+        rows.push({ b, i, f, value, resets, use, runway, low: fieldAlert(f) === 'low' });
+      });
+      // 稳定排序：没有可估天数的保持看板里的先后。
+      return rows.sort((a, b) => (Number(b.low) - Number(a.low)) || (Number(a.runway == null) - Number(b.runway == null)) || ((a.runway || 0) - (b.runway || 0)));
+    }
+    function balanceNote(r) {
+      if (r.low) return `低于提醒值 ${fmtNum(r.f.warn_below)}`;
+      if (r.runway != null) return runwayText(r.runway);
+      if (r.resets) return '额度会定期重置';
+      if (r.use && r.use.perDay < -0.005) return `近 ${r.use.days} 天在增加`;
+      if (r.use) return `近 ${r.use.days} 天没怎么用`;
+      return r.f.label || '';
+    }
+    function renderBalance() {
+      const rows = balanceRows();
+      const sig = JSON.stringify([openMode(), rows.map(r => [r.b.name, r.b.url, r.f.label, r.f.value, r.f.unit, r.low, r.runway == null ? null : Math.floor(r.runway), r.resets])]);
+      if (sig === BALANCE.sig) return;
+      BALANCE.sig = sig;
+      const low = rows.filter(r => r.low).length, soon = rows.filter(r => r.runway != null && r.runway < 7).length;
+      $('deckBalanceMeta').textContent = !rows.length ? '' : low ? `${low} 个偏低` : soon ? `${soon} 个一周内用完` : `${rows.length} 个站点`;
+      const state = $('balanceState');
+      state.hidden = !!rows.length;
+      if (!rows.length) state.textContent = (STATE.bookmarks || []).length ? '看板里还没有站点配「金额」类型的字段（余额、额度……）。' : '站点看板还是空的。';
+      const shown = rows.slice(0, BALANCE.limit);
+      $('balanceList').innerHTML = shown.map(r => {
+        const safe = safeUrl(r.b.url), name = escapeHtml(r.b.name);
+        const cls = r.low || (r.runway != null && r.runway < 3) ? ' is-past' : r.runway != null && r.runway < 7 ? ' is-soon' : '';
+        return `<li class="expiry-item balance-item${cls}">
+          ${safe ? `<a class="expiry-name" href="${escapeHtml(safe)}" ${linkTargetAttrs()} title="${name} · ${escapeHtml(r.b.url)}">${name}</a>` : `<span class="expiry-name">${name}</span>`}
+          <span class="balance-val" title="${escapeHtml(r.f.label)}：${escapeHtml(r.f.value)}">${escapeHtml(amountText(r.f.value))}${r.f.unit ? `<small>${escapeHtml(r.f.unit)}</small>` : ''}</span>
+          <span class="balance-note">${escapeHtml(balanceNote(r))}</span>
+        </li>`;
+      }).join('') + (rows.length ? `<li class="expiry-more"><button type="button" class="deck-link" data-balance-all>${rows.length > shown.length ? `还有 ${rows.length - shown.length} 个 · ` : ''}去站点看板</button></li>` : '');
+      $('balanceList').hidden = !rows.length;
+    }
+    $('balanceList').addEventListener('click', (e) => { if (e.target.closest('[data-balance-all]')) openLibPage('monitor'); });
+
+    // ===== 首页组件：世界时钟 =====
+    // 城市列表存在 deck.json（没设过就用下面四座）；时间全在浏览器里用 Intl 按时区现算，每分钟跟着首页时钟走一格。
+    const CLOCK_CITIES = [
+      ['北京', 'Asia/Shanghai'], ['香港', 'Asia/Hong_Kong'], ['台北', 'Asia/Taipei'], ['东京', 'Asia/Tokyo'], ['首尔', 'Asia/Seoul'],
+      ['新加坡', 'Asia/Singapore'], ['曼谷', 'Asia/Bangkok'], ['新德里', 'Asia/Kolkata'], ['迪拜', 'Asia/Dubai'], ['莫斯科', 'Europe/Moscow'],
+      ['伊斯坦布尔', 'Europe/Istanbul'], ['柏林', 'Europe/Berlin'], ['巴黎', 'Europe/Paris'], ['伦敦', 'Europe/London'], ['UTC', 'UTC'],
+      ['圣保罗', 'America/Sao_Paulo'], ['纽约', 'America/New_York'], ['芝加哥', 'America/Chicago'], ['丹佛', 'America/Denver'],
+      ['洛杉矶', 'America/Los_Angeles'], ['温哥华', 'America/Vancouver'], ['檀香山', 'Pacific/Honolulu'], ['悉尼', 'Australia/Sydney'], ['奥克兰', 'Pacific/Auckland'],
+    ];
+    const CLOCK_DEFAULT = [['洛杉矶', 'America/Los_Angeles'], ['纽约', 'America/New_York'], ['伦敦', 'Europe/London'], ['东京', 'Asia/Tokyo']];
+    const CLOCKS = { editing: false, busy: false, sig: '', fmt: {} };
+    function clockList() {
+      const c = STATE.deck && STATE.deck.clocks;
+      return Array.isArray(c) ? c : CLOCK_DEFAULT.map(([name, tz]) => ({ name, tz }));
+    }
+    // 某个时区此刻的年月日时分；时区浏览器不认识就回 null（那一行不显示）。格式器按时区缓存：每次现建要几十微秒。
+    function zoneParts(tz, now) {
+      let f = CLOCKS.fmt[tz];
+      if (f === undefined) {
+        try { f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }); } catch (_) { f = null; }
+        CLOCKS.fmt[tz] = f;
+      }
+      if (!f) return null;
+      const p = {};
+      f.formatToParts(now).forEach(x => { p[x.type] = x.value; });
+      return { y: Number(p.year), m: Number(p.month), d: Number(p.day), h: Number(p.hour) % 24, min: Number(p.minute) };
+    }
+    function clockRows(now) {
+      const pad = (n) => String(n).padStart(2, '0');
+      const local = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes());
+      const today = dayNum(now.getFullYear(), now.getMonth() + 1, now.getDate());
+      return clockList().map(c => {
+        const z = zoneParts(c.tz, now);
+        if (!z) return null;
+        const diff = Math.round((Date.UTC(z.y, z.m - 1, z.d, z.h, z.min) - local) / 60000);   // 分钟，正数 = 比这里早（钟走在前面）
+        const hours = Math.abs(diff) / 60, span = Number.isInteger(hours) ? String(hours) : hours.toFixed(1).replace(/\.0$/, '');
+        const dn = dayNum(z.y, z.m, z.d) - today;
+        return { name: c.name, tz: c.tz, time: `${pad(z.h)}:${pad(z.min)}`, night: z.h < 6 || z.h >= 19,
+                 day: dn === 0 ? '今天' : dn === 1 ? '明天' : dn === -1 ? '昨天' : `${z.m}月${z.d}日`,
+                 offset: !diff ? '和这里同一时间' : diff > 0 ? `早 ${span} 小时` : `晚 ${span} 小时` };
+      }).filter(Boolean);
+    }
+    function renderClocks() {
+      const rows = clockRows(CAL.now()), editing = CLOCKS.editing && canEdit() && !deckLocked();
+      const sig = JSON.stringify([rows, editing, canEdit(), deckLocked()]);
+      if (sig === CLOCKS.sig) return;
+      CLOCKS.sig = sig;
+      $('clocksEdit').hidden = !canEdit() || deckLocked() || !!STATE.deck_error;
+      $('clocksEdit').setAttribute('aria-expanded', String(editing));
+      $('deckClocksMeta').textContent = '';
+      $('clockList').innerHTML = rows.map(r => `<li class="clock-item${r.night ? ' is-night' : ''}">
+          <span class="clock-text"><span class="clock-name">${escapeHtml(r.name)}</span><span class="clock-sub">${escapeHtml(r.day)} · ${escapeHtml(r.offset)}</span></span>
+          <span class="clock-time" title="${escapeHtml(r.tz)}">${icon(r.night ? 'moon' : 'sun', 'ic clock-dn')}${r.time}</span>
+          ${editing ? `<button type="button" class="deck-icon-btn" data-clock-del="${escapeHtml(r.tz)}" title="移除${escapeHtml(r.name)}" aria-label="移除${escapeHtml(r.name)}">${icon('trash')}</button>` : ''}
+        </li>`).join('') || `<li class="clock-empty">${canEdit() && !deckLocked() ? '还没有城市，点右上角添加。' : '还没有城市。'}</li>`;
+      const editor = $('clocksEditor');
+      editor.hidden = !editing;
+      if (editing) {
+        const have = new Set(clockList().map(c => c.tz));
+        const opts = CLOCK_CITIES.filter(([, tz]) => !have.has(tz));
+        $('clockAddSel').innerHTML = opts.map(([name, tz]) => `<option value="${escapeHtml(tz)}">${escapeHtml(name)}</option>`).join('');
+        $('clockAddBtn').disabled = !opts.length || clockList().length >= 6 || CLOCKS.busy;
+      }
+    }
+    async function saveClocks(list, hint) {
+      if (CLOCKS.busy) return;
+      CLOCKS.busy = true;
+      $('clocksHint').textContent = '保存中…';
+      let data;
+      try { data = await deckApi('/api/deck/clocks', 'PUT', { clocks: list }); } catch (err) { data = { ok: false, error: err.message }; }
+      CLOCKS.busy = false;
+      $('clocksHint').textContent = data.ok ? hint : '保存失败：' + (data.error || '网络错误');
+      if (data.ok) STATE.deck = data.deck;
+      CLOCKS.sig = '';
+      renderClocks();
+      renderDeckTabs(deckOrder(), deckOpenId());
+    }
+    $('clocksEdit').addEventListener('click', () => {
+      CLOCKS.editing = !CLOCKS.editing;
+      $('clocksHint').textContent = '';
+      CLOCKS.sig = '';
+      renderClocks();
+      if (CLOCKS.editing) $('clockAddSel').focus();
+    });
+    $('clocksDone').addEventListener('click', () => { CLOCKS.editing = false; CLOCKS.sig = ''; renderClocks(); $('clocksEdit').focus(); });
+    $('clockAddBtn').addEventListener('click', () => {
+      const tz = $('clockAddSel').value, city = CLOCK_CITIES.find(c => c[1] === tz);
+      if (!city || clockList().length >= 6) return;
+      saveClocks(clockList().map(c => ({ name: c.name, tz: c.tz })).concat({ name: city[0], tz }), `已添加${city[0]}`);
+    });
+    $('clockList').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-clock-del]');
+      if (!btn) return;
+      const gone = clockList().find(c => c.tz === btn.dataset.clockDel);
+      saveClocks(clockList().filter(c => c.tz !== btn.dataset.clockDel).map(c => ({ name: c.name, tz: c.tz })), gone ? `已移除${gone.name}` : '');
+    });
+
+    // ===== 首页组件：时间进度 =====
+    // 今天 / 本周（周一起）/ 本月 / 今年各过去了多少。纯本地计算，每分钟跟着首页时钟走一次。
+    const PROGRESS = { sig: '' };
+    function isoWeek(now) {
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      d.setUTCDate(d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7));
+      const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+      return 1 + Math.round(((d - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+    }
+    function progressRows(now) {
+      const y = now.getFullYear(), m = now.getMonth(), d = now.getDate(), wd = (now.getDay() + 6) % 7;
+      const dayMs = 86400000, startToday = new Date(y, m, d);
+      // 剩下几天按日历天算、不含今天（夏令时那天一天不是 24 小时，用 Math.round 兜住）。
+      const daysLeft = (end) => Math.round((end - startToday) / dayMs) - 1;
+      const spans = [
+        ['今天', startToday, new Date(y, m, d + 1)],
+        ['本周', new Date(y, m, d - wd), new Date(y, m, d - wd + 7)],
+        ['本月', new Date(y, m, 1), new Date(y, m + 1, 1)],
+        ['今年', new Date(y, 0, 1), new Date(y + 1, 0, 1)],
+      ];
+      return spans.map(([name, start, end], i) => {
+        const pct = Math.max(0, Math.min(100, (now - start) / (end - start) * 100));
+        let left;
+        if (i === 0) {
+          const mins = Math.max(0, Math.round((end - now) / 60000));
+          left = mins >= 60 ? `还剩 ${Math.floor(mins / 60)} 小时 ${mins % 60} 分` : `还剩 ${mins} 分钟`;
+        } else {
+          const n = daysLeft(end);
+          left = n > 0 ? `还剩 ${n} 天` : '最后一天';
+        }
+        return { name, pct, left, nth: i === 3 ? Math.round((startToday - start) / dayMs) + 1 : 0 };
+      });
+    }
+    function renderProgress() {
+      const now = CAL.now(), rows = progressRows(now);
+      const html = rows.map(r => `<div class="prog-row" role="group" aria-label="${r.name}已过 ${Math.floor(r.pct)}%，${r.left}">
+          <div class="prog-top"><span class="prog-name">${r.name}</span><span class="prog-num"><b>${Math.floor(r.pct)}%</b>${r.nth ? ` · 第 ${r.nth} 天` : ''} · ${r.left}</span></div>
+          <div class="prog-bar" aria-hidden="true"><i style="width:${r.pct.toFixed(1)}%"></i></div>
+        </div>`).join('');
+      const meta = `第 ${isoWeek(now)} 周`;
+      if (html === PROGRESS.sig && $('deckProgressMeta').textContent === meta) return;
+      PROGRESS.sig = html;
+      $('deckProgressMeta').textContent = meta;
+      $('progressList').innerHTML = html;
+    }
 
     // ===== 首页待办 =====
     // 数据在服务端的 data/todos.json（读写都要管理权限，未解锁时 /api/configs 不下发）；
