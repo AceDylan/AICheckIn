@@ -1120,7 +1120,7 @@
       document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('active', b.dataset.themeOpt === pref));
     }
     function setTheme(pref) {
-      setCookie(`bh_theme=${pref}; max-age=31536000; path=/; SameSite=Lax`);
+      writePref('bh_theme', pref);
       applyTheme(pref);
       tellFramesTheme();
     }
@@ -1142,9 +1142,9 @@
       });
     }
 
-    // ===== 本机偏好（Cookie）=====
-    // 打开方式、搜索引擎、首页密度都是「这台设备怎么用」的事：手机和桌面可以各设各的，
-    // 所以不进 config.json。值域写死成白名单，Cookie 被改成别的也只会回落到默认值。
+    // ===== 偏好（Cookie + 登录后跨浏览器同步）=====
+    // 页面读偏好只看 Cookie（头部的防闪烁脚本也是），值域写死成白名单，Cookie 被改成别的也只会回落到默认值。
+    // 登录后 SYNC_PREFS 里的偏好另存一份到服务器（见下面的「偏好同步」），在一个浏览器改、所有浏览器生效。
     // 一次重绘里每个图标都要问一遍「新标签页还是当前页」：document.cookie 每读一次都是整串重新取，
     // 同一轮任务里它不会变，就只读一次（本页写 Cookie 都走 setCookie，写完即作废）。
     let COOKIE_MEMO = null;
@@ -1163,7 +1163,75 @@
       const m = cookieText().match(re);
       return m && allowed.includes(m[1]) ? m[1] : fallback;
     }
-    function writePref(name, value) { setCookie(`${name}=${value}; max-age=31536000; path=/; SameSite=Lax`); }
+    function writePref(name, value) {
+      setCookie(`${name}=${value}; max-age=31536000; path=/; SameSite=Lax`);
+      if (SYNC_PREFS.includes(name) && prefSyncOn()) queuePrefSync(name, String(value));
+    }
+
+    // ===== 偏好同步 =====
+    // 下面这些偏好登录后存进服务器（data/deck.json 的 prefs）：改的时候顺手上传，每次拿到 /api/configs
+    // （打开页面、回到页面）时用服务器上的值覆盖本机 Cookie。服务器上还没有的，用本机已经选过的值补上去。
+    // 不同步的：bh_home_deck_open（窄屏此刻展开哪张）、bh_home_hits（打开次数，每次点开都写）、
+    // bh_chat_note / bh_install_done（这台设备看过的提示），都是随手的本机状态。未登录时一律只记在本机。
+    const SYNC_PREFS = ['bh_theme', 'bh_open', 'bh_engine', 'bh_wallpaper', 'bh_wp_dim', 'bh_home_nav', 'bh_home_view',
+      'bh_home_freq', 'bh_home_fold', 'bh_home_deck', 'bh_home_deck_fold', 'bh_ck_view', 'bh_link_view', 'bh_bm_view'];
+    const PREF_VALUE_RE = /^[A-Za-z0-9_.-]{1,1400}$/;   // 与服务端一致；不含 ; = 空格，写进 Cookie 拼不坏
+    // pending：还没发出去的；sending：在路上的。这两类以本机为准，期间拿到的 /api/configs 可能还是旧值，不能拿来覆盖。
+    const PREF_SYNC = { pending: {}, sending: {}, timer: 0 };
+    function prefSyncOn() { return STATE_LOADED && STATE.deck_locked === false && !STATE.deck_error; }   // deck.json 读坏时不同步，免得每次都报错
+    function localPref(name) {
+      const m = cookieText().match(new RegExp('(?:^|; )' + name + '=([A-Za-z0-9_.-]{1,1400})(?:;|$)'));
+      return m ? m[1] : null;
+    }
+    function queuePrefSync(name, value) {
+      if (!PREF_VALUE_RE.test(value)) return;
+      PREF_SYNC.pending[name] = value;
+      clearTimeout(PREF_SYNC.timer);
+      // 连着点几下只发最后一次；同时把几项攒成一个请求。
+      PREF_SYNC.timer = setTimeout(flushPrefSync, 400);
+      if (PREF_SYNC.timer && typeof PREF_SYNC.timer.unref === 'function') PREF_SYNC.timer.unref();
+    }
+    async function flushPrefSync() {
+      clearTimeout(PREF_SYNC.timer);
+      const prefs = PREF_SYNC.pending;
+      if (!Object.keys(prefs).length || !prefSyncOn()) return;
+      PREF_SYNC.pending = {};
+      Object.assign(PREF_SYNC.sending, prefs);
+      let ok = false;
+      try {
+        // keepalive：改完马上关页 / 点开收藏（当前页打开）时请求也能发完。
+        const data = await deckApi('/api/deck/prefs', 'PUT', { prefs }, true);
+        ok = !!data.ok;
+        if (ok && STATE.deck && data.deck) STATE.deck.prefs = data.deck.prefs;
+        else if (!ok) toast('偏好没能同步到其它浏览器：' + (data.error || '保存失败'), 'err');
+      } catch (_) { /* 连不上：下面放回待发，下次拿到数据时再补 */ }
+      for (const name of Object.keys(prefs)) {
+        if (PREF_SYNC.sending[name] === prefs[name]) delete PREF_SYNC.sending[name];
+        if (!ok && !(name in PREF_SYNC.pending)) PREF_SYNC.pending[name] = prefs[name];
+      }
+    }
+    // loadConfigs 拿到数据后调用：服务器的值写进本机 Cookie，变了的主题 / 引擎当场换上（其余随后续重绘生效）。
+    function applySyncedPrefs() {
+      if (!prefSyncOn()) return;
+      const server = (STATE.deck && STATE.deck.prefs) || {};
+      const changed = [];
+      for (const name of SYNC_PREFS) {
+        if (name in PREF_SYNC.pending || name in PREF_SYNC.sending) continue;
+        const remote = server[name], local = localPref(name);
+        if (typeof remote === 'string' && PREF_VALUE_RE.test(remote)) {
+          if (remote !== local) {
+            setCookie(`${name}=${remote}; max-age=31536000; path=/; SameSite=Lax`);
+            changed.push(name);
+          }
+        } else if (local !== null) {
+          PREF_SYNC.pending[name] = local;
+        }
+      }
+      if (Object.keys(PREF_SYNC.pending).length) flushPrefSync();
+      if (changed.includes('bh_theme')) { applyTheme(readTheme()); tellFramesTheme(); }
+      if (changed.includes('bh_engine')) renderEngine();
+    }
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flushPrefSync(); });
     const OPEN_MODES = ['new', 'same'];
     function openMode() { return readPref('bh_open', OPEN_MODES, 'new'); }
     // 收藏链接统一走这里取 target / rel：当作起始页用时，很多人更习惯在当前页直接打开。
@@ -2058,6 +2126,7 @@
         STATE.link_groups = Array.isArray(STATE.link_groups) ? STATE.link_groups : [];
         STATE_LOADED = true;
         BOOT_FAILED = false;
+        applySyncedPrefs();   // 别的浏览器改过的偏好先落到本机 Cookie，下面的重绘就按新偏好画
         // 私密模式未解锁：后端只回了个空壳。首页换成「已锁定」卡片（见 renderHome），搜索框照常能用；
         // 地址本来就是 #settings 时直接把光标放进密码框。
         if (STATE.private && STATE.locked) {

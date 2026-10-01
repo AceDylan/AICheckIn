@@ -5594,7 +5594,8 @@ def api_todo_move(tid):
 # 读改写全程持锁、自己留一份 .bak，「导出 JSON」带 deck 键、导入时有这个键才覆盖。
 # 同样比收藏更私人：设了管理密码时读写都要解锁，开放的 /api/configs 也不会下发。
 #
-# 哪些组件上首页、排什么顺序是「这台设备怎么用」的事（手机和电脑可以各摆各的），记在浏览器 Cookie 里，不进这个文件。
+# 界面偏好（主题、壁纸、首页摆哪些组件……）页面读的是浏览器 Cookie；登录后另存一份在这里的 prefs，
+# 在哪个浏览器改，别的浏览器下次打开 / 回到页面时都会照着改（见页面里的「偏好同步」）。
 MAX_DECK_DAYS = 50
 DECK_DAY_NAME_MAX = 40
 DECK_MEMO_MAX = 2000
@@ -5608,6 +5609,11 @@ DECK_CLOCKS_MAX = 6
 DECK_CLOCK_NAME_MAX = 16
 _CLOCK_TZ_RE = re.compile(r"^(?:UTC|[A-Z][A-Za-z_]+(?:/[A-Za-z0-9_+\-]+){1,2})$")
 _DECK_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+# 跟着登录同步的偏好：名字白名单与页面里的 SYNC_PREFS 一致；值只收 Cookie 本来就允许的字符（不会拼坏 Cookie）。
+SYNC_PREF_NAMES = ("bh_theme", "bh_open", "bh_engine", "bh_wallpaper", "bh_wp_dim", "bh_home_nav", "bh_home_view",
+                   "bh_home_freq", "bh_home_fold", "bh_home_deck", "bh_home_deck_fold", "bh_ck_view", "bh_link_view",
+                   "bh_bm_view")
+_PREF_VALUE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,1400}$")
 _deck_lock = threading.Lock()
 
 
@@ -5678,7 +5684,15 @@ def _coerce_deck(raw):
             "memo": {"text": _memo_text(memo.get("text"))[:DECK_MEMO_MAX],
                      "updated_at": _todo_stamp(memo.get("updated_at"))},
             "weather": _coerce_weather_place(raw.get("weather")),
-            "clocks": _coerce_clocks(raw.get("clocks"))}
+            "clocks": _coerce_clocks(raw.get("clocks")),
+            "prefs": _coerce_prefs(raw.get("prefs"))}
+
+
+def _coerce_prefs(raw):
+    """同步偏好：{Cookie 名: 值}，不认识的名字、不成形的值直接丢掉。"""
+    raw = raw if isinstance(raw, dict) else {}
+    return {name: raw[name] for name in SYNC_PREF_NAMES
+            if isinstance(raw.get(name), str) and _PREF_VALUE_RE.match(raw[name])}
 
 
 def _coerce_weather_place(raw):
@@ -5844,6 +5858,25 @@ def api_deck_memo():
         if len(text) > DECK_MEMO_MAX:
             raise ValueError("便签过长（最多 {0} 字）".format(DECK_MEMO_MAX))
         deck["memo"] = {"text": text, "updated_at": _now_str()}
+    return _deck_call(change)
+
+
+@app.put("/api/deck/prefs")
+def api_deck_prefs():
+    """合并写入：只改带来的那几项，没带的保持不变（各浏览器各自上传自己刚改的那一项）。"""
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+
+    def change(deck):
+        incoming = payload.get("prefs")
+        if not isinstance(incoming, dict) or not incoming:
+            raise ValueError("偏好格式无效")
+        for name, value in incoming.items():
+            if name not in SYNC_PREF_NAMES:
+                raise ValueError("不认识的偏好：{0}".format(str(name)[:40]))
+            if not isinstance(value, str) or not _PREF_VALUE_RE.match(value):
+                raise ValueError("偏好取值无效：{0}".format(name))
+        deck["prefs"].update(incoming)
     return _deck_call(change)
 
 

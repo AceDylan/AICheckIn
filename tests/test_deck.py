@@ -7,7 +7,7 @@ from tests._support import StoreIsolationMixin, app_module  # noqa: F401  须早
 from app import app, _coerce_deck, read_deck  # noqa: E402
 
 PASSWORD = "deck-test-password-1234"
-EMPTY = {"days": [], "memo": {"text": "", "updated_at": ""}, "weather": None, "clocks": None}
+EMPTY = {"days": [], "memo": {"text": "", "updated_at": ""}, "weather": None, "clocks": None, "prefs": {}}
 
 
 class DeckCase(StoreIsolationMixin, unittest.TestCase):

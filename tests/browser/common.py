@@ -15,6 +15,7 @@
 import atexit
 import glob
 import hashlib
+import json
 import os
 import secrets
 import shutil
@@ -145,10 +146,24 @@ def fake_icon(url):
     return _ICONS[key]
 
 
-def new_context(browser, width, height, mobile=False, unlocked=True, base=BASE, **kw):
+def _without_synced_prefs(route):
+    resp = route.fetch()
+    body = resp.json()
+    if isinstance(body.get("deck"), dict):
+        body["deck"]["prefs"] = {}
+    route.fulfill(response=resp, body=json.dumps(body))
+
+
+def new_context(browser, width, height, mobile=False, unlocked=True, base=BASE, sync_prefs=False, **kw):
+    """sync_prefs=False（默认）：偏好不跨上下文同步。各套脚本给每个上下文设自己的 Cookie（开不开壁纸、导航形态……），
+    又共用同一个已登录的实例；真同步的话，先打开的上下文会把自己的选择补传到服务器、覆盖后面的上下文。
+    所以默认把 /api/configs 里的 deck.prefs 抹空、PUT /api/deck/prefs 就地应答。要测同步本身（verify_prefs）时传 True。"""
     ctx = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=2 if mobile else 1,
                               is_mobile=mobile, has_touch=mobile, **kw)
     ctx.route("**/api/favicon*", lambda route: route.fulfill(status=200, content_type="image/png", body=fake_icon(route.request.url)))
+    if not sync_prefs:
+        ctx.route("**/api/configs", _without_synced_prefs)
+        ctx.route("**/api/deck/prefs", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})))
     # 兜底：任何离开本机测试实例的请求一律掐掉（页面本来也不该发）。
     ctx.route(lambda url: not url.startswith("http://127.0.0.1:") and not url.startswith("data:"), lambda route: route.abort())
     if unlocked:

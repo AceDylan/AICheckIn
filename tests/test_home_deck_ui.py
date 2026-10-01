@@ -184,8 +184,9 @@ class DeckScriptCase(unittest.TestCase):
     # 夹具里的「今天」：2026-09-20（周日，国庆调休上班日），离中秋节（9 月 25 日）5 天。
     NOW = "CAL.now = () => new Date(2026, 8, 20, 10, 30);"
 
-    def run_js(self, assertions, configs=None, cookies=None, wide=False, tz=None, extra=None):
-        """tz：给 node 进程设时区（世界时钟要比「这里」早晚几小时）；extra：其它接口的桩响应 {路径: 响应体}。"""
+    def run_js(self, assertions, configs=None, cookies=None, wide=False, tz=None, extra=None, prelude=""):
+        """tz：给 node 进程设时区（世界时钟要比「这里」早晚几小时）；extra：其它接口的桩响应 {路径: 响应体}；
+        prelude：在页面脚本之前执行的代码（比如包一层 fetch 记下请求体）。"""
         responses = copy.deepcopy(RESPONSES)
         responses["/api/configs"].update({"todos": [], "todos_locked": False, "todos_error": "",
                                           "deck": copy.deepcopy(self.DECK), "deck_locked": False, "deck_error": ""})
@@ -202,6 +203,7 @@ class DeckScriptCase(unittest.TestCase):
             "for (const [k, v] of Object.entries(" + json.dumps(cookies or {}) + ")) document.cookie = k + '=' + v;",
             "globalThis.matchMedia = () => ({ matches: " + ("true" if wide else "false") + ", addEventListener() {} });",
             "const assert = require('node:assert/strict');",
+            prelude,
             "document.querySelectorAll('.tab').forEach(t => { t.addEventListener = (name, fn) => { t[name] = fn; }; });",
             "for (const id of ['memoText', 'daysForm', 'daysList']) { const t = document.getElementById(id); t.on = {}; t.addEventListener = (name, fn) => { t.on[name] = fn; }; }",
             _inline_script().replace("const CAL = { now: () => new Date(),", "const CAL = { now: () => new Date(2026, 8, 20, 10, 30),"),
