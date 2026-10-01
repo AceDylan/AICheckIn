@@ -70,8 +70,52 @@ setTimeout(() => {
   STATE.vault_embed = null;
   switchView('bookmarks');
   runHomeSearchRow({ type: 'note', hit: { path: '知识库/y.md', url: __VAULT__ + '/note/y' } }); snap('no embed falls back');
-  out.errors = __CALLS.errors;
-  console.log(JSON.stringify(out));
+
+  // 笔记框里的 WebObsidian 说过「准备好了」之后，就在框里打开，不再换框重新登录。
+  STATE.vault_embed = { url: __VAULT__ };
+  const posted = [];
+  const live = () => { const cw = { postMessage: (d, o) => posted.push({ d, o }) }; frames[frames.length - 1].contentWindow = cw; return cw; };
+  const fromVault = (cw, data, extra) => (L.message || []).forEach((fn) => fn(Object.assign({
+    source: cw, origin: __VAULT__, data: Object.assign({ source: 'webobsidian' }, data),
+  }, extra || {})));
+  const hit = (path) => { switchView('bookmarks'); runHomeSearchRow({ type: 'note', hit: { path, url: __VAULT__ + '/note/x' } }); };
+  hit('p/1.md'); snap('fresh before ready');
+  let cw = live();
+  fromVault(cw, { type: 'ready' }, { origin: 'https://evil.example' });
+  fromVault({}, { type: 'ready' });
+  fromVault(cw, { type: 'ready' }, { data: { source: 'halowebui', type: 'ready' } });
+  hit('p/2.md'); snap('ready from elsewhere ignored');
+  cw = live();
+  fromVault(cw, { type: 'ready' });
+  hit('p/3.md'); snap('in place');
+  fromVault(cw, { type: 'open-note', id: posted[0].d.id, ok: true });
+  send('p/4.md'); snap('in place from chat');
+  fromVault(cw, { type: 'open-note', id: posted[1].d.id + 99, ok: false });   // 别的请求的回话不算数
+  snap('stray answer ignored');
+  fromVault(cw, { type: 'open-note', id: posted[1].d.id, ok: false }); snap('refused');
+  cw = live();
+  fromVault(cw, { type: 'ready' });
+  send('p/5.md'); snap('waiting for an answer');
+  setTimeout(() => {
+    snap('no answer');
+    // 键盘挡住了笔记框底部多少：只在笔记页、没缩放时算，数没变不重发。
+    const kbFrame = frames[frames.length - 1];
+    live();
+    fromVault(kbFrame.contentWindow, { type: 'ready' });
+    kbFrame.getBoundingClientRect = () => ({ bottom: 724 });
+    globalThis.visualViewport = { scale: 1, offsetTop: 0, height: 800 };
+    const kbFrom = posted.length;
+    tellVaultKeyboard();
+    visualViewport.height = 420; tellVaultKeyboard(); tellVaultKeyboard();
+    visualViewport.offsetTop = 100; tellVaultKeyboard();
+    visualViewport.scale = 1.5; tellVaultKeyboard();
+    visualViewport.scale = 1; tellVaultKeyboard();
+    switchView('bookmarks'); tellVaultKeyboard();
+    out.keyboard = posted.slice(kbFrom).map((m) => [m.d.type, m.d.covered, m.o]);
+    out.posted = posted.filter((m) => m.d.type === 'open-note').map((m) => ({ type: m.d.type, source: m.d.source, path: m.d.path, origin: m.o }));
+    out.errors = __CALLS.errors;
+    console.log(JSON.stringify(out));
+  }, 2700);
 }, 60);
 """
 
@@ -149,6 +193,47 @@ class OpenNoteTest(unittest.TestCase):
         step = self.steps["no embed falls back"]
         self.assertEqual(step["frames"], 4)
         self.assertEqual(self.out["opened"], [VAULT + "/note/y"])
+
+    def test_before_the_frame_says_ready_a_fresh_frame_signs_in(self):
+        for label, path in (("fresh before ready", "p/1.md"), ("ready from elsewhere ignored", "p/2.md")):
+            step = self.steps[label]
+            self.assertEqual(step["view"], "vault", label)
+            self.assertEqual(step["src"], frame_src(path), label)
+        self.assertEqual(self.steps["ready from elsewhere ignored"]["frames"],
+                         self.steps["fresh before ready"]["frames"] + 1)
+
+    def test_a_ready_frame_opens_the_note_in_place(self):
+        before = self.steps["ready from elsewhere ignored"]
+        for label in ("in place", "in place from chat", "stray answer ignored"):
+            step = self.steps[label]
+            self.assertEqual(step["view"], "vault", label)
+            self.assertEqual(step["frames"], before["frames"], label)
+            self.assertEqual(step["hops"], before["hops"], label)
+        self.assertEqual(self.out["posted"][:2], [
+            {"type": "open-note", "source": "hub", "path": "p/3.md", "origin": VAULT},
+            {"type": "open-note", "source": "hub", "path": "p/4.md", "origin": VAULT},
+        ])
+
+    def test_a_refusal_or_no_answer_falls_back_to_a_fresh_frame(self):
+        before = self.steps["ready from elsewhere ignored"]["frames"]
+        refused = self.steps["refused"]
+        self.assertEqual(refused["frames"], before + 1)
+        self.assertEqual(refused["src"], frame_src("p/4.md"))
+        waiting = self.steps["waiting for an answer"]
+        self.assertEqual(waiting["frames"], before + 1)
+        late = self.steps["no answer"]
+        self.assertEqual(late["frames"], before + 2)
+        self.assertEqual(late["src"], frame_src("p/5.md"))
+        self.assertEqual(len(self.out["posted"]), 3)
+
+    def test_the_frame_learns_how_much_the_keyboard_covers(self):
+        self.assertEqual(self.out["keyboard"], [
+            ["keyboard", 304, VAULT],   # 724 - (0 + 420)
+            ["keyboard", 204, VAULT],   # 可视视口往下滚了 100
+            ["keyboard", 0, VAULT],     # 双指缩放，不算键盘
+            ["keyboard", 204, VAULT],
+            ["keyboard", 0, VAULT],     # 离开笔记页
+        ])
 
     def test_a_note_address_from_elsewhere_opens_in_the_vault_tab(self):
         step = self.steps["note param"]

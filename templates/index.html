@@ -2300,7 +2300,10 @@
     // 第一次点开才加载，之后切到别的标签页也不卸载——写到一半去翻个收藏再回来，光标还在。
     // url：框里登录的是哪个 WebObsidian，锁定时凭它请对面结束会话；to：下一次开框落在哪一页（见 openVaultNote）。
     // hop：替笔记框登录的那张看不见的小框（见 openVault）；seq：给每张笔记框起不重样的名字。
-    const VAULT_EMBED = { url: '', to: '', hop: null, seq: 0 };
+    // ready：哪张笔记框里的 WebObsidian 说过「可以直接交给我开笔记」；ask：正等它回话的那一篇（见 openVaultNote）。
+    // covered：上次告诉笔记框「键盘盖住了你底部多少像素」（见 tellVaultKeyboard）。
+    const VAULT_EMBED = { url: '', to: '', hop: null, seq: 0, ready: null, ask: null, asks: 0, covered: 0 };
+    const VAULT_ASK_MS = 2500;   // 等对面回「打开了」的上限；读一篇笔记一般几十毫秒，手机慢网也够
     function vaultEmbedAvailable() { return !!(STATE.vault_embed && STATE.vault_embed.url) && canEdit(); }
     function vaultFrame() { return $('vaultStage') ? $('vaultStage').querySelector('iframe') : null; }
     function vaultOrigin() {
@@ -2323,6 +2326,8 @@
       const frame = vaultFrame();
       if (frame) frame.remove();
       dropVaultHop();
+      dropVaultAsk();
+      VAULT_EMBED.ready = null;
       const url = VAULT_EMBED.url || (signOut && STATE.vault_embed && STATE.vault_embed.url) || '';
       VAULT_EMBED.url = '';
       if (signOut) signOutVault(url);
@@ -2348,6 +2353,7 @@
       frame.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
       frame.addEventListener('load', () => {
         if (frameIsBlank(frame)) return;   // 刚插进来的空框自己也报一次 load
+        if (VAULT_EMBED.ready === frame) VAULT_EMBED.ready = null;   // 框里换了一页（会话过期重登……），等新页面自己再说
         $('vaultLoading').hidden = true;
         dropVaultHop();
         focusVaultFrame();
@@ -2400,15 +2406,70 @@
       return parts.some(p => !p || p.startsWith('.')) ? '' : text;
     }
     // 在「笔记」标签页里打开某一篇：首页搜到的笔记、刚存进收件箱的那篇、AI 聊天回复里点到的笔记路径。
-    // 换一个新框经 /vault/open 登录并落到 /note/<路径>（WebObsidian 的深链）——对面的会话过期了也照样能开，
-    // 已经打开的其他笔记标签由对面自己恢复。没接笔记框的部署回 false，调用方自己决定退路。
+    // 笔记框已经开着、里面的 WebObsidian 说过「准备好了」：发条消息让它就在框里打开（不用再登录一遍，
+    // 原来每次要等一两秒）。没开着、还没准备好、或者它没在 VAULT_ASK_MS 内回「打开了」（加载中、会话
+    // 过期、旧版本）：换一个新框经 /vault/open 登录并落到 /note/<路径>（WebObsidian 的深链）——对面的会话
+    // 过期了也照样能开，已经打开的其他笔记标签由对面自己恢复。没接笔记框的部署回 false，调用方自己决定退路。
     function openVaultNote(path) {
       const clean = cleanNotePath(path);
       if (!clean || !vaultEmbedAvailable()) return false;
-      VAULT_EMBED.to = '/note/' + clean.split('/').map(encodeURIComponent).join('/');
-      if (currentViewName() === 'vault') openVault(true); else switchView('vault', 'drill');
+      const to = '/note/' + clean.split('/').map(encodeURIComponent).join('/');
+      const asked = askVaultFrame(clean, to);
+      if (!asked) VAULT_EMBED.to = to;
+      if (currentViewName() !== 'vault') switchView('vault', 'drill');
+      else if (!asked) openVault(true);
       return true;
     }
+    function askVaultFrame(path, to) {
+      dropVaultAsk();
+      const frame = vaultFrame(), origin = vaultOrigin();
+      if (!frame || VAULT_EMBED.ready !== frame || !origin || !frame.contentWindow) return false;
+      const ask = { id: ++VAULT_EMBED.asks, to, timer: 0 };
+      try { frame.contentWindow.postMessage({ source: 'hub', type: 'open-note', id: ask.id, path }, origin); }
+      catch (_) { return false; }
+      ask.timer = setTimeout(() => { if (VAULT_EMBED.ask === ask) reopenVaultAt(to); }, VAULT_ASK_MS);
+      VAULT_EMBED.ask = ask;
+      return true;
+    }
+    function dropVaultAsk() {
+      if (VAULT_EMBED.ask) clearTimeout(VAULT_EMBED.ask.timer);
+      VAULT_EMBED.ask = null;
+    }
+    function reopenVaultAt(to) {
+      dropVaultAsk();
+      if (!vaultEmbedAvailable()) return;
+      VAULT_EMBED.to = to;
+      openVault(true);
+    }
+    // 手机上编辑笔记时，WebObsidian 把格式栏贴在键盘上沿——它靠量自己的可视视口，可在框里量不到：虚拟键盘
+    // 只缩顶层页面（本站）的可视视口，框的视口不变，格式栏就一直压在键盘底下。这里替它量：框的下沿比本站
+    // 可视视口的下沿多出来的那段，就是被键盘挡住的部分，发给框（只发给配置的 WebObsidian 源，数没变不重发）。
+    // 双指缩放时可视视口也会变小，那不是键盘，按 0 算。
+    function tellVaultKeyboard() {
+      const frame = vaultFrame(), origin = vaultOrigin(), vv = window.visualViewport;
+      if (!frame || !origin || !vv || !frame.contentWindow) return;
+      const zoomed = Math.abs((vv.scale || 1) - 1) > 0.01;
+      const covered = zoomed || currentViewName() !== 'vault' ? 0
+        : Math.max(0, Math.round(frame.getBoundingClientRect().bottom - (vv.offsetTop + vv.height)));
+      if (covered === VAULT_EMBED.covered) return;
+      VAULT_EMBED.covered = covered;
+      try { frame.contentWindow.postMessage({ source: 'hub', type: 'keyboard', covered }, origin); } catch (_) { /* 格式栏留在原处 */ }
+    }
+    if (window.visualViewport) for (const type of ['resize', 'scroll']) window.visualViewport.addEventListener(type, tellVaultKeyboard);
+    // 笔记框里的 WebObsidian 回话：「准备好了」「打开了 / 没打开」。只认当前这张笔记框、且来自配置的
+    // WebObsidian 源；聊天框和别的窗口发来的一概不理。
+    window.addEventListener('message', (e) => {
+      const frame = vaultFrame();
+      if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== vaultOrigin()) return;
+      const data = e.data;
+      if (!data || typeof data !== 'object' || data.source !== 'webobsidian') return;
+      if (data.type === 'ready') { VAULT_EMBED.ready = frame; VAULT_EMBED.covered = 0; tellVaultKeyboard(); return; }
+      const ask = VAULT_EMBED.ask;
+      if (data.type !== 'open-note' || !ask || data.id !== ask.id) return;
+      if (data.ok !== true) { reopenVaultAt(ask.to); return; }
+      dropVaultAsk();
+      focusVaultFrame();
+    });
 
 
     // ===== 发送到 AI 聊天 / 存入笔记 =====

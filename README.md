@@ -414,6 +414,10 @@ Service Worker 的缓存版本随之升到 v20。
 「AI 聊天」回复里点到的笔记（HaloWebUI 配了 `HUB_VAULT_ROOT` 后，回复里 Vault 的绝对路径会变成链接，点了发一条
 `open-note` 消息给本站；本站只认当前聊天框、且来自 HaloWebUI 源的消息，路径再验一遍）都走这里，不离开本站。
 站外也可以用 `/?note=<Vault 相对路径>#vault`（独立打开的 AI 聊天就是这么跳回来的）。
+笔记框已经开着、里面的 WebObsidian 报过「准备好了」（`{source:'webobsidian',type:'ready'}`）时，这些入口改成给框发
+`{source:'hub',type:'open-note',id,path}`，就在框里打开，不再换框重新登录；2.5 秒内没回 `ok` 就退回上面的做法。
+手机上编辑笔记时，本站把键盘挡住了笔记框底部多少（`keyboard` 消息）告诉框，WebObsidian 的格式栏才能贴在键盘上沿
+（虚拟键盘只缩顶层页面的可视视口，框里量不到）。两种消息都只发给、只收自配置的 WebObsidian 源。
 
 ---
 
