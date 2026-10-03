@@ -1648,7 +1648,12 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .settings-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .settings-toc { display: flex; gap: 6px; margin: -8px -14px 16px; padding: 0 14px 2px; overflow-x: auto; scrollbar-width: none; }
+  .settings-toc {
+    display: flex; gap: 6px; margin: -8px -14px 16px; padding: 0 14px 2px; overflow-x: auto; scrollbar-width: none;
+    /* 和分组标签条一样，右侧渐隐提示「还能往右滑」。 */
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 32px), transparent);
+  }
   .settings-toc::-webkit-scrollbar { display: none; }
   .settings-toc-head { display: none; }
   .settings-toc .chip { min-height: 36px; }
@@ -1688,7 +1693,8 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .header-actions .btn { flex: 1; }
   .checkin-bar { flex-direction: column; align-items: stretch; gap: 10px; }
   .checkin-tabs { width: 100%; }
-  .checkin-tabs button { flex: 1 1 0; min-width: 0; padding: 0 6px; gap: 5px; }
+  /* 按字数分宽：平分时「服务配置」带角标放不下会折成两行。 */
+  .checkin-tabs button { flex: 1 1 auto; min-width: 0; padding: 0 6px; gap: 5px; white-space: nowrap; }
   #checkinActHistory { justify-content: flex-end; }
   #checkinActHistory .btn { flex: none; }   /* 进页面就会自动取一次：「刷新记录」是偶尔才点的次要操作，不占满一整行 */
   .cards.is-list { padding: 2px 14px; }
