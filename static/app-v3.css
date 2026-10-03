@@ -75,13 +75,17 @@
   --halo-ion: oklch(.72 .18 264);
   --halo-violet: oklch(.7 .19 300);
   --halo-solar: oklch(.86 .13 65);
-  --halo-spectrum: conic-gradient(from var(--halo-angle, 0deg), var(--halo-ion), var(--halo-violet) 30%, var(--halo-solar) 52%, var(--halo-ion) 78%, var(--halo-ion));
+  /* 色标单独一个变量：要转的光环在自己身上写 conic-gradient(from var(--halo-angle), var(--halo-stops))——
+     --halo-angle 在动画元素上变，写进 :root 的渐变在根上就算死了，转不起来。 */
+  --halo-stops: var(--halo-ion), var(--halo-violet) 30%, var(--halo-solar) 52%, var(--halo-ion) 78%, var(--halo-ion);
+  --halo-spectrum: conic-gradient(var(--halo-stops));
   --dur-fast: 140ms;
   --dur-base: 240ms;
   --dur-slow: 480ms;
   --ease-out-expo: cubic-bezier(.16, 1, .3, 1);
 }
 @property --halo-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes halo-spin { to { --halo-angle: 360deg; } }
 html[data-theme="light"] {
   color-scheme: light;
   --bg: #f0f2f7;
@@ -219,9 +223,14 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 /* 「AI 聊天」标签上的回复状态（见 syncChatActivity）：蓝点闪 = 正在回复，绿点 = 有回复还没看。 */
 .tab .chat-dot { display: inline-block; flex: none; }
 .tab .chat-dot[hidden] { display: none; }
-.tab .chat-dot.is-done { background: var(--success); }
-.tab .chat-dot.is-running { animation: chat-dot-pulse 1.6s var(--ease-in-out) infinite; }
-@keyframes chat-dot-pulse { 50% { opacity: .3; } }
+/* Halo：正在回复 = 一圈转动的光环（AI 在场）；有回复还没看 = 离子蓝实点。 */
+.tab .chat-dot.is-done { background: var(--accent); }
+.tab .chat-dot.is-running {
+  width: 10px; height: 10px; box-shadow: none;
+  background: conic-gradient(from var(--halo-angle), var(--halo-stops));
+  -webkit-mask: radial-gradient(circle, transparent 2.6px, #000 3.1px); mask: radial-gradient(circle, transparent 2.6px, #000 3.1px);
+  animation: halo-spin 1.2s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) { .tab .chat-dot.is-running { animation: none; } }
 
 /* 收藏库子页面（侧栏嵌套树）。分组多到放不下时只有这一段滚动：下面的「签到中心 / 系统设置」不会被挤到折叠线以下。
@@ -1216,6 +1225,15 @@ input[type="search"]::-webkit-search-cancel-button:hover { opacity: .9; }
 .home-search-row:hover { background: var(--surface-hover); }
 .home-search-row.is-active { background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--border); }
 .home-search-row .omni-ic { color: var(--text-2); background: var(--surface-2); }
+/* AI 在场：「用 AI 回答」这一行的图标套一圈光环（光谱只给 AI，见文件头）；选中这一行时光沿着环走。 */
+.home-search-row.is-ai .omni-ic { position: relative; isolation: isolate; color: var(--text); }
+.home-search-row.is-ai .omni-ic::before {
+  content: ""; position: absolute; inset: -2.5px; z-index: -1; pointer-events: none;
+  border-radius: 13.5px; padding: 1.5px; background: conic-gradient(from var(--halo-angle), var(--halo-stops));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.home-search-row.is-ai.is-active .omni-ic::before { animation: halo-spin 3.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .home-search-row.is-ai.is-active .omni-ic::before { animation: none; } }
 .home-search-row b { color: var(--text); font-weight: 580; }
 .home-search-row .omni-title { font-weight: 520; color: var(--text-2); }
 .home-search-row.tone-mint .omni-title, .home-search-row[class*="tone-"] .omni-title { color: var(--text); }
@@ -2376,7 +2394,15 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
    不声明就会继承外层：开了壁纸的工作区固定 dark，HaloWebUI「跟随系统」时就被带成深色。
    light dark = 两种都行、由浏览器挑，框里看到的就是整个浏览器的深浅色，与本站主题、壁纸无关。 */
 .chat-frame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: light dark; }
-.chat-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); font-size: 13px; pointer-events: none; }
+.chat-loading { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 14px; color: var(--text-2); font-size: 13px; pointer-events: none; }
+/* 正在打开 HaloWebUI：一圈转动的光环（AI 在场），和 HaloWebUI 自己的启动画面同一个记号。 */
+.chat-loading::before {
+  content: ""; width: 30px; height: 30px; border-radius: 50%;
+  background: conic-gradient(from var(--halo-angle), var(--halo-stops));
+  -webkit-mask: radial-gradient(circle, transparent 12.5px, #000 13.5px); mask: radial-gradient(circle, transparent 12.5px, #000 13.5px);
+  animation: halo-spin 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .chat-loading::before { animation: none; } }
 .chat-loading[hidden] { display: none; }
 @media (max-width: 760px) {
   /* 底部固定标签栏约 66px + 安全区：框到它上沿为止，别让最后一行输入框藏在标签栏后面。 */

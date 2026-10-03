@@ -8125,7 +8125,7 @@
     }
     function homeSearchRowHtml(row, i) {
       const active = i === HOME_SEARCH.active;
-      const attrs = `class="home-search-row${active ? ' is-active' : ''}${row.type === 'item' ? ' tone-' + escapeHtml(row.item.color || 'mint') : ''}" role="option" aria-selected="${active}" data-home-row="${i}"`;
+      const attrs = `class="home-search-row${active ? ' is-active' : ''}${row.type === 'ai' ? ' is-ai' : ''}${row.type === 'item' ? ' tone-' + escapeHtml(row.item.color || 'mint') : ''}" role="option" aria-selected="${active}" data-home-row="${i}"`;
       if (row.type === 'item') {
         const item = row.item;
         const avatar = item.kind === 'group'

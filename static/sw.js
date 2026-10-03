@@ -35,7 +35,8 @@
 // v37：看板金额走势与日均用量、空站点的「添加字段」、刷新进度。
 // v38：搜到的笔记、刚存进收件箱的那篇、AI 聊天回复里点到的笔记，都在「笔记」标签页里打开。
 // v52：Halo 墨色——配色换成 HaloWebUI 同一套墨色 + 离子蓝，时钟 / 标题用自托管的 Mona Sans。
-const CACHE_VERSION = 'bh-shell-v52';
+// v53：光环只给 AI——「用 AI 回答」这一行、AI 聊天标签正在回复、正在打开 HaloWebUI。
+const CACHE_VERSION = 'bh-shell-v53';
 const SHELL = [
   '/',
   '/static/app-v3.css',
