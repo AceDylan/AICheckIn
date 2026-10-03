@@ -57,6 +57,10 @@ setTimeout(async () => {
   __RESPONSES['/api/chat/ticket'] = { ok: true, sso: false, url: __HALO__ + '/' };
   openChat(true); openVault(true); await tick(); snap('reopened while light');
   closeChat(); closeVault(); setTheme('dark'); await tick(); snap('no frames to tell');
+  setTheme('light'); openChat(true); openVault(true); await tick(); snap('light, frames open');
+  writePref('bh_wallpaper', 'galaxy'); applyLook(); await tick(); snap('wallpaper turned on');
+  openChat(true); await tick(); snap('reopened under the wallpaper');
+  writePref('bh_wallpaper', 'off'); applyLook(); await tick(); snap('wallpaper turned off');
   out.errors = __CALLS.errors;
   console.log(JSON.stringify(out));
 }, 60);
@@ -118,6 +122,18 @@ class FrameThemeScriptTest(unittest.TestCase):
     def test_without_frames_nothing_is_posted(self):
         step = self.steps["no frames to tell"]
         self.assertEqual((step["theme"], step["posted"]), ("dark", []))
+
+
+    def test_under_a_wallpaper_the_frames_are_dark_like_the_page_around_them(self):
+        # 开着壁纸时整个工作区固定是深色玻璃：浅色主题下框也跟着深色，不在深色的 Hub 里嵌一块白页面。
+        self.assertEqual(self.steps["light, frames open"]["chat"], HALO + "/#hub_theme=light")
+        msg = {"source": "hub", "type": "theme", "theme": "dark"}
+        step = self.steps["wallpaper turned on"]
+        self.assertEqual(sorted((p["kind"], p["origin"]) for p in step["posted"]), [("chat", HALO), ("vault", NOTES)])
+        self.assertTrue(all(p["msg"] == msg for p in step["posted"]))
+        self.assertEqual(self.steps["reopened under the wallpaper"]["chat"], HALO + "/#hub_theme=dark")
+        back = self.steps["wallpaper turned off"]["posted"]
+        self.assertTrue(back and all(p["msg"]["theme"] == "light" for p in back), back)
 
 
 class VaultOpenThemeTest(VaultCase):
