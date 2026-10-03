@@ -484,14 +484,20 @@ details > summary::-webkit-details-marker { display: none; }
 /* ---------- 站点看板卡片（带接口字段监控） ---------- */
 .bookmark-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .bookmark-card {
-  position: relative; min-width: 0; min-height: 210px;
-  display: flex; flex-direction: column; padding: 20px;
+  position: relative; min-width: 0;
+  display: flex; flex-direction: column; padding: 18px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1), var(--highlight);
   transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
 }
 .bookmark-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-2); }
-.bookmark-top { display: flex; align-items: flex-start; gap: 12px; }
+.bookmark-top { display: flex; align-items: center; gap: 8px; }
+/* 头部（图标 + 名称 + 域名）就是「打开站点」：指上去名称后面的 ↗ 亮起来。 */
+.bookmark-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; margin: -6px; padding: 6px; border-radius: 14px; color: inherit; text-decoration: none; }
+a.bookmark-open:hover .site-name > span:first-child { text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+a.bookmark-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.site-name .open-mark { flex: 0 0 auto; color: var(--text-3); font-size: 12px; font-weight: 500; transition: color .15s var(--ease), transform .15s var(--ease); }
+a.bookmark-open:hover .open-mark { color: var(--accent); transform: translate(1px, -1px); }
 .site-avatar {
   position: relative; overflow: hidden;
   display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px;
@@ -539,13 +545,11 @@ details > summary::-webkit-details-marker { display: none; }
   .icon-dark { --icon-ring: rgba(15, 23, 42, .55); }
 }
 .site-copy { min-width: 0; flex: 1; }
-.site-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; }
+.site-name { display: flex; align-items: baseline; gap: 5px; min-width: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; }
+.site-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .site-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; color: var(--text-3); font-size: 12px; }
-.bookmark-actions { display: flex; align-items: center; gap: 8px; margin-top: auto; }
-.bookmark-actions .btn.open { flex: 1; }
-/* 看板里每张卡片都有一条「打开站点」：满色渐变排成一排太抢眼，换成淡底主题色，数据本身才是主角。 */
-.bookmark-actions .btn.open:not(:disabled) { background: var(--surface-hover); color: var(--text); border-color: transparent; box-shadow: none; }
-.bookmark-actions .btn.open:not(:disabled):hover { background: var(--raised); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.bookmark-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+.bookmark-actions .bm-refresh { min-width: 52px; }
 .action-menu { position: relative; }
 .menu-trigger {
   display: grid; place-items: center; width: 34px; height: 34px;
@@ -591,7 +595,7 @@ details > summary::-webkit-details-marker { display: none; }
 .menu-popover .sep { height: 1px; margin: 5px 4px; background: var(--border); }
 .bm-fields-block {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px;
-  margin: 16px 0 18px; padding-top: 14px; border-top: 1px solid var(--border);
+  margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--border);
 }
 .bm-fields-block.is-empty { display: block; min-height: 66px; }
 .fields-empty-text { padding: 10px 6px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
@@ -717,7 +721,7 @@ details > summary::-webkit-details-marker { display: none; }
 .card-grip:hover:not(:disabled) { color: var(--text); }
 .card-grip:disabled { opacity: .3; cursor: default; }
 .card-grip:active:not(:disabled) { cursor: grabbing; }
-.bookmark-top .card-grip { flex: 0 0 auto; width: 26px; height: 26px; margin: -2px -2px 0 0; border-radius: 8px; }
+.bookmark-top .card-grip { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; }
 .bookmark-top .card-grip svg { width: 15px; height: 15px; }
 @media (hover: hover) {
   .card-grip { opacity: 0; transition: opacity .15s ease, color .15s ease; }
@@ -767,6 +771,12 @@ details > summary::-webkit-details-marker { display: none; }
 .trend-line { display: block; width: 100%; height: 26px; overflow: visible; color: var(--text-3); }
 .trend-dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--text-2); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
 .trend-note { margin-top: 6px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* 看板卡片的主字段：大数字和走势线并排（走势在右边铺满），一句话的日均在下面——少占一整行。 */
+.field-item.is-primary:has(> .trend .trend-plot) { display: grid; grid-template-columns: minmax(0, max-content) minmax(72px, 1fr); column-gap: 18px; align-items: center; }
+.field-item.is-primary:has(> .trend .trend-plot) > .field-head { grid-column: 1 / -1; }
+.field-item.is-primary:has(> .trend .trend-plot) > .trend { display: contents; }
+.field-item.is-primary:has(> .trend .trend-plot) .trend-plot { grid-column: 2; grid-row: 2; margin-top: 4px; }
+.field-item.is-primary:has(> .trend .trend-plot) .trend-note { grid-column: 1 / -1; margin-top: 8px; }
 .run-meta { min-height: 18px; margin: 0 2px 14px; }
 .run-meta:has(#meta:empty) { display: none; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 16px; }
@@ -1786,7 +1796,6 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 @media (max-width: 359px) { .hero-weekday { display: none; } }
 @media (max-width: 400px) {
   .tab { min-width: 50px; }
-  .bookmark-actions { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
@@ -1811,7 +1820,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 .link-card:hover { transform: none; border-color: transparent; background: var(--surface-hover); box-shadow: none; }
 .link-card.is-pinned { border-color: transparent; }
 .link-main { align-items: center; gap: 12px; padding: 12px 6px 12px 14px; border-radius: 12px 0 0 12px; }
-.link-card:has(.link-desc, .link-tags) .link-main { align-items: flex-start; }
+.link-card:has(.link-desc) .link-main { align-items: flex-start; }
 .link-avatar { width: 40px; height: 40px; flex-basis: 40px; border-radius: 11px; }
 .link-tools, .link-tools-top { flex-direction: row; align-items: center; gap: 2px; }
 .link-tools { padding: 0 8px 0 0; }
@@ -2575,16 +2584,14 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   .bm-row-actions { grid-area: act; }
 }
 
-/* 手机上网址行更紧凑：标签并到域名那一行，不再单独占一行。 */
-@media (width <= 760px) {
-  .link-body { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); column-gap: 8px; align-items: center; }
-  .link-body > .link-name, .link-body > .link-desc { grid-column: 1 / -1; }
-  .link-body > .link-host { grid-column: 1; }
-  .link-body > .link-tags { grid-column: 2; flex-wrap: nowrap; overflow: hidden; margin-top: 3px; }
-  /* 行号写死：有备注时备注在 DOM 里夹在域名和标签之间，不写的话标签会被挤到下一行的第 2 列、悬在行中间。 */
-  .link-body > .link-host, .link-body > .link-tags { grid-row: 2; }
-  .link-body > .link-desc { grid-row: 3; }
-}
+/* 网址行更紧凑：标签并到域名那一行，不再单独占一行（手机先这样做，现在桌面也一样——带标签的行从 ~98px 降到 ~64px）。 */
+.link-body { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); column-gap: 8px; align-items: center; }
+.link-body > .link-name, .link-body > .link-desc { grid-column: 1 / -1; }
+.link-body > .link-host { grid-column: 1; }
+.link-body > .link-tags { grid-column: 2; flex-wrap: nowrap; overflow: hidden; margin-top: 3px; }
+/* 行号写死：有备注时备注在 DOM 里夹在域名和标签之间，不写的话标签会被挤到下一行的第 2 列、悬在行中间。 */
+.link-body > .link-host, .link-body > .link-tags { grid-row: 2; }
+.link-body > .link-desc { grid-row: 3; }
 
 /* 矮屏（笔记本 150% 缩放再扣掉浏览器工具栏，可视区常只有 650px 高）：时钟和问候并成一行、字号收小，
    把首屏让给图标——起始页的第一件事是点开网站。手机另有自己的紧凑版头部。 */

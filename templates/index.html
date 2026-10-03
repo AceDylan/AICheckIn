@@ -6029,7 +6029,7 @@
       } else if (type === 'amount') {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(amountText(f.value))}</span>` + (f.unit ? `<span class="field-unit">${escapeHtml(f.unit)}</span>` : '');
         // 每天一个点（服务端记在 field_history.json），满两天才画；主字段给整条走势，其它字段只写一句日均。
-        extra += trendHtml(f.daily, !primary, { resets });
+        extra += trendHtml(f.daily, !primary, { resets }) || '';   // 不满两天的记录没有走势（返回 null，别把「null」印到卡片上）
         if (fieldAlert(f) === 'low') { valueCls = 'is-soon'; head = `<span class="field-badge is-soon" title="低于提醒阈值 ${escapeHtml(String(f.warn_below))}">余额偏低</span>`; }
       } else {
         value = `<span title="${escapeHtml(f.value)}">${escapeHtml(f.value)}</span>`;
@@ -6212,28 +6212,30 @@
       pumpFavicons();
     }
     // 看板页与首页「卡片」视图共用同一张卡片；首页上不排序（顺序跟随看板），所以收起移动项。
+    // 看板卡片：数值是主角。头部（图标 + 名称 + 域名）本身就是「打开站点」的链接，刷新和「···」也放在头部右侧，
+    // 卡片底下不再压一条整宽的「打开站点」——没配字段的站点只剩一行说明，卡片矮一半。
     function bookmarkCardHtml(b, i, opts) {
       const o = opts || {};
       const hasFields = enabledFields(b).length > 0;
       const safe = safeUrl(b.url);
       const host = siteHost(b.url) || '未设置域名';
       const alert = bookmarkAlert(b);
+      const head = `${siteAvatarHtml(b.name, b.url, 'site-avatar')}
+            <div class="site-copy"><div class="site-name"><span>${escapeHtml(b.name)}</span>${safe ? '<span class="open-mark" aria-hidden="true">↗</span>' : ''}</div><div class="site-host">${escapeHtml(safe ? host : '网址不可用')}</div></div>`;
       return `
         <article class="bookmark-card${alert ? ' alert-' + alert : ''}" data-bm-index="${i}" data-card-id="${i}" style="--hue:${hueOf(host)}">
           <div class="bookmark-top">
-            ${siteAvatarHtml(b.name, b.url, 'site-avatar')}
-            <div class="site-copy"><div class="site-name" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</div><div class="site-host" title="${escapeHtml(b.url)}">${escapeHtml(host)}</div></div>
-            <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${o.filtering || o.home ? ' disabled' : ''}>${icon('grip')}</button>
+            ${safe ? `<a class="bookmark-open" href="${escapeHtml(safe)}" ${linkTargetAttrs()} title="打开 ${escapeHtml(b.url)}">${head}</a>` : `<div class="bookmark-open">${head}</div>`}
+            <div class="bookmark-actions">
+              <button type="button" class="icon-btn card-grip" data-card-grip title="按住拖动排序（Alt+↑/↓）" aria-label="拖动排序 ${escapeHtml(b.name)}"${o.filtering || o.home ? ' disabled' : ''}>${icon('grip')}</button>
+              ${hasFields ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新全部启用字段" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
+              <details class="action-menu">
+                <summary class="menu-trigger" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
+                <div class="menu-popover">${bmMenuHtml(b, i, o)}</div>
+              </details>
+            </div>
           </div>
           ${fieldsBlockHtml(b, i)}
-          <div class="bookmark-actions">
-            ${safe ? `<a class="btn sm open" href="${escapeHtml(safe)}" ${linkTargetAttrs()}>打开站点 ↗</a>` : `<button class="btn sm open" disabled>网址不可用</button>`}
-            ${hasFields ? `<button class="btn sm ghost bm-refresh" onclick="refreshBmBalance(${i})" title="刷新全部启用字段" aria-label="刷新 ${escapeHtml(b.name)} 的数据">刷新</button>` : ''}
-            <details class="action-menu">
-              <summary class="menu-trigger" title="更多操作" aria-label="${escapeHtml(b.name)} 的更多操作">···</summary>
-              <div class="menu-popover">${bmMenuHtml(b, i, o)}</div>
-            </details>
-          </div>
         </article>`;
     }
     function bmMenuHtml(b, i, o) {

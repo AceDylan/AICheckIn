@@ -20,8 +20,8 @@ class PolishGuardsTest(unittest.TestCase):
         cls.script = _inline_script()
 
     def test_mobile_link_row_pins_rows_so_tags_stay_on_the_host_line(self):
-        block = self.css[self.css.index("/* 手机上网址行更紧凑"):]
-        block = block[:block.index("\n}\n")]
+        block = self.css[self.css.index("/* 网址行更紧凑：标签并到域名那一行"):]
+        block = block[:block.index("\n\n")]
         self.assertIn(".link-body > .link-host, .link-body > .link-tags { grid-row: 2; }", block)
         self.assertIn(".link-body > .link-desc { grid-row: 3; }", block)
 
