@@ -1978,6 +1978,8 @@ label.set-row { cursor: pointer; }
 /* 标签条：放得下就居中，放不下横向滑动（首尾的 auto 外边距在溢出时自动归零，不会把第一枚标签裁到屏幕外）。 */
 .deck-tabs { display: flex; gap: 8px; margin: -3px; padding: 3px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .deck-tabs::-webkit-scrollbar { display: none; }
+/* 标签多到横向滚动时右边淡出一截，看得出「后面还有」（原来右边一刀切，像是被截断了）。 */
+.deck-tabs { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
 .deck-tab {
   display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 36px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px;
   background: var(--surface); color: var(--text-2); font: inherit; font-size: 13px; font-weight: 520; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow-1);
@@ -2005,6 +2007,9 @@ label.set-row { cursor: pointer; }
 .deck-title { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0; white-space: nowrap; }
 .deck-title .ic { width: 16px; height: 16px; color: var(--text-2); }
 .deck-meta { flex: 1; min-width: 0; overflow: hidden; color: var(--text-3); font-size: 12px; font-weight: 520; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+/* 折起来的组件标题行右边那句要紧的话（syncDeckSums）：比说明亮一档，数字等宽。 */
+.deck-sum { flex: 0 0 auto; max-width: 55%; overflow: hidden; color: var(--text); font-size: 12px; font-weight: 620; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.deck-sum[hidden] { display: none; }
 .todo-icon-btn, .deck-icon-btn { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); cursor: pointer; transition: background .14s ease, color .14s ease; }
 .todo-icon-btn:hover, .deck-icon-btn:hover:not(:disabled), .deck-icon-btn[aria-expanded="true"][data-deck-menu] { background: var(--surface-hover); color: var(--text); }
 .todo-icon-btn.is-danger:hover { background: var(--danger-soft); color: var(--danger); }

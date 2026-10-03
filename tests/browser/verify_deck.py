@@ -231,6 +231,17 @@ def widgets(b):
     page.wait_for_function("() => document.querySelectorAll('#clockList .clock-item').length === 2")
     check("widgets: removing a city saves it too", [c["tz"] for c in request(admin, "GET", "/api/deck")[1]["deck"]["clocks"]] == ["Asia/Tokyo", "America/New_York"])
     check("widgets: time progress has four bars", page.locator("#progressList .prog-row").count() == 4 and "第" in page.inner_text("#deckProgressMeta"))
+    # 折起来时标题行写上要紧的话（今年过了多少、第一个城市几点），展开后收回去，标题旁的说明照旧。
+    page.locator('#deckProgress [data-deck-fold]').click()
+    page.locator('#deckClocks [data-deck-fold]').click()
+    page.wait_for_timeout(200)
+    sums = page.evaluate("""() => ['progress', 'clocks'].map(id => { const s = document.querySelector(`[data-deck-sum="${id}"]`);
+        return s && s.offsetParent !== null ? s.textContent : null; })""")
+    check("widgets: folded cards show their key value in the title row", sums[0] is not None and sums[0].startswith("今年 ") and sums[0].endswith("%") and sums[1] is not None and sums[1].startswith("东京 "), sums)
+    page.locator('#deckProgress [data-deck-fold]').click()
+    page.locator('#deckClocks [data-deck-fold]').click()
+    page.wait_for_timeout(200)
+    check("widgets: unfolded cards drop it again", page.evaluate("() => [...document.querySelectorAll('[data-deck-sum]')].every(s => s.offsetParent === null)"))
     check("widgets: balance lists dashboard amounts", page.locator("#balanceList .balance-item").count() >= 1 and "去站点看板" in page.inner_text("#balanceList"), page.inner_text("#deckBalance"))
     wide = page.evaluate("""() => Array.from(document.querySelectorAll('#deckWeather, #deckBalance, #deckClocks, #deckProgress'))
         .filter(el => el.scrollWidth > el.clientWidth + 1).map(el => el.id)""")
