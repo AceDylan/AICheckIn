@@ -2585,7 +2585,9 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 }
 
 /* 网址行更紧凑：标签并到域名那一行，不再单独占一行（手机先这样做，现在桌面也一样——带标签的行从 ~98px 降到 ~64px）。 */
-.link-body { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); column-gap: 8px; align-items: center; }
+/* 域名长时先截断域名；标签不换行、最多占这一行的 60%（原先 1fr 会被长域名挤成 0，标签竖排成「工 / 具」或整个消失）。 */
+.link-body { display: grid; grid-template-columns: minmax(0, max-content) fit-content(60%); column-gap: 8px; align-items: center; }
+.link-body > .link-tags > .tag { flex: 0 0 auto; white-space: nowrap; }
 .link-body > .link-name, .link-body > .link-desc { grid-column: 1 / -1; }
 .link-body > .link-host { grid-column: 1; }
 .link-body > .link-tags { grid-column: 2; flex-wrap: nowrap; overflow: hidden; margin-top: 3px; }

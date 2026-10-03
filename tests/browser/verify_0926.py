@@ -305,6 +305,16 @@ def group_tiles(b):
         return [Math.round(Math.abs((h.top + h.bottom) / 2 - (t.top + t.bottom) / 2)), Math.round(t.left - h.right), Math.round(d.top - h.bottom)]; }""")
     check("手机列表：有备注时标签仍在域名那一行、紧跟域名，备注在下一行", st is not None and st[0] <= 6 and 0 <= st[1] <= 12 and st[2] >= 0, st)
     ctx.close()
+    # 桌面四列：标签也在域名那一行；域名很长时先截断域名，标签完整、不竖排（线上 seldomqa.github.io 曾把「工具」挤成两行，更长的直接挤没）。
+    ctx, page = open_at(b, 1440, 900, "/#links/daily", cookies={"bh_theme": "dark"})
+    api(ctx, "PUT", "/api/link_groups/daily/links/l001", {"tags": ["工具"], "url": "https://a-very-long-subdomain-name.example-long-host.github.io/"})
+    page.reload(); page.wait_for_selector("#linkList .link-tags"); page.wait_for_timeout(300)
+    st = page.evaluate("""() => { const c = [...document.querySelectorAll('#linkList .link-card')].find(x => x.querySelector('.link-tags'));
+        if (!c) return null; const h = c.querySelector('.link-host'), tag = c.querySelector('.link-tags .tag'), hr = h.getBoundingClientRect(), tr = tag.getBoundingClientRect();
+        return [Math.round(Math.abs((hr.top + hr.bottom) / 2 - (tr.top + tr.bottom) / 2)), Math.round(tr.height), h.scrollWidth > h.clientWidth,
+                Math.round(c.querySelector('.link-tags').getBoundingClientRect().width) >= tag.scrollWidth, Math.round(c.querySelector('.link-body').getBoundingClientRect().height)]; }""")
+    check("桌面列表：长域名先截断，标签在同一行、完整不竖排（名称 + 域名两行 ≤ 48px）", st is not None and st[0] <= 6 and st[1] <= 24 and st[2] and st[3] and st[4] <= 48, st)
+    ctx.close()
 
 
 def snooze(b):
