@@ -34,10 +34,12 @@
 // v36：取数失败可「先不管 7 天」。
 // v37：看板金额走势与日均用量、空站点的「添加字段」、刷新进度。
 // v38：搜到的笔记、刚存进收件箱的那篇、AI 聊天回复里点到的笔记，都在「笔记」标签页里打开。
-const CACHE_VERSION = 'bh-shell-v51';
+// v52：Halo 墨色——配色换成 HaloWebUI 同一套墨色 + 离子蓝，时钟 / 标题用自托管的 Mona Sans。
+const CACHE_VERSION = 'bh-shell-v52';
 const SHELL = [
   '/',
   '/static/app-v3.css',
+  '/static/fonts/Mona-Sans.woff2',
   '/static/manifest.webmanifest',
   '/static/icon-192.png',
   '/static/icon-512.png',

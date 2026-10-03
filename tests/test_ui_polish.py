@@ -54,7 +54,7 @@ class UiPolishStyleTest(unittest.TestCase):
         selector = re.search(r"(:root, html\.wall-on \.modal-mask[^{]*)\{", self.css).group(1)
         for overlay in ("html.wall-on .modal-mask", "html.wall-on .toast-wrap", "html.wall-on .todo-sort-menu"):
             self.assertIn(overlay, selector)
-        for decl in ("color-scheme: dark", "--surface: #191714", "--text: #f5f3f0", "--scrim:", "--toast-bg:", "--shadow-pop:"):
+        for decl in ("color-scheme: dark", "--surface: #15171d", "--text: #f2f3f6", "--scrim:", "--toast-bg:", "--shadow-pop:"):
             self.assertIn(decl, self.dark)
         for layout_token in ("--sidebar-w", "--radius", "--font"):
             self.assertNotIn(layout_token, self.dark)   # 重新声明会盖掉 html.nav-rail / 媒体查询里的值

@@ -1,12 +1,20 @@
 /* ==========================================================================
    Bookmark Hub · app-v3.css
-   v5「纸与墨」（2026-09）：界面本身是黑白的，颜色留给内容（站点图标、分组色、壁纸）和信号。
-   - 中性色带一点暖（OKLCH 色相 75，像纸和墨），不是冷灰；深色是暖炭黑，浅色是米白纸。
-   - 主操作是「墨色」实心按钮（深色主题里是白底黑字），不再用某个品牌色填满——不是所有按钮都该抢眼。
-   - 唯一的彩色是信号蓝（--accent）：焦点环、链接、开关打开、今天、选中的日期。红 / 黄 / 绿只表示状态。
-   - 少用盒子：网址是一块面板里的一行行，看板卡片里的字段不再各自一个框，分组标题不画横线。
+   v6「Halo 墨色」（2026-10）：和 HaloWebUI 同一套设计语言——界面是墨色的，颜色留给内容（站点图标、分组色、壁纸）和信号。
+   - 中性色是「墨」：OKLCH 色相 268 的冷灰，明度逐级沿用 v5「纸与墨」（只换色相，各层对比度不变）；深色是墨黑，浅色是冷白。
+   - 主操作仍是墨色实心按钮；唯一的实色强调是离子蓝（--accent）：焦点环、链接、开关、今天、选中。红 / 黄 / 绿只表示状态。
+   - 光环（--halo-spectrum：离子蓝 → 紫 → 日冕琥珀）只出现在 AI 在场的地方：AI 聊天、「用 AI 回答」、聊天回复中。
+   - 展示字体 Mona Sans（自托管，SIL OFL，见 static/fonts/）用于时钟、页标题、品牌名；正文仍用系统 / Inter。
    - 版面沿用「倒 L」画布（未开壁纸）与浮动玻璃侧栏（开壁纸），手机底栏浮成一条圆角胶囊。
    ========================================================================== */
+
+@font-face {
+  font-family: "Mona Sans";
+  src: url("/static/fonts/Mona-Sans.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* 深色令牌（默认主题）。壁纸场景里的浮层——弹窗 / 命令面板 / 提示条 / 待办排序菜单——在 .app-shell 之外，
    也固定用这一套：令牌直接声明在浮层自己身上，压过 <html> 上浅色主题传下来的值（见文件后部「外观」一节）。
@@ -14,43 +22,43 @@
    --primary / --primary-ink 是主按钮（墨色实心）；--accent 是信号蓝的文字 / 图标色，--accent-strong 是它的实心填充（配白字 ≥ 4.5:1）。 */
 :root, html.wall-on .modal-mask, html.wall-on .toast-wrap, html.wall-on .todo-sort-menu {
   color-scheme: dark;
-  --bg: #0e0c09;
-  --canvas: #13110e;
-  --sidebar: #0e0c09;
-  --surface: #191714;
-  --surface-2: #1e1b18;
-  --surface-hover: #272420;
-  --surface-input: #110f0d;
-  --raised: #2f2c28;
-  --border: rgba(255, 244, 228, .075);
-  --border-strong: rgba(255, 244, 228, .14);
-  --text: #f5f3f0;
-  --text-2: #bebab4;
-  --text-3: #938e87;
-  --primary: #f5f3f0;
-  --primary-ink: #14120f;
-  --accent: #63b1f9;
-  --accent-strong: #0075d4;
+  --bg: #0a0c11;
+  --canvas: #0f1117;
+  --sidebar: #0a0c11;
+  --surface: #15171d;
+  --surface-2: #191b22;
+  --surface-hover: #21242c;
+  --surface-input: #0d0f14;
+  --raised: #292c35;
+  --border: rgba(245, 248, 255, .075);
+  --border-strong: rgba(245, 248, 255, .14);
+  --text: #f2f3f6;
+  --text-2: #b7bbc3;
+  --text-3: #8a8f9a;
+  --primary: #f2f3f6;
+  --primary-ink: #101218;
+  --accent: #7da6ff;
+  --accent-strong: #3d68e8;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(99, 177, 249, .13);
-  --accent-ring: rgba(99, 177, 249, .34);
+  --accent-soft: rgba(125, 166, 255, .13);
+  --accent-ring: rgba(125, 166, 255, .34);
   --success: #4cc38a;
   --danger: #f87171;
   --danger-soft: rgba(248, 113, 113, .13);
   --warning: #f2b447;
   --warning-soft: rgba(242, 180, 71, .13);
-  --info: #63b1f9;
-  --info-soft: rgba(99, 177, 249, .13);
+  --info: #7da6ff;
+  --info-soft: rgba(125, 166, 255, .13);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
   --shadow-2: 0 12px 32px -8px rgba(0, 0, 0, .6), 0 2px 6px -2px rgba(0, 0, 0, .4);
-  --shadow-pop: 0 24px 60px -12px rgba(0, 0, 0, .75), 0 0 0 1px rgba(255, 244, 228, .09);
-  --highlight: inset 0 1px 0 rgba(255, 244, 228, .045);
+  --shadow-pop: 0 24px 60px -12px rgba(0, 0, 0, .75), 0 0 0 1px rgba(245, 248, 255, .09);
+  --highlight: inset 0 1px 0 rgba(245, 248, 255, .045);
   --avatar-sat: 55%;
   --avatar-l: 70%;
   --avatar-bg-a: .14;
   --avatar-ink-l: 70%;            /* 首字母的亮度：深色场景和底板同一个亮度就够亮 */
-  --scrim: rgba(8, 6, 4, .7);
-  --toast-bg: #201e1a;
+  --scrim: rgba(4, 5, 9, .7);
+  --toast-bg: #1b1e25;
 }
 :root {
   --radius-sm: 8px;
@@ -62,46 +70,57 @@
   --ease-in-out: cubic-bezier(.77, 0, .175, 1);   /* 已在屏上的东西挪位置 */
   --font: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-display: "Mona Sans", var(--font);
+  /* 光环：只给 AI 在场的地方（见文件头）。 */
+  --halo-ion: oklch(.72 .18 264);
+  --halo-violet: oklch(.7 .19 300);
+  --halo-solar: oklch(.86 .13 65);
+  --halo-spectrum: conic-gradient(from var(--halo-angle, 0deg), var(--halo-ion), var(--halo-violet) 30%, var(--halo-solar) 52%, var(--halo-ion) 78%, var(--halo-ion));
+  --dur-fast: 140ms;
+  --dur-base: 240ms;
+  --dur-slow: 480ms;
+  --ease-out-expo: cubic-bezier(.16, 1, .3, 1);
 }
+@property --halo-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #f5f2ee;
-  --canvas: #fdfbf8;
-  --sidebar: #f5f2ee;
-  --surface: #fffefd;
-  --surface-2: #f8f5f2;
-  --surface-hover: #f0ece8;
-  --surface-input: #fffefd;
-  --raised: #fffefd;
-  --border: rgba(60, 45, 25, .1);
-  --border-strong: rgba(60, 45, 25, .17);
-  --text: #1a1712;
-  --text-2: #56524b;
-  --text-3: #6f6963;
-  --primary: #1a1712;
-  --primary-ink: #fdfbf8;
-  --accent: #0069c6;
-  --accent-strong: #006fcd;
+  --bg: #f0f2f7;
+  --canvas: #fbfbfd;
+  --sidebar: #f0f2f7;
+  --surface: #fefefe;
+  --surface-2: #f4f6f8;
+  --surface-hover: #ebedf2;
+  --surface-input: #fefefe;
+  --raised: #fefefe;
+  --border: rgba(41, 46, 56, .1);
+  --border-strong: rgba(41, 46, 56, .17);
+  --text: #15171e;
+  --text-2: #4e525d;
+  --text-3: #656a76;
+  --primary: #15171e;
+  --primary-ink: #fbfbfd;
+  --accent: #305ae1;
+  --accent-strong: #3560e7;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(0, 111, 205, .08);
-  --accent-ring: rgba(0, 111, 205, .26);
+  --accent-soft: rgba(53, 96, 231, .08);
+  --accent-ring: rgba(53, 96, 231, .26);
   --success: #17804f;
   --danger: #cf2d3a;
   --danger-soft: rgba(207, 45, 58, .08);
   --warning: #a65d00;
   --warning-soft: rgba(196, 120, 10, .1);
-  --info: #0069c6;
-  --info-soft: rgba(0, 111, 205, .08);
-  --shadow-1: 0 1px 2px rgba(50, 35, 15, .06);
-  --shadow-2: 0 12px 28px -8px rgba(50, 35, 15, .14), 0 3px 8px -3px rgba(50, 35, 15, .06);
-  --shadow-pop: 0 24px 56px -12px rgba(50, 35, 15, .22), 0 0 0 1px rgba(50, 35, 15, .07);
+  --info: #305ae1;
+  --info-soft: rgba(53, 96, 231, .08);
+  --shadow-1: 0 1px 2px rgba(16, 21, 36, .06);
+  --shadow-2: 0 12px 28px -8px rgba(16, 21, 36, .14), 0 3px 8px -3px rgba(16, 21, 36, .06);
+  --shadow-pop: 0 24px 56px -12px rgba(16, 21, 36, .22), 0 0 0 1px rgba(16, 21, 36, .07);
   --highlight: inset 0 1px 0 rgba(255, 255, 255, .7);
   --avatar-sat: 52%;
   --avatar-l: 42%;
   --avatar-bg-a: .11;
   --avatar-ink-l: 28%;            /* 浅色底上首字母要更深：42% 时黄绿色相只有 2.8:1，28% 各色相都 ≥ 4.5:1 */
-  --scrim: rgba(30, 24, 16, .4);
-  --toast-bg: #fffefd;
+  --scrim: rgba(16, 21, 36, .4);
+  --toast-bg: #fefefe;
 }
 
 /* 分组色调（分组图标、页面点缀、链接卡片描边） */
@@ -169,7 +188,7 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
   color: var(--primary-ink); font-size: 14px; font-weight: 650; letter-spacing: -.04em;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 1px 2px rgba(0, 0, 0, .25);
 }
-.brand-name { font-size: 14.5px; font-weight: 620; letter-spacing: -.015em; }
+.brand-name { font-family: var(--font-display); font-size: 15px; font-weight: 640; letter-spacing: -.02em; }
 .brand-sub { margin-top: 1px; color: var(--text-3); font-size: 12px; font-weight: 450; }
 .nav-label { padding: 14px 10px 6px; color: var(--text-3); font-size: 12px; font-weight: 520; letter-spacing: .02em; }
 .tabs { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
@@ -314,7 +333,7 @@ html[data-theme="light"] .theme-toggle .ic-sun { display: block; }
 .view-header.has-tone h1 { margin-top: 2px; }
 .view-header.has-tone p { margin-top: 4px; }
 .lib-more { display: none; }   /* 分组页的「···」只在手机上出现，见 760px 断点 */
-.view-header h1 { font-size: clamp(22px, 2.1vw, 28px); line-height: 1.2; letter-spacing: -.025em; font-weight: 640; }
+.view-header h1 { font-family: var(--font-display); font-size: clamp(22px, 2.1vw, 28px); line-height: 1.2; letter-spacing: -.028em; font-weight: 640; }
 .view-header p { max-width: 620px; margin-top: 6px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
 .header-actions, .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; padding: 0 2px; }
@@ -1137,7 +1156,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .home-top { position: relative; container-type: inline-size; }
 .home-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: clamp(10px, 4vh, 44px) 0 4px; text-align: center; user-select: none; -webkit-user-select: none; }
 /* 大号细体时钟（锁屏式）：字越大越该轻，等宽数字走秒时不跳。 */
-.hero-clock { font-size: clamp(52px, 6.4vw, 80px); font-weight: 300; line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.hero-clock { font-family: var(--font-display); font-size: clamp(52px, 6.4vw, 80px); font-weight: 260; line-height: 1; letter-spacing: -.04em; font-variant-numeric: proportional-nums; }  /* Mona Sans 的等宽数字是斜杠 0；时钟只到分钟，比例数字不会跳 */
 .hero-meta { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 14px; font-weight: 450; }
 .hero-meta #heroGreeting { color: var(--text); font-weight: 500; }
 .hero-divider { color: var(--text-3); }
@@ -1361,7 +1380,7 @@ html.wall-on .section-fold { color: var(--text-2); }
 }
 .home-arrange-bar .spacer { flex: 1; }
 .arrange-tip { flex: 1 1 260px; min-width: 0; color: var(--text-2); font-size: 13px; line-height: 1.5; }
-html.wall-on .home-arrange-bar { background: #191714; }
+html.wall-on .home-arrange-bar { background: #15171d; }
 .is-arranging .home-tile[data-arrange-id] { cursor: grab; outline: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .is-arranging .home-tile[data-arrange-id] .tile-link, .is-arranging .home-tile[data-arrange-id] .widget-link { cursor: inherit; }
 .is-arranging .home-tile[data-arrange-id] img { pointer-events: none; -webkit-user-drag: none; }
@@ -1423,7 +1442,7 @@ html.wall-on .home-arrange-bar { background: #191714; }
 }
 html.wall-on .home-wall { opacity: 1; visibility: visible; transition: opacity .35s ease; }
 /* 壁纸层之下的页面底色、根滚动条也跟着场景走：浅色主题下滚动条轨道 / 橡皮筋回弹不会露出一条白边。 */
-html.wall-on body { background: #0e0c09; }
+html.wall-on body { background: #0a0c11; }
 /* 浮层的深色令牌声明在文件顶部；color 是继承来的计算值（浅色主题下是深色字），要在浮层上重新取一次。 */
 html.wall-on .modal-mask, html.wall-on .toast-wrap, html.wall-on .todo-sort-menu { color: var(--text); }
 html.wall-on::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .26); }
@@ -1431,12 +1450,12 @@ html.wall-on::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .26); }
 /* 壁纸场景里的令牌：不论深浅主题、不论哪个页面，工作区统一用这一套（白字 + 半透明深色面）。 */
 html.wall-on .app-shell {
   color-scheme: dark;
-  --surface: rgba(18, 16, 13, .62); --surface-2: rgba(18, 16, 13, .46); --surface-hover: rgba(255, 255, 255, .13); --surface-input: rgba(18, 16, 13, .46);
+  --surface: rgba(13, 15, 20, .62); --surface-2: rgba(13, 15, 20, .46); --surface-hover: rgba(255, 255, 255, .13); --surface-input: rgba(13, 15, 20, .46);
   --raised: rgba(255, 255, 255, .16); --highlight: inset 0 1px 0 rgba(255, 255, 255, .07);
   --border: rgba(255, 255, 255, .13); --border-strong: rgba(255, 255, 255, .24);
   --text: #ffffff; --text-2: rgba(255, 255, 255, .88); --text-3: rgba(255, 255, 255, .78);
-  --primary: #ffffff; --primary-ink: #14120f;
-  --accent: #8ccbff; --accent-strong: #0075d4; --accent-ink: #ffffff; --accent-soft: rgba(140, 203, 255, .2); --accent-ring: rgba(140, 203, 255, .42);
+  --primary: #ffffff; --primary-ink: #101218;
+  --accent: #a2c2ff; --accent-strong: #3d68e8; --accent-ink: #ffffff; --accent-soft: rgba(162, 194, 255, .2); --accent-ring: rgba(162, 194, 255, .42);
   --success: #4ade80; --danger: #fda4af; --danger-soft: rgba(251, 113, 133, .22); --warning: #fcd34d; --warning-soft: rgba(251, 191, 36, .2);
   --info: #7dd3fc; --info-soft: rgba(56, 189, 248, .2);
   --shadow-1: 0 1px 3px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .2);
@@ -1458,43 +1477,43 @@ html.wall-on .run-meta { text-shadow: 0 1px 2px rgba(0, 0, 0, .6), 0 0 10px rgba
 html.wall-on .tile-title { font-weight: 520; }
 html.wall-on .home-section .section-label::after { background: transparent; }
 /* 小字号的指标胶囊、计数角标不靠投影，直接给近实底。 */
-html.wall-on .tile-metric { background: rgba(10, 9, 8, .78); }
+html.wall-on .tile-metric { background: rgba(8, 9, 13, .78); }
 html.wall-on .tile-metric { color: var(--accent); }
 html.wall-on .tile-metric.is-warning { color: var(--warning); }
 html.wall-on .tile-metric.is-error { color: var(--danger); }
 html.wall-on .tile-metric.is-stale { color: var(--text-2); }
 html.wall-on .home-view-toggle, html.wall-on .home-toolbar .btn.ghost, html.wall-on .chip, html.wall-on .alert-chip { background: rgba(10, 14, 22, .6); border-color: rgba(255, 255, 255, .16); color: var(--text-2); }
 html.wall-on .home-view-toggle button.active { background: rgba(255, 255, 255, .2); color: #fff; box-shadow: none; }
-html.wall-on .home-toolbar .btn.ghost[aria-pressed="true"] { border-color: transparent; color: #14120f; background: #fff; }
+html.wall-on .home-toolbar .btn.ghost[aria-pressed="true"] { border-color: transparent; color: #101218; background: #fff; }
 html.wall-on .home-tools-toggle { background: rgba(10, 14, 22, .6); border-color: rgba(255, 255, 255, .16); color: var(--text-2); }
-html.wall-on .chip.active { background: #fff; border-color: transparent; color: #14120f; }
+html.wall-on .chip.active { background: #fff; border-color: transparent; color: #101218; }
 html.wall-on .alert-chip.is-error, html.wall-on .alert-chip.is-expired { color: var(--danger); }
 html.wall-on .alert-chip.is-soon { color: var(--warning); }
 html.wall-on .empty-state { background: rgba(10, 14, 22, .62); }
 /* 直接落在画面上的错误条：淡红半透明底在亮画面上托不住字，换成近实底。 */
 html.wall-on .app-shell .error { background: rgba(58, 16, 28, .84); }
 /* 浮层（菜单、搜索下拉）压在画面上必须是实底，半透明会和壁纸搅在一起。 */
-html.wall-on .app-shell .menu-popover, html.wall-on .home-search-dropdown, html.wall-on .home-engine-menu { background: #191714; backdrop-filter: none; -webkit-backdrop-filter: none; }
+html.wall-on .app-shell .menu-popover, html.wall-on .home-search-dropdown, html.wall-on .home-engine-menu { background: #15171d; backdrop-filter: none; -webkit-backdrop-filter: none; }
 html.wall-on .home-search-row .omni-ic { background: rgba(255, 255, 255, .08); }
 /* 分组页一屏几十张卡片：每张都开毛玻璃会掉帧，壁纸上改用半透明实底。 */
 html.wall-on .link-card { backdrop-filter: none; -webkit-backdrop-filter: none; }
 
 /* 毛玻璃：搜索框与导航（页头 .view-header 自带 blur，跟着半透明的 --surface 自然成玻璃）。 */
 html.wall-on .home-search-bar, html.wall-on .sidebar {
-  background: rgba(18, 16, 13, .58);
+  background: rgba(13, 15, 20, .58);
   backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
 }
 html.wall-on .home-search-bar { border-color: rgba(255, 255, 255, .24); box-shadow: 0 10px 30px -6px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12); }
-html.wall-on .home-search.is-open .home-search-bar { background: #191714; backdrop-filter: none; -webkit-backdrop-filter: none; }
+html.wall-on .home-search.is-open .home-search-bar { background: #15171d; backdrop-filter: none; -webkit-backdrop-filter: none; }
 html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); }
 /* 降级：不支持毛玻璃、或用户要求减少透明度时，换成足够实的底色，保证字照样读得清。 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html.wall-on .home-search-bar, html.wall-on .sidebar { background: rgba(18, 16, 13, .88); }
+  html.wall-on .home-search-bar, html.wall-on .sidebar { background: rgba(13, 15, 20, .88); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  html.wall-on .home-search-bar, html.wall-on .sidebar { background: #191714; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.wall-on .home-search-bar, html.wall-on .sidebar { background: #15171d; backdrop-filter: none; -webkit-backdrop-filter: none; }
   html.wall-on .view-header { backdrop-filter: none; -webkit-backdrop-filter: none; }
-  html.wall-on .app-shell { --surface: #191714; --surface-2: #1e1b18; --surface-input: #191714; }
+  html.wall-on .app-shell { --surface: #15171d; --surface-2: #191b22; --surface-input: #15171d; }
 }
 
 /* ---------- 版面：倒 L 画布 / 浮动玻璃侧栏（仅桌面宽度） ----------
@@ -1545,7 +1564,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
    固定深底浅字，压在壁纸和浅色页面上都清楚；只是悬停 / 聚焦的附属说明，不接收指针。 */
 .rail-tip {
   position: fixed; z-index: 40; max-width: 240px; padding: 6px 10px; overflow: hidden; transform: translateY(-50%);
-  border: 1px solid rgba(255, 255, 255, .12); border-radius: 8px; background: #201e1a; color: #f5f3f0; box-shadow: 0 8px 22px -6px rgba(0, 0, 0, .55);
+  border: 1px solid rgba(255, 255, 255, .12); border-radius: 8px; background: #1b1e25; color: #f2f3f6; box-shadow: 0 8px 22px -6px rgba(0, 0, 0, .55);
   font-size: 13px; font-weight: 520; white-space: nowrap; text-overflow: ellipsis; pointer-events: none;
   animation: rail-tip-in .12s ease-out both;
 }
@@ -1902,7 +1921,7 @@ label.set-row { cursor: pointer; }
   /* 编辑中的「编辑」按钮：上一条把 ghost 按钮的底去掉了，按下态得在这里再给回墨色实心——否则白字落在浅底上，像被禁用。 */
   .home-toolbar .btn.ghost[aria-pressed="true"], .home-toolbar .btn.ghost[aria-pressed="true"]:hover { background: var(--primary); color: var(--primary-ink); }
   .home-toolbar .home-view-toggle { margin-right: 4px; padding: 0 4px 0 0; border-radius: 0; box-shadow: 1px 0 0 var(--border); }
-  html.wall-on .home-toolbar { background: rgba(18, 16, 13, .58); border-color: rgba(255, 255, 255, .14); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); }
+  html.wall-on .home-toolbar { background: rgba(13, 15, 20, .58); border-color: rgba(255, 255, 255, .14); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); }
   html.wall-on .home-toolbar .btn.ghost, html.wall-on .home-toolbar .home-view-toggle { background: transparent; border-color: transparent; }
   html.wall-on .home-toolbar .home-view-toggle { box-shadow: 1px 0 0 rgba(255, 255, 255, .14); }
 }
@@ -2274,7 +2293,7 @@ a.expiry-name:hover { color: var(--accent); }
   .todo-actions { position: absolute; top: 3px; right: 3px; margin: 0; padding: 1px; border-radius: 9px; background: var(--todo-actions-bg, var(--surface-solid, var(--surface))); box-shadow: 0 0 0 1px var(--border), var(--shadow-1); opacity: 0; pointer-events: none; transition: opacity .14s ease; }
   .days-item:hover .todo-actions, .days-item:focus-within .todo-actions, .todo-item:hover .todo-actions, .todo-item:focus-within .todo-actions { opacity: 1; pointer-events: auto; }
 }
-html.wall-on .home-todo, html.wall-on .deck-days { --todo-actions-bg: #1e1b18; }
+html.wall-on .home-todo, html.wall-on .deck-days { --todo-actions-bg: #191b22; }
 .todo-done { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .todo-done > summary { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-radius: 8px; color: var(--text-3); font-size: 12px; font-weight: 520; cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none; }
 .todo-done > summary::-webkit-details-marker { display: none; }
