@@ -742,8 +742,18 @@ a.bookmark-open:hover .open-mark { color: var(--accent); transform: translate(1p
 
 /* ---------- 空状态 ---------- */
 .empty { padding: 48px 20px; color: var(--text-3); text-align: center; font-size: 13px; }
-.empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 24px; text-align: center; border: 1px dashed var(--border-strong); border-radius: var(--radius-xl); background: var(--surface); }
-.empty-state .empty-art { display: grid; place-items: center; width: 60px; height: 60px; margin-bottom: 6px; border-radius: 16px; background: var(--surface-2); color: var(--tone, var(--accent)); box-shadow: inset 0 0 0 1px var(--border), var(--shadow-1); }
+/* 空状态 / 锁定：Halo 面板——细实线、顶上一抹离子蓝的光，图标块按语气色淡染（原来是虚线框）。 */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 24px; text-align: center;
+  border: 1px solid var(--border); border-radius: var(--radius-xl);
+  background: radial-gradient(90% 70% at 50% 0%, var(--accent-soft), transparent 70%), var(--surface);
+  box-shadow: var(--shadow-1), var(--highlight);
+}
+.empty-state .empty-art {
+  display: grid; place-items: center; width: 60px; height: 60px; margin-bottom: 6px; border-radius: 16px;
+  background: color-mix(in oklab, var(--tone, var(--accent)) 12%, var(--surface-2)); color: var(--tone, var(--accent));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tone, var(--accent)) 26%, transparent), var(--shadow-1);
+}
 .empty-state .empty-art svg { width: 26px; height: 26px; }
 .empty-state h3 { font-size: 16px; font-weight: 620; letter-spacing: -.015em; }
 .empty-state p { max-width: 400px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
@@ -1517,7 +1527,7 @@ html.wall-on .home-tools-toggle { background: rgba(10, 14, 22, .6); border-color
 html.wall-on .chip.active { background: #fff; border-color: transparent; color: #101218; }
 html.wall-on .alert-chip.is-error, html.wall-on .alert-chip.is-expired { color: var(--danger); }
 html.wall-on .alert-chip.is-soon { color: var(--warning); }
-html.wall-on .empty-state { background: rgba(10, 14, 22, .62); }
+html.wall-on .empty-state { border-color: rgba(255, 255, 255, .12); background: radial-gradient(90% 70% at 50% 0%, rgba(125, 166, 255, .12), transparent 70%), rgba(10, 14, 22, .62); }
 /* 直接落在画面上的错误条：淡红半透明底在亮画面上托不住字，换成近实底。 */
 html.wall-on .app-shell .error { background: rgba(58, 16, 28, .84); }
 /* 浮层（菜单、搜索下拉）压在画面上必须是实底，半透明会和壁纸搅在一起。 */

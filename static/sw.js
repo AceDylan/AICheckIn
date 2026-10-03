@@ -37,7 +37,7 @@
 // v52：Halo 墨色——配色换成 HaloWebUI 同一套墨色 + 离子蓝，时钟 / 标题用自托管的 Mona Sans。
 // v53：光环只给 AI——「用 AI 回答」这一行、AI 聊天标签正在回复、正在打开 HaloWebUI。
 // v54：AI 聊天 / 笔记在壁纸上浮成玻璃面板；开着壁纸时框跟着深色（眼睛看到的场景）。
-const CACHE_VERSION = 'bh-shell-v57';
+const CACHE_VERSION = 'bh-shell-v58';
 const SHELL = [
   '/',
   '/static/app-v3.css',
