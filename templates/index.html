@@ -691,7 +691,7 @@
       <div class="field"><label id="wallDimLabel">遮罩</label>
         <div class="segmented" id="wallDimSeg" role="radiogroup" aria-labelledby="wallDimLabel"><button type="button" data-wall-dim="soft">柔和</button><button type="button" data-wall-dim="medium">适中</button><button type="button" data-wall-dim="strong">加强</button></div>
         <div class="hint" id="wallDimHint">画面越亮遮罩会自动压得越暗，保证白字始终看得清。</div>
-        <div class="hint">启用壁纸后全站统一为深色玻璃场景（白字）；深色 / 浅色主题只影响弹窗，以及关掉壁纸之后的页面。</div>
+        <div class="hint">启用壁纸后全站统一为深色玻璃场景（白字）；深色 / 浅色主题只影响弹窗、「AI 聊天」「笔记」里的页面，以及关掉壁纸之后的页面。</div>
       </div>
       <div class="field"><label id="homeNavLabel">导航（电脑）</label>
         <div class="segmented" id="homeNavSeg" role="radiogroup" aria-labelledby="homeNavLabel"><button type="button" data-home-nav="rail">图标栏</button><button type="button" data-home-nav="full">完整侧栏</button></div>
@@ -1139,12 +1139,11 @@
     // 系统是浅色时，深色的 Hub 里嵌着两块白页面。框也看不到本站选了什么——框元素的 color-scheme 不会传进
     // 跨源页面的 prefers-color-scheme。所以开框时把此刻的深浅色写进地址的 #（hub_theme=，# 不发给服务器；
     // 笔记框经 /vault/open 转交），之后本站换主题再发一条消息。两边只在自己设的是「跟随系统」时照办。
-    // 给的是眼睛看到的深浅色：开着壁纸时整个工作区固定是深色玻璃（见 applyLook），浅色主题下框也要深色，
-    // 否则深色的 Hub 里嵌着一块白页面。
+    // 给的是本站的主题设置，不看壁纸：本站选「跟随系统」时就是顶层页面读到的设备深浅色（框里读不准，见上），
+    // 设备换深浅色时上面的监听会再告诉框。开着壁纸时工作区虽然固定是深色玻璃（见 applyLook），框里的页面
+    // 仍按设备 / 主题来——曾经让壁纸把框也压成深色，浅色设备上聊天也跟着变黑，用户要的是跟真实系统走。
     function frameTheme() {
-      const root = document.documentElement;
-      if (root.classList.contains('wall-on')) return 'dark';
-      return root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+      return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
     }
     function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme(); }
     function tellFramesTheme() {
@@ -1343,9 +1342,7 @@
       const root = document.documentElement;
       const w = currentWallpaper();
       const rail = homeNavPref() === 'rail';
-      const sceneBefore = frameTheme();
-      root.classList.toggle('wall-on', !!w);
-      if (frameTheme() !== sceneBefore) tellFramesTheme();   // 开 / 关壁纸会换掉眼睛看到的深浅色，开着的框跟着换
+      root.classList.toggle('wall-on', !!w);   // 框不跟着变：它们跟主题 / 设备走（见 frameTheme）
       applyThemeColor(w ? 'dark' : readTheme());   // 开着壁纸整页是深色场景
       root.classList.toggle('nav-rail', rail);
       const toggle = $('navToggle');

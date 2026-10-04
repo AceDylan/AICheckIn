@@ -61,6 +61,11 @@ setTimeout(async () => {
   writePref('bh_wallpaper', 'galaxy'); applyLook(); await tick(); snap('wallpaper turned on');
   openChat(true); await tick(); snap('reopened under the wallpaper');
   writePref('bh_wallpaper', 'off'); applyLook(); await tick(); snap('wallpaper turned off');
+  writePref('bh_wallpaper', 'galaxy'); applyLook(); setTheme('dark'); await tick(); snap('dark under the wallpaper');
+  // 设备是浅色：「跟随系统」就是浅色，开着壁纸也一样（壁纸只管本站自己的工作区）。
+  window.matchMedia = (q) => ({ matches: /light/.test(q), addEventListener() {}, addListener() {} });
+  setTheme('system'); await tick(); snap('system (light device) under the wallpaper');
+  openChat(true); await tick(); snap('reopened, system under the wallpaper');
   out.errors = __CALLS.errors;
   console.log(JSON.stringify(out));
 }, 60);
@@ -124,16 +129,24 @@ class FrameThemeScriptTest(unittest.TestCase):
         self.assertEqual((step["theme"], step["posted"]), ("dark", []))
 
 
-    def test_under_a_wallpaper_the_frames_are_dark_like_the_page_around_them(self):
-        # 开着壁纸时整个工作区固定是深色玻璃：浅色主题下框也跟着深色，不在深色的 Hub 里嵌一块白页面。
+    def test_the_wallpaper_does_not_change_the_frames_theme(self):
+        # 开着壁纸时工作区固定是深色玻璃，但框里的页面跟主题 / 设备走：开、关壁纸都不给框发消息，
+        # 壁纸下新开的框也还是此刻的主题。
         self.assertEqual(self.steps["light, frames open"]["chat"], HALO + "/#hub_theme=light")
-        msg = {"source": "hub", "type": "theme", "theme": "dark"}
-        step = self.steps["wallpaper turned on"]
+        self.assertEqual(self.steps["wallpaper turned on"]["posted"], [])
+        self.assertEqual(self.steps["reopened under the wallpaper"]["chat"], HALO + "/#hub_theme=light")
+        self.assertEqual(self.steps["wallpaper turned off"]["posted"], [])
+
+    def test_under_the_wallpaper_the_theme_still_reaches_the_frames(self):
+        step = self.steps["dark under the wallpaper"]
         self.assertEqual(sorted((p["kind"], p["origin"]) for p in step["posted"]), [("chat", HALO), ("vault", NOTES)])
-        self.assertTrue(all(p["msg"] == msg for p in step["posted"]))
-        self.assertEqual(self.steps["reopened under the wallpaper"]["chat"], HALO + "/#hub_theme=dark")
-        back = self.steps["wallpaper turned off"]["posted"]
-        self.assertTrue(back and all(p["msg"]["theme"] == "light" for p in back), back)
+        self.assertTrue(all(p["msg"]["theme"] == "dark" for p in step["posted"]), step["posted"])
+
+    def test_following_the_system_under_the_wallpaper_gives_the_devices_theme(self):
+        step = self.steps["system (light device) under the wallpaper"]
+        self.assertEqual(step["theme"], "light")
+        self.assertTrue(step["posted"] and all(p["msg"]["theme"] == "light" for p in step["posted"]), step["posted"])
+        self.assertEqual(self.steps["reopened, system under the wallpaper"]["chat"], HALO + "/#hub_theme=light")
 
 
 class VaultOpenThemeTest(VaultCase):
