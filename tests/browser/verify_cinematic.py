@@ -56,12 +56,73 @@ def scifi(b):
     page.locator('#scifiSeg [data-scifi="off"]').click()
     check('sci-fi: switch turns it off', not page.evaluate("document.documentElement.classList.contains('hub-scifi')")
           and page.locator('.hub-stars').evaluate('el => getComputedStyle(el).display') == 'none'
+          and page.locator('.hub-hud').evaluate('el => getComputedStyle(el).display') == 'none'
+          and page.locator('.hub-clock-orbit').evaluate('el => getComputedStyle(el).display') == 'none'
           and 'bh_scifi=off' in page.evaluate('document.cookie'))
     page.locator('#scifiSeg [data-scifi="on"]').click()
     check('sci-fi: and back on', page.evaluate("document.documentElement.classList.contains('hub-scifi')"))
     ctx.close()
     ctx, page = open_page(b, 1440, 900, reduced_motion='reduce', boot=True)
     check('sci-fi: no opening with reduced motion', 'bh_scifi_boot' not in page.evaluate('document.cookie') and page.locator('.hub-boot').count() == 0)
+    ctx.close()
+
+
+def stellar_scene(b):
+    reset()
+    for mobile in (False, True):
+        label = 'phone' if mobile else 'desktop'
+        ctx, page = open_page(b, 390 if mobile else 1440, 844 if mobile else 900,
+                              mobile=mobile, cookies={'bh_wallpaper': 'starcore'})
+        page.wait_for_selector('#homeWall.is-ready')
+        image = page.locator('#homeWall').evaluate('el => getComputedStyle(el,"::before").backgroundImage')
+        check(label + ': correct starcore composition loaded', ('starcore-m.webp' if mobile else 'starcore.webp') in image)
+        scene = page.locator('.hub-stars')
+        # Observe the rendered surface, without depending on drawing-call structure.
+        sample = lambda: scene.evaluate('el => el.toDataURL()')
+        before = sample(); page.wait_for_timeout(200)
+        check(label + ': orbital scene moves', before != sample())
+        page.emulate_media(reduced_motion='reduce'); page.wait_for_timeout(150)
+        before = sample(); page.wait_for_timeout(200)
+        check(label + ': reduced motion freezes the scene', before == sample())
+        page.set_viewport_size({'width': 420 if mobile else 1280, 'height': 800})
+        page.wait_for_timeout(200)
+        check(label + ': resizing redraws a nonempty still scene', scene.evaluate("el => el.getContext('2d').getImageData(0,0,el.width,el.height).data.some((v,i) => i%4===3 && v>0)"))
+        page.evaluate("openHomeLook()"); page.wait_for_selector('#scifiSeg')
+        page.locator('#scifiSeg [data-scifi="off"]').click()
+        check(label + ': switching effects off preserves the wallpaper', page.locator('#homeWall').is_visible()
+              and page.locator('#homeWall').evaluate('el => getComputedStyle(el,"::before").backgroundImage').endswith('webp")'))
+        check(label + ': switching effects off clears the canvas', scene.evaluate("el => !el.getContext('2d').getImageData(0,0,el.width,el.height).data.some((v,i) => i%4===3 && v>0)"))
+        page.locator('#scifiSeg [data-scifi="on"]').click()
+        page.emulate_media(forced_colors='active'); page.wait_for_timeout(200)
+        check(label + ': forced colors hides decoration and retains clock text', scene.evaluate('el => getComputedStyle(el).display') == 'none'
+              and page.locator('.hero-clock').evaluate('el => getComputedStyle(el).color') != 'rgba(0, 0, 0, 0)')
+        ctx.close()
+
+
+def scene_budget(b):
+    reset()
+    ctx = new_context(b, 1440, 900)
+    ctx.add_cookies([{'name': 'bh_wallpaper', 'value': 'starcore', 'url': BASE}])
+    ctx.add_init_script("Object.defineProperty(navigator, 'connection', { value: { saveData: true } })")
+    page = ctx.new_page()
+    requests = []
+    page.on('request', lambda r: requests.append(r.url))
+    page.on('pageerror', lambda e: ERRORS.append(str(e)))
+    page.goto(BASE); page.wait_for_selector('.hub-stars'); page.wait_for_timeout(700)
+    check('Save-Data: wallpaper is not downloaded', not any('/static/wallpapers/' in u for u in requests))
+    scene = page.locator('.hub-stars')
+    before = scene.evaluate('el => el.toDataURL()'); page.wait_for_timeout(250)
+    check('Save-Data: scene is still without opening titles', before == scene.evaluate('el => el.toDataURL()') and page.locator('.hub-boot').count() == 0)
+    ctx.close()
+    ctx, page = open_page(b, 1440, 900)
+    # Emulate the browser lifecycle signal; inspect pixels rather than private timers.
+    page.evaluate("Object.defineProperty(document, 'hidden', { configurable: true, value: true }); document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_timeout(100)
+    scene = page.locator('.hub-stars'); before = scene.evaluate('el => el.toDataURL()'); page.wait_for_timeout(250)
+    check('background lifecycle: canvas stops drawing', before == scene.evaluate('el => el.toDataURL()'))
+    page.evaluate("Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_timeout(250)
+    check('foreground lifecycle: canvas resumes', before != scene.evaluate('el => el.toDataURL()'))
     ctx.close()
 
 
@@ -83,4 +144,4 @@ def card_editor(b):
 
 
 if __name__ == '__main__':
-    main((cinematic, card_editor, scifi))
+    main((cinematic, card_editor, scifi, stellar_scene, scene_budget), os.environ.get('BH_VERIFY_RESULTS', ''))

@@ -38,7 +38,8 @@
 // v53：光环只给 AI——「用 AI 回答」这一行、AI 聊天标签正在回复、正在打开 HaloWebUI。
 // v54：AI 聊天 / 笔记在壁纸上浮成玻璃面板；开着壁纸时框跟着深色（眼睛看到的场景）。
 // v62：科幻特效——深空星场、霓虹搜索框、全息时钟、HUD 卡角、切页跃迁、开场（最多每 6 小时一次）。
-const CACHE_VERSION = 'bh-shell-v62';
+// v63：蓝紫等离子星核壁纸、轨道动画、流星、HUD 舱窗与全息时钟环；更新缓存中的旧壁纸。
+const CACHE_VERSION = 'bh-shell-v63';
 const SHELL = [
   '/',
   '/static/app-v3.css',

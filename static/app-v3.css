@@ -2726,6 +2726,29 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 html.hub-scifi .hub-stars { display: block; }
 html.wall-on .hub-stars { opacity: .7; }
 
+/* 舱窗边缘与时钟轨道只作装饰，不占版面、不截获输入。 */
+.hub-hud, .hub-clock-orbit { display: none; pointer-events: none; }
+html.hub-scifi .hub-hud { display: block; position: fixed; inset: 20px 18px; z-index: -1; color: var(--sf-cyan); opacity: .45; }
+.hub-hud::before, .hub-hud::after { content: ""; position: absolute; width: 56px; height: 38px; border: 1px solid currentColor; }
+.hub-hud::before { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.hub-hud::after { bottom: 0; left: 0; border-top: 0; border-right: 0; }
+.hub-hud__rail { position: absolute; top: 90px; bottom: 90px; width: 3px; background: repeating-linear-gradient(to bottom, var(--sf-line) 0 2px, transparent 2px 10px); }
+.hub-hud__rail:first-child { right: 0; }
+.hub-hud__rail:nth-child(2) { left: 0; }
+.hub-hud__rail::after { content: ""; position: absolute; top: 0; width: 3px; height: 54px; background: linear-gradient(transparent, var(--sf-cyan), transparent); animation: sf-rail-travel 12s ease-in-out infinite alternate; }
+.hub-hud__rail:nth-child(2)::after { animation-delay: -6s; }
+@keyframes sf-rail-travel { to { top: calc(100% - 54px); } }
+.hub-hud span { position: absolute; font: 9px ui-monospace, monospace; letter-spacing: .22em; }
+.hub-hud span:nth-last-child(2) { right: 5px; top: 76px; writing-mode: vertical-rl; }
+.hub-hud span:last-child { left: 16px; bottom: 12px; }
+html.hub-scifi .hub-clock-orbit { display: block; position: absolute; width: min(600px, 100%); height: 180px; left: 50%; top: 48%; transform: translate(-50%, -50%); z-index: -1; overflow: visible; fill: none; stroke: var(--sf-cyan); stroke-width: .8; opacity: .38; }
+.hub-clock-orbit__outer { transform-origin: center; animation: sf-clock-orbit 28s ease-in-out infinite alternate; }
+.hub-clock-orbit__inner { stroke: var(--sf-violet); transform-origin: center; animation: sf-clock-orbit 18s ease-in-out infinite alternate-reverse; }
+@keyframes sf-clock-orbit { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+html.hub-scifi .home-hero { isolation: isolate; }
+html.hub-scifi .hero-clock { text-shadow: none; }
+html.hub-scifi[data-wallpaper="starcore"] .home-wall::after { background-image: linear-gradient(90deg, rgb(4 7 12 / .22), transparent 65%), linear-gradient(180deg, rgb(4 7 12 / .24), transparent 35%, rgb(4 7 12 / .32)); background-color: rgb(4 7 12 / var(--wall-dim, .38)); }
+
 /* 舞台：主面板透出星场，四周一圈冷光 */
 html.hub-scifi[data-theme="dark"]:not(.wall-on) body {
   background: radial-gradient(900px 500px at 0% 0%, rgb(94 231 255 / .07), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgb(167 139 250 / .08), transparent 60%), #03050b;
@@ -2752,7 +2775,7 @@ html.hub-scifi .main::before {   /* 全息网格，从中间往四周淡掉 */
 html.hub-scifi .hero-clock {
   background: linear-gradient(100deg, #0e7490 0%, #1d4ed8 40%, #7c3aed 72%, #be185d 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 300;
-  animation: sf-glitch-in 900ms 100ms steps(1) both;
+  animation: sf-holo-reveal 850ms 100ms cubic-bezier(.16, 1, .3, 1) both;
 }
 html.hub-scifi[data-theme="dark"] .hero-clock, html.hub-scifi.wall-on .hero-clock {
   background: linear-gradient(100deg, #e0fbff 0%, #5ee7ff 35%, #a78bfa 68%, #f472d0 100%);
@@ -2765,6 +2788,7 @@ html.hub-scifi .hero-meta::before, html.hub-scifi .hero-meta::after {
   content: ""; width: clamp(22px, 4vw, 56px); height: 1px; background: linear-gradient(90deg, transparent, var(--sf-cyan)); opacity: .7;
 }
 html.hub-scifi .hero-meta::after { background: linear-gradient(90deg, var(--sf-cyan), transparent); }
+@keyframes sf-holo-reveal { from { opacity: 0; clip-path: inset(0 100% 0 0); transform: translateY(5px); } to { opacity: 1; clip-path: inset(0); transform: none; } }
 @keyframes sf-glitch-in {
   0% { opacity: 0; clip-path: inset(0 0 100% 0); }
   12% { opacity: 1; clip-path: inset(10% 0 62% 0); transform: translateX(-6px) skewX(-8deg); }
@@ -2786,6 +2810,10 @@ html.hub-scifi .home-search-bar::after {
 }
 html.hub-scifi .home-search-bar:focus-within { box-shadow: 0 0 0 1px var(--sf-line), 0 0 0 5px rgb(94 231 255 / .08), 0 0 70px -10px var(--sf-glow); }
 html.hub-scifi .home-search-bar:focus-within::after { opacity: 1; animation-duration: 2.8s; }
+html.hub-scifi .home-search-bar { background-image: linear-gradient(115deg, rgb(94 231 255 / .035), transparent 45%, rgb(167 139 250 / .04)); }
+html.hub-scifi .home-search-dropdown { border-color: var(--sf-line); box-shadow: 0 18px 48px rgb(0 0 0 / .25), 0 0 0 1px var(--sf-line); }
+html.hub-scifi .home-widget { border-color: var(--sf-line); box-shadow: inset 2px 0 0 var(--sf-line); }
+html.hub-scifi .home-widget:hover { box-shadow: inset 2px 0 0 var(--sf-cyan), 0 0 24px -10px var(--sf-glow); }
 
 /* 卡片：HUD 四角 + 悬停冷光；图标悬停一圈青光 */
 html.hub-scifi :is(.deck-card, .bookmark-card) {
@@ -2861,7 +2889,24 @@ html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: sf-j
 @keyframes sf-type { to { clip-path: inset(0 0 0 0); } }
 .hub-boot__skip { position: absolute; bottom: 1.5rem; font-size: 10px; letter-spacing: .3em; color: rgb(191 246 255 / .4); }
 
+@media (max-width: 760px), (max-height: 720px) {
+  html.hub-scifi .hub-clock-orbit { display: none; }
+  html.hub-scifi .hub-hud { inset: 10px 7px 86px; opacity: .25; }
+  .hub-hud span { display: none; }
+  .hub-hud__rail::after { animation: none; }
+}
+html.scene-still :is(.hub-clock-orbit__outer, .hub-clock-orbit__inner, .hub-hud__rail)::after,
+html.scene-still :is(.hub-clock-orbit__outer, .hub-clock-orbit__inner),
+html.scene-still .home-search-bar::after { animation: none !important; }
+
 @media (prefers-reduced-motion: reduce) {
   html.hub-scifi .hero-clock, html.hub-scifi .home-search-bar::after { animation: none !important; }
   html.hub-scifi.cine-nav-running::view-transition-old(hub-page), html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: none !important; }
+  .hub-clock-orbit__outer, .hub-clock-orbit__inner, .hub-hud__rail::after { animation: none !important; }
+  .hub-boot { display: none; }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+  html.hub-scifi :is(.hub-stars, .hub-hud, .hub-clock-orbit), .hub-boot { display: none; }
+  html.hub-scifi .hero-clock { background: none; color: var(--text); filter: none; animation: none; }
+  html.hub-scifi .main::before, html.hub-scifi .home-search-bar::after { display: none; }
 }

@@ -131,77 +131,152 @@
   // 深空星场：三层深度的星星缓缓朝你飘来，偶尔闪一下；切页 / 开场结束时「跃迁」一下（星星拉成线）。
   // 只是背景：aria-hidden、不接收指针；后台标签页不画，减弱动态效果只画一帧静止画面。
   const scifiOn = () => root.classList.contains('hub-scifi');
+  const contrast = window.matchMedia('(prefers-contrast: more), (forced-colors: active)');
+  const portraitScene = window.matchMedia('(max-width: 760px) and (orientation: portrait)');
+  const connection = navigator.connection;
+  const stillScene = () => reduced.matches || Boolean(connection?.saveData);
+  const sceneAllowed = () => scifiOn() && !contrast.matches;
+  const wall = document.getElementById('homeWall');
+  const hud = document.createElement('div');
+  hud.className = 'hub-hud'; hud.setAttribute('aria-hidden', 'true');
+  hud.innerHTML = '<i class="hub-hud__rail"></i><i class="hub-hud__rail"></i><span>DEEP SPACE / 01</span><span>ORBITAL ARRAY</span>';
+  wall?.after(hud);
+  const hero = document.querySelector('.home-hero');
+  if (hero) {
+    const orbit = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    orbit.setAttribute('viewBox', '-300 -90 600 180'); orbit.setAttribute('aria-hidden', 'true');
+    orbit.setAttribute('class', 'hub-clock-orbit');
+    orbit.innerHTML = '<g class="hub-clock-orbit__outer"><ellipse rx="245" ry="69"/><ellipse rx="230" ry="59" stroke-dasharray="2 14"/></g>'
+      + '<g class="hub-clock-orbit__inner"><ellipse rx="204" ry="48" stroke-dasharray="80 22 4 18"/></g>'
+      + '<path d="M-282 0h42m480 0h42M0-84v14M0 70v14"/><circle cx="-245" r="3"/><circle cx="245" r="3"/>';
+    hero.prepend(orbit);
+  }
   const stars = document.createElement('canvas');
   stars.className = 'hub-stars'; stars.setAttribute('aria-hidden', 'true');
   (document.getElementById('homeWall') || document.body.firstChild)?.after(stars);
   const sctx = stars.getContext && stars.getContext('2d');
   const TINTS = ['#ffffff', '#bfe9ff', '#9fd8ff', '#d7c8ff', '#ffe6c4'];
-  let field = [], sw = 0, sh = 0, sframe = 0, slast = 0, warpUntil = 0, spx = 0, spy = 0, stx = 0, sty = 0, sskip = false;
+  let field = [], sw = 0, sh = 0, sframe = 0, slast = 0, warpStart = 0, warpUntil = 0, spx = 0, spy = 0, stx = 0, sty = 0;
+  let meteor = null, nextMeteor = performance.now() + 5000;
   const phone = () => !desktop.matches;
-  const spawn = (far) => ({ x: (Math.random() * 2 - 1) * 1.2, y: (Math.random() * 2 - 1) * 1.2, z: far ? 1 : .15 + Math.random() * .85, pz: 1, tint: TINTS[(Math.random() * TINTS.length) | 0], ph: Math.random() * 6.28 });
+  const spawn = (far) => ({ x: (Math.random() - .5) * sw / (Math.max(sw, sh) * .55), y: (Math.random() - .5) * sh / (Math.max(sw, sh) * .55), z: far ? 1 : .15 + Math.random() * .85, tint: TINTS[(Math.random() * TINTS.length) | 0], ph: Math.random() * 6.28 });
   const sizeStars = () => {
     if (!sctx) return;
     sw = innerWidth; sh = innerHeight;
-    const ratio = Math.min(devicePixelRatio || 1, phone() ? 1.5 : 2);
+    const ratio = Math.min(devicePixelRatio || 1, phone() ? 1.25 : 1.5);
     stars.width = sw * ratio; stars.height = sh * ratio;
     sctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    const n = Math.round(Math.min(phone() ? 110 : 260, Math.max(60, sw * sh / 5200)));
+    const n = Math.round(Math.min(phone() ? 90 : 240, Math.max(50, sw * sh / 5500)));
     while (field.length < n) field.push(spawn(false));
     field.length = n;
   };
+  // Match the wallpaper's cover crop and camera transform, including phone landscape.
+  const drawReactor = (now) => {
+    if (root.dataset.wallpaper !== 'starcore' || !wall?.classList.contains('is-ready')) return;
+    const portrait = portraitScene.matches, iw = portrait ? 1080 : 2560, ih = portrait ? 1920 : 1440;
+    const moving = desktop.matches && !reduced.matches;
+    const zoom = moving ? (root.classList.contains('cine-search') ? 1.04 : 1.015) : 1;
+    const cover = Math.max(sw / iw, sh / ih) * zoom;
+    const style = getComputedStyle(root);
+    const cx = sw / 2 + ((portrait ? .68 : .72) - .5) * iw * cover + (moving ? parseFloat(style.getPropertyValue('--wall-px')) || 0 : 0);
+    const cy = sh / 2 + ((portrait ? .23 : .46) - .5) * ih * cover + (moving ? parseFloat(style.getPropertyValue('--wall-py')) || 0 : 0);
+    const r = Math.min(iw, ih) * (portrait ? .28 : .23) * cover;
+    const t = now / 1000;
+    sctx.save(); sctx.translate(cx, cy); sctx.globalAlpha = .55; sctx.lineWidth = 1;
+    for (let j = 0; j < 3; j++) {
+      const a = t * (j % 2 ? -.12 : .08) + j * 2.1;
+      sctx.strokeStyle = j % 2 ? '#af91ff' : '#77eaff';
+      sctx.beginPath(); sctx.ellipse(0, 0, r * (1.15 + j * .15), r * (.36 + j * .09), -.38, a, a + 1.8); sctx.stroke();
+      const x = r * (1.15 + j * .15) * Math.cos(a), y = r * (.36 + j * .09) * Math.sin(a);
+      const ox = x * Math.cos(-.38) - y * Math.sin(-.38), oy = x * Math.sin(-.38) + y * Math.cos(-.38);
+      sctx.fillStyle = '#dcfaff'; sctx.beginPath(); sctx.arc(ox, oy, phone() ? 1.3 : 2, 0, Math.PI * 2); sctx.fill();
+    }
+    // A soft corona breathes around the static white core; no full-screen flash.
+    const pulse = .5 + .5 * Math.sin(t * .9);
+    const glow = sctx.createRadialGradient(0, 0, 0, 0, 0, r * .32);
+    glow.addColorStop(0, 'rgba(177,244,255,.3)'); glow.addColorStop(1, 'rgba(94,231,255,0)');
+    sctx.globalAlpha = .25 + pulse * .2; sctx.fillStyle = glow;
+    sctx.fillRect(-r * .32, -r * .32, r * .64, r * .64); sctx.restore();
+  };
   const drawStars = (now, dt) => {
-    const warping = now < warpUntil, speed = warping ? 1.35 : .035;
+    const warping = !stillScene() && now < warpUntil;
+    const progress = warping ? Math.max(0, (now - warpStart) / (warpUntil - warpStart)) : 0;
+    const energy = warping ? Math.sin(progress * Math.PI) : 0, speed = .025 + energy * .95;
     const cx = sw / 2 + spx, cy = sh / 2 + spy, scale = Math.max(sw, sh) * .55;
     const light = root.getAttribute('data-theme') === 'light' && !root.classList.contains('wall-on');
     sctx.clearRect(0, 0, sw, sh); sctx.lineCap = 'round';
+    drawReactor(now);
     for (const s of field) {
-      s.pz = s.z; s.z -= speed * dt;
-      if (s.z <= .04) { Object.assign(s, spawn(true)); s.pz = s.z; continue; }
+      s.z -= speed * dt;
+      if (s.z <= .04) { Object.assign(s, spawn(true)); continue; }
       const x = cx + s.x / s.z * scale, y = cy + s.y / s.z * scale;
-      if (x < -20 || x > sw + 20 || y < -20 || y > sh + 20) { Object.assign(s, spawn(true)); s.pz = s.z; continue; }
+      if (x < -20 || x > sw + 20 || y < -20 || y > sh + 20) { Object.assign(s, spawn(true)); continue; }
       const near = 1 - s.z, tw = warping ? 1 : .7 + .3 * Math.sin(now / 620 + s.ph);
       const alpha = Math.min(1, (.15 + near * .95) * tw), size = .35 + near * near * (phone() ? 1.6 : 2.1);
       sctx.globalAlpha = light ? alpha * .32 : alpha;
       const color = light ? '#3b4a7a' : s.tint;
-      if (warping) {
+      if (energy > .04) {
         sctx.strokeStyle = color; sctx.lineWidth = size; sctx.beginPath();
-        sctx.moveTo(cx + s.x / s.pz * scale, cy + s.y / s.pz * scale); sctx.lineTo(x, y); sctx.stroke();
+        const tail = s.z + .18 * energy;
+        sctx.moveTo(cx + s.x / tail * scale, cy + s.y / tail * scale); sctx.lineTo(x, y); sctx.stroke();
       } else { sctx.fillStyle = color; sctx.beginPath(); sctx.arc(x, y, size, 0, 6.2832); sctx.fill(); }
     }
     sctx.globalAlpha = 1;
+    if (!phone() && !stillScene() && !warping) {
+      if (now > nextMeteor) { meteor = { start: now, x: sw * (.4 + Math.random() * .5), y: sh * Math.random() * .3 }; nextMeteor = now + 6500 + Math.random() * 5500; }
+      if (meteor) {
+        const p = (now - meteor.start) / 1200;
+        if (p >= 1) meteor = null;
+        else {
+          const x = meteor.x - p * 260, y = meteor.y + p * 120;
+          const trail = sctx.createLinearGradient(x + 110, y - 50, x, y);
+          trail.addColorStop(0, 'rgba(94,231,255,0)'); trail.addColorStop(1, light ? '#536b97' : '#b9f4ff');
+          sctx.globalAlpha = Math.sin(p * Math.PI) * .7; sctx.strokeStyle = trail; sctx.lineWidth = 1.2;
+          sctx.beginPath(); sctx.moveTo(x + 110, y - 50); sctx.lineTo(x, y); sctx.stroke(); sctx.globalAlpha = 1;
+        }
+      }
+    }
   };
   const starLoop = (now) => {
     sframe = 0;
-    if (document.hidden || reduced.matches || !scifiOn()) return;
-    const dt = slast ? Math.min(.05, (now - slast) / 1000) : 0;
-    sskip = phone() && !sskip;   // 手机隔帧画：动作一样，省一半电
-    if (!sskip) { spx += (stx - spx) * .06; spy += (sty - spy) * .06; drawStars(now, phone() ? dt * 2 : dt); }
-    slast = now; sframe = requestAnimationFrame(starLoop);
+    if (document.hidden || stillScene() || !sceneAllowed()) return;
+    // Wall-clock cap also holds on 120/144Hz screens: 30fps desktop, 20fps phone.
+    if (!slast || now - slast >= (phone() ? 50 : 1000 / 30)) {
+      const dt = slast ? Math.min(.1, (now - slast) / 1000) : 0;
+      spx += (stx - spx) * .12; spy += (sty - spy) * .12; drawStars(now, dt); slast = now;
+    }
+    sframe = requestAnimationFrame(starLoop);
   };
   const startStars = () => {
-    if (!sctx || sframe || document.hidden || !scifiOn()) return;
-    if (reduced.matches) { drawStars(performance.now(), 0); return; }
+    if (!sctx || sframe || document.hidden || !sceneAllowed()) return;
+    if (stillScene()) { drawStars(0, 0); return; }
     slast = 0; sframe = requestAnimationFrame(starLoop);
   };
   const stopStars = () => { if (sframe) cancelAnimationFrame(sframe); sframe = 0; };
-  const hubWarp = (ms = 900) => { if (reduced.matches || !scifiOn()) return; warpUntil = performance.now() + ms; startStars(); };
+  const hubWarp = (ms = 900) => { if (stillScene() || !sceneAllowed() || document.hidden) return; warpStart = performance.now(); warpUntil = warpStart + ms; startStars(); };
   if (sctx) {
     sizeStars();
-    window.addEventListener('resize', sizeStars, { passive: true });
+    window.addEventListener('resize', () => { sizeStars(); startStars(); }, { passive: true });
     document.addEventListener('visibilitychange', () => (document.hidden ? stopStars() : startStars()));
     document.addEventListener('pointermove', e => {
       if (!desktop.matches || e.pointerType !== 'mouse') return;
       stx = (e.clientX / innerWidth - .5) * -24; sty = (e.clientY / innerHeight - .5) * -24;
     }, { passive: true });
-    reduced.addEventListener('change', () => { stopStars(); startStars(); });
+    const syncScene = () => { stopStars(); sctx.clearRect(0, 0, sw, sh); root.classList.toggle('scene-still', stillScene()); startStars(); };
+    reduced.addEventListener('change', syncScene); contrast.addEventListener('change', syncScene);
+    connection?.addEventListener?.('change', syncScene);
     // 外观里开关一拨，<html> 的 class 变了：星场跟着起停。
-    new MutationObserver(() => (scifiOn() ? startStars() : (stopStars(), sctx.clearRect(0, 0, sw, sh)))).observe(root, { attributes: true, attributeFilter: ['class'] });
-    startStars();
+    new MutationObserver(() => {
+      if (!sceneAllowed()) { stopStars(); sctx.clearRect(0, 0, sw, sh); }
+      else startStars();
+    }).observe(root, { attributes: true, attributeFilter: ['class', 'data-wallpaper', 'data-theme'] });
+    if (wall) new MutationObserver(startStars).observe(wall, { attributes: true, attributeFilter: ['class'] });
+    syncScene();
   }
 
   // 开场：最多每 6 小时一次（Cookie 自带 6 小时寿命），新开标签页不会每次都放；点一下或按任意键跳过。
   const bootCookie = /(?:^|; )bh_scifi_boot=1(?:;|$)/;
-  if (scifiOn() && !reduced.matches && !bootCookie.test(document.cookie) && window.top === window) {
+  if (sceneAllowed() && !stillScene() && !bootCookie.test(document.cookie) && window.top === window) {
     document.cookie = 'bh_scifi_boot=1; max-age=21600; path=/; SameSite=Lax';
     const boot = document.createElement('div');
     boot.className = 'hub-boot'; boot.setAttribute('aria-hidden', 'true');
@@ -214,11 +289,15 @@
     let gone = false;
     const leave = () => {
       if (gone) return; gone = true;
+      window.removeEventListener('keydown', leave);
       boot.classList.add('is-leaving'); hubWarp(1100);
       setTimeout(() => boot.remove(), 600);
     };
     boot.addEventListener('click', leave);
     window.addEventListener('keydown', leave, { once: true });
+    const dismissBoot = new MutationObserver(() => { if (!sceneAllowed() || stillScene()) leave(); });
+    dismissBoot.observe(root, { attributes: true, attributeFilter: ['class'] });
+    setTimeout(() => dismissBoot.disconnect(), 2400);
     setTimeout(leave, 1800);
   }
 

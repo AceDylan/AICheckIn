@@ -438,34 +438,75 @@ def flow(size, seed=97):
 
 
 def starcore(size, seed=107):
-    """A quiet knowledge constellation with generous black space (no HUD/rings)."""
+    """蓝紫等离子星核：偏置主体、吸积光带、轨道碎片；左侧留给书签阅读。"""
     w, h = size
+    portrait = h > w
+    cu, cv = (.68, .23) if portrait else (.72, .46)
+    radius = min(w, h) * (.28 if portrait else .23)
+    nebula = _fbm_layers(seed, 4, 5)
+
     def shader(u, v, aspect):
-        glow = _blob(u, v, aspect, .54, .46, .20, .18)
-        violet = _blob(u, v, aspect, .64, .52, .13, .14)
-        return (9 + 17 * glow + 9 * violet, 12 + 22 * glow + 5 * violet, 20 + 38 * glow + 18 * violet)
+        dx, dy = (u - cu) * w / radius, (v - cv) * h / radius
+        distance = math.hypot(dx, dy)
+        angle = math.atan2(dy, dx)
+        cloud = max(0, _fbm(nebula, u, v) - .3)
+        mist = math.exp(-((dy + dx * .4) / 1.6) ** 2) * cloud
+        corona = math.exp(-((distance - .83) / .3) ** 2)
+        spiral = (.5 + .5 * math.sin(angle * 3 + distance * 5)) * corona
+        bloom = math.exp(-(distance / .42) ** 2)
+        left = .35 + .65 * _smooth(u / .7)
+        return (3 + left * (38 * mist + 24 * spiral + 155 * bloom),
+                6 + left * (26 * mist + 58 * corona + 180 * bloom),
+                16 + left * (105 * mist + 92 * corona + 190 * bloom))
+
     img = _field(size, shader)
-    draw = ImageDraw.Draw(img)
     rng = random.Random(seed)
-    points = [(w * .54, h * .46)]
-    for i in range(1, 25):
-        angle = i * 2.39996
-        radius = min(w, h) * (.055 + math.sqrt(i / 24) * .24)
-        points.append((w * .54 + math.cos(angle) * radius, h * .46 + math.sin(angle) * radius))
-    for i in range(1, len(points)):
-        a, b = points[i], points[(i - 1) // 3]
-        bend = min(w, h) * .025
-        c = (a[0] + bend, (a[1] + b[1]) / 2)
-        d = (b[0] - bend, (a[1] + b[1]) / 2)
-        path = []
-        for step in range(33):
-            t = step / 32; q = 1 - t
-            path.append((q**3*a[0]+3*q*q*t*c[0]+3*q*t*t*d[0]+t**3*b[0], q**3*a[1]+3*q*q*t*c[1]+3*q*t*t*d[1]+t**3*b[1]))
-        draw.line(path, fill=(46, 58, 81), width=1)
-    for i, (x, y) in enumerate(points):
-        r = 3 if i == 0 else rng.choice([1, 1, 2])
-        draw.ellipse((x-r,y-r,x+r,y+r), fill=(177, 190, 219) if i == 0 else (112, 128, 165))
-    return img
+    _stars(img, rng, int(w * h / 2300), lambda x, y: .35 + .65 * x / w,
+           sizes=(.5, .7, 1, 1.2), bright=(45, 175))
+    cx, cy = cu * w, cv * h
+    # 2× 超采样线稿：发光与锐利线芯分层，不需要运行时 WebGL / 后处理。
+    ink = Image.new("RGB", (w * 2, h * 2))
+    draw = ImageDraw.Draw(ink)
+
+    def orbit(rx, ry, tilt, begin, end, color, width=1):
+        points = []
+        for i in range(241):
+            a = begin + (end - begin) * i / 240
+            x, y = math.cos(a) * radius * rx, math.sin(a) * radius * ry
+            points.append((2 * (cx + x * math.cos(tilt) - y * math.sin(tilt)),
+                           2 * (cy + x * math.sin(tilt) + y * math.cos(tilt))))
+        draw.line(points, fill=color, width=max(1, round(width * 2)), joint="curve")
+
+    for j in range(14):
+        k = j / 13
+        orbit(.75 + k * .6, .25 + k * .12, -.38, 0, math.tau,
+              (int(35 + 65 * k), int(80 + 80 * (1 - k)), int(140 + 80 * k)), .7)
+    for j in range(4):
+        orbit(.77 + j * .065, .77 + j * .065, 0, .4 + j, 3.7 + j,
+              (50 + j * 20, 150 - j * 18, 215), 1.1)
+    for j in range(55):
+        a = j * math.tau / 55
+        orbit(1.55, 1.55, 0, a, a + (.025 if j % 5 else .065), (30, 69, 99), 1)
+    for _ in range(90):
+        a, r = rng.random() * math.tau, rng.uniform(.8, 1.85) * radius
+        x, y = 2 * (cx + math.cos(a) * r), 2 * (cy + math.sin(a) * r * .68)
+        draw.ellipse((x-1.5, y-1.5, x+1.5, y+1.5), fill=(83, 155, 205))
+    sharp = ink.resize(size, Image.LANCZOS)
+    img = ImageChops.add(img, sharp.filter(ImageFilter.GaussianBlur(radius * .028)))
+    img = ImageChops.add(img, sharp.filter(ImageFilter.GaussianBlur(radius * .006)))
+    img = ImageChops.add(img, sharp)
+    _disc(img, cx, cy, radius * .075, (223, 251, 255), glow=.7)
+    flare = Image.new("RGB", size)
+    fd = ImageDraw.Draw(flare)
+    for axis, extent in ((0, .76), (1, .34)):
+        for i in range(1, 120):
+            t = i / 120
+            color = tuple(int(c * (1-t) ** 2) for c in (86, 168, 210))
+            d = radius * extent * t
+            for sign in (-1, 1):
+                x, y = cx + (sign * d if axis == 0 else 0), cy + (sign * d if axis else 0)
+                fd.ellipse((x-1, y-1, x+1, y+1), fill=color)
+    return ImageChops.add(img, flare.filter(ImageFilter.GaussianBlur(.5)))
 
 
 WALLPAPERS = [("aurora", "极光", aurora), ("dusk", "暮色群山", dusk), ("mist", "晨雾山林", mist),
