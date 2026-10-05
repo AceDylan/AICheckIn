@@ -16,6 +16,8 @@
       document.documentElement.setAttribute('data-theme', t);
       // 导航形态同理（默认图标栏）：全站生效，先定下来，免得侧栏先画成 252px 再缩回去。
       if (!/(?:^|; )bh_home_nav=full(?:;|$)/.test(document.cookie)) document.documentElement.classList.add('nav-rail');
+      // 科幻特效（星空、霓虹、开场）默认开；同样先定下来，免得先画一帧素版再变。
+      if (!/(?:^|; )bh_scifi=off(?:;|$)/.test(document.cookie)) document.documentElement.classList.add('hub-scifi');
     })();
     // 页面数据提前出发：主脚本在这份 HTML 的最后面，等它下载、解析完再发请求，白白晚了一个来回。
     // 这里先把 /api/configs 发出去，主脚本的第一次 loadConfigs() 直接接手结果；失败就交回 null，由它按老路重发。
@@ -697,6 +699,10 @@
         <div class="segmented" id="homeNavSeg" role="radiogroup" aria-labelledby="homeNavLabel"><button type="button" data-home-nav="rail">图标栏</button><button type="button" data-home-nav="full">完整侧栏</button></div>
         <div class="hint">图标栏把侧栏收成一条 72px 的细栏，所有页面一致，鼠标停在图标上能看到名称；侧栏底部的按钮也能随时收起 / 展开。手机始终是底部标签栏。</div>
       </div>
+      <div class="field"><label id="scifiLabel">科幻特效</label>
+        <div class="segmented" id="scifiSeg" role="radiogroup" aria-labelledby="scifiLabel"><button type="button" data-scifi="on">开</button><button type="button" data-scifi="off">关</button></div>
+        <div class="hint">深空星场、霓虹搜索框、全息时钟、切页跃迁和开场动画（最多每 6 小时一次，点一下跳过）。系统开了「减弱动态效果」时只留静态画面。</div>
+      </div>
       <div class="field"><label id="homeDeckLabel">首页组件</label>
         <div class="freq-row"><span class="note" id="homeDeckSummary" style="margin:0"></span><button type="button" class="btn ghost sm" id="openDeckModal">选择与排序…</button></div>
         <div class="hint">日历（下一个节日）、待办、倒数日、便签、到期提醒、签到状态、天气、余额概览、世界时钟、时间进度。宽屏排在图标右侧一列，手机上收成一行标签、点哪个展开哪个。</div>
@@ -1191,7 +1197,7 @@
     // （打开页面、回到页面）时用服务器上的值覆盖本机 Cookie。服务器上还没有的，用本机已经选过的值补上去。
     // 不同步的：bh_home_deck_open（窄屏此刻展开哪张）、bh_home_hits（打开次数，每次点开都写）、
     // bh_chat_note / bh_install_done（这台设备看过的提示），都是随手的本机状态。未登录时一律只记在本机。
-    const SYNC_PREFS = ['bh_theme', 'bh_open', 'bh_engine', 'bh_wallpaper', 'bh_wp_dim', 'bh_home_nav', 'bh_home_view',
+    const SYNC_PREFS = ['bh_theme', 'bh_open', 'bh_engine', 'bh_wallpaper', 'bh_wp_dim', 'bh_home_nav', 'bh_home_view', 'bh_scifi',
       'bh_home_freq', 'bh_home_fold', 'bh_home_deck', 'bh_home_deck_fold', 'bh_ck_view', 'bh_link_view', 'bh_bm_view'];
     const PREF_VALUE_RE = /^[A-Za-z0-9_.-]{1,1400}$/;   // 与服务端一致；不含 ; = 空格，写进 Cookie 拼不坏
     // pending：还没发出去的；sending：在路上的。这两类以本机为准，期间拿到的 /api/configs 可能还是旧值，不能拿来覆盖。
@@ -1287,6 +1293,7 @@
     function wallPref() { return readPref('bh_wallpaper', WALL_IDS, WALL_DEFAULT); }
     function wallDimPref() { return readPref('bh_wp_dim', Object.keys(WALL_DIMS), 'medium'); }
     function homeNavPref() { return readPref('bh_home_nav', HOME_NAVS, 'rail'); }
+    function scifiPref() { return readPref('bh_scifi', ['on', 'off'], 'on'); }
     function customWallpaper() {
       const w = STATE.wallpaper;
       return w && w.custom && /^[0-9a-f]{16}$/.test(w.v || '') ? w : null;
@@ -1352,6 +1359,7 @@
       root.classList.toggle('wall-on', !!w);   // 框不跟着变：它们跟主题 / 设备走（见 frameTheme）
       applyThemeColor(w ? 'dark' : readTheme());   // 开着壁纸整页是深色场景
       root.classList.toggle('nav-rail', rail);
+      root.classList.toggle('hub-scifi', scifiPref() === 'on');   // 样式见 app-v3.css「科幻特效」，星空 / 开场见 halo-motion.js
       const toggle = $('navToggle');
       const label = rail ? '展开侧栏' : '收起侧栏';   // 状态直接写在名称里，不再叠一层 aria-pressed，读屏不会念成「展开侧栏，已按下」
       toggle.title = label;
@@ -8425,6 +8433,7 @@
       }).join('');
       setSegmented('#wallDimSeg [data-wall-dim]', 'wallDim', wallDimPref(), !current);
       setSegmented('#homeNavSeg [data-home-nav]', 'homeNav', homeNavPref(), false);
+      setSegmented('#scifiSeg [data-scifi]', 'scifi', scifiPref(), false);
       $('homeDeckSummary').textContent = deckSummaryText();
       setSegmented('#homeFreqSeg [data-home-freq]', 'homeFreq', homeFreqOn() ? 'on' : 'off', false);
       const forced = current && wallMinDim(current.lum) > WALL_DIMS[wallDimPref()];
@@ -8464,6 +8473,12 @@
       renderHome();
     });
     $('homeFreqClear').addEventListener('click', () => { clearHomeHits(); renderHome(); toast('常用记录已清空', 'ok'); });
+    $('scifiSeg').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-scifi]');
+      if (!btn) return;
+      writePref('bh_scifi', btn.dataset.scifi);
+      refreshHomeLook();
+    });
     $('homeNavSeg').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-home-nav]');
       if (!btn) return;

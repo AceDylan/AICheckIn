@@ -5611,7 +5611,7 @@ _CLOCK_TZ_RE = re.compile(r"^(?:UTC|[A-Z][A-Za-z_]+(?:/[A-Za-z0-9_+\-]+){1,2})$"
 _DECK_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 # 跟着登录同步的偏好：名字白名单与页面里的 SYNC_PREFS 一致；值只收 Cookie 本来就允许的字符（不会拼坏 Cookie）。
 SYNC_PREF_NAMES = ("bh_theme", "bh_open", "bh_engine", "bh_wallpaper", "bh_wp_dim", "bh_home_nav", "bh_home_view",
-                   "bh_home_freq", "bh_home_fold", "bh_home_deck", "bh_home_deck_fold", "bh_ck_view", "bh_link_view",
+                   "bh_scifi", "bh_home_freq", "bh_home_fold", "bh_home_deck", "bh_home_deck_fold", "bh_ck_view", "bh_link_view",
                    "bh_bm_view")
 _PREF_VALUE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,1400}$")
 _deck_lock = threading.Lock()

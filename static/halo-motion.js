@@ -124,6 +124,106 @@
     document.body.append(ghost);
     const a = ghost.animate([{ transformOrigin: 'top left', transform: 'none', opacity: .7 }, { transformOrigin: 'top left', transform: `translate(${to.left - from.left}px,${to.top - from.top}px) scale(${to.width / from.width},${to.height / from.height})`, opacity: 0 }], { duration: 180, easing: curve('snappy'), fill: 'forwards' });
     a.finished.catch(() => {}).finally(() => ghost.remove());
+    setTimeout(() => ghost.remove(), 400);   // 动画被拖住（后台、软件渲染）也不留残影
   }).observe(bm, { attributes: true, attributeFilter: ['class'] });
-  window.HaloMotion = { nav, change, homeEnter, cardToModal };
+
+  // ===== 科幻特效（html.hub-scifi，外观 → 科幻特效）=====
+  // 深空星场：三层深度的星星缓缓朝你飘来，偶尔闪一下；切页 / 开场结束时「跃迁」一下（星星拉成线）。
+  // 只是背景：aria-hidden、不接收指针；后台标签页不画，减弱动态效果只画一帧静止画面。
+  const scifiOn = () => root.classList.contains('hub-scifi');
+  const stars = document.createElement('canvas');
+  stars.className = 'hub-stars'; stars.setAttribute('aria-hidden', 'true');
+  (document.getElementById('homeWall') || document.body.firstChild)?.after(stars);
+  const sctx = stars.getContext && stars.getContext('2d');
+  const TINTS = ['#ffffff', '#bfe9ff', '#9fd8ff', '#d7c8ff', '#ffe6c4'];
+  let field = [], sw = 0, sh = 0, sframe = 0, slast = 0, warpUntil = 0, spx = 0, spy = 0, stx = 0, sty = 0, sskip = false;
+  const phone = () => !desktop.matches;
+  const spawn = (far) => ({ x: (Math.random() * 2 - 1) * 1.2, y: (Math.random() * 2 - 1) * 1.2, z: far ? 1 : .15 + Math.random() * .85, pz: 1, tint: TINTS[(Math.random() * TINTS.length) | 0], ph: Math.random() * 6.28 });
+  const sizeStars = () => {
+    if (!sctx) return;
+    sw = innerWidth; sh = innerHeight;
+    const ratio = Math.min(devicePixelRatio || 1, phone() ? 1.5 : 2);
+    stars.width = sw * ratio; stars.height = sh * ratio;
+    sctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    const n = Math.round(Math.min(phone() ? 110 : 260, Math.max(60, sw * sh / 5200)));
+    while (field.length < n) field.push(spawn(false));
+    field.length = n;
+  };
+  const drawStars = (now, dt) => {
+    const warping = now < warpUntil, speed = warping ? 1.35 : .035;
+    const cx = sw / 2 + spx, cy = sh / 2 + spy, scale = Math.max(sw, sh) * .55;
+    const light = root.getAttribute('data-theme') === 'light' && !root.classList.contains('wall-on');
+    sctx.clearRect(0, 0, sw, sh); sctx.lineCap = 'round';
+    for (const s of field) {
+      s.pz = s.z; s.z -= speed * dt;
+      if (s.z <= .04) { Object.assign(s, spawn(true)); s.pz = s.z; continue; }
+      const x = cx + s.x / s.z * scale, y = cy + s.y / s.z * scale;
+      if (x < -20 || x > sw + 20 || y < -20 || y > sh + 20) { Object.assign(s, spawn(true)); s.pz = s.z; continue; }
+      const near = 1 - s.z, tw = warping ? 1 : .7 + .3 * Math.sin(now / 620 + s.ph);
+      const alpha = Math.min(1, (.15 + near * .95) * tw), size = .35 + near * near * (phone() ? 1.6 : 2.1);
+      sctx.globalAlpha = light ? alpha * .32 : alpha;
+      const color = light ? '#3b4a7a' : s.tint;
+      if (warping) {
+        sctx.strokeStyle = color; sctx.lineWidth = size; sctx.beginPath();
+        sctx.moveTo(cx + s.x / s.pz * scale, cy + s.y / s.pz * scale); sctx.lineTo(x, y); sctx.stroke();
+      } else { sctx.fillStyle = color; sctx.beginPath(); sctx.arc(x, y, size, 0, 6.2832); sctx.fill(); }
+    }
+    sctx.globalAlpha = 1;
+  };
+  const starLoop = (now) => {
+    sframe = 0;
+    if (document.hidden || reduced.matches || !scifiOn()) return;
+    const dt = slast ? Math.min(.05, (now - slast) / 1000) : 0;
+    sskip = phone() && !sskip;   // 手机隔帧画：动作一样，省一半电
+    if (!sskip) { spx += (stx - spx) * .06; spy += (sty - spy) * .06; drawStars(now, phone() ? dt * 2 : dt); }
+    slast = now; sframe = requestAnimationFrame(starLoop);
+  };
+  const startStars = () => {
+    if (!sctx || sframe || document.hidden || !scifiOn()) return;
+    if (reduced.matches) { drawStars(performance.now(), 0); return; }
+    slast = 0; sframe = requestAnimationFrame(starLoop);
+  };
+  const stopStars = () => { if (sframe) cancelAnimationFrame(sframe); sframe = 0; };
+  const hubWarp = (ms = 900) => { if (reduced.matches || !scifiOn()) return; warpUntil = performance.now() + ms; startStars(); };
+  if (sctx) {
+    sizeStars();
+    window.addEventListener('resize', sizeStars, { passive: true });
+    document.addEventListener('visibilitychange', () => (document.hidden ? stopStars() : startStars()));
+    document.addEventListener('pointermove', e => {
+      if (!desktop.matches || e.pointerType !== 'mouse') return;
+      stx = (e.clientX / innerWidth - .5) * -24; sty = (e.clientY / innerHeight - .5) * -24;
+    }, { passive: true });
+    reduced.addEventListener('change', () => { stopStars(); startStars(); });
+    // 外观里开关一拨，<html> 的 class 变了：星场跟着起停。
+    new MutationObserver(() => (scifiOn() ? startStars() : (stopStars(), sctx.clearRect(0, 0, sw, sh)))).observe(root, { attributes: true, attributeFilter: ['class'] });
+    startStars();
+  }
+
+  // 开场：最多每 6 小时一次（Cookie 自带 6 小时寿命），新开标签页不会每次都放；点一下或按任意键跳过。
+  const bootCookie = /(?:^|; )bh_scifi_boot=1(?:;|$)/;
+  if (scifiOn() && !reduced.matches && !bootCookie.test(document.cookie) && window.top === window) {
+    document.cookie = 'bh_scifi_boot=1; max-age=21600; path=/; SameSite=Lax';
+    const boot = document.createElement('div');
+    boot.className = 'hub-boot'; boot.setAttribute('aria-hidden', 'true');
+    boot.innerHTML = '<div class="hub-boot__grid"></div><div class="hub-boot__scan"></div>'
+      + '<svg class="hub-boot__ring" viewBox="-100 -100 200 200"><circle class="a" r="86" pathLength="100"/><circle class="b" r="70" pathLength="100"/><circle class="c" r="54" pathLength="100"/><circle class="dot" r="7"/></svg>'
+      + '<div class="hub-boot__title" data-text="BOOKMARK HUB">BOOKMARK HUB</div>'
+      + '<div class="hub-boot__lines"><p style="--d:.3s">&gt; SYNCING BOOKMARKS ......... <b>OK</b></p><p style="--d:.65s">&gt; MONITORS ONLINE ........... <b>OK</b></p><p style="--d:1s">&gt; ALL SYSTEMS NOMINAL</p></div>'
+      + '<div class="hub-boot__skip">CLICK TO SKIP</div>';
+    document.body.append(boot);
+    let gone = false;
+    const leave = () => {
+      if (gone) return; gone = true;
+      boot.classList.add('is-leaving'); hubWarp(1100);
+      setTimeout(() => boot.remove(), 600);
+    };
+    boot.addEventListener('click', leave);
+    window.addEventListener('keydown', leave, { once: true });
+    setTimeout(leave, 1800);
+  }
+
+  // 切页时星场跃迁一下（和 View Transition 同时发生）。
+  const plainChange = change;
+  const scifiChange = (update, name) => { if (name !== previous) hubWarp(650); plainChange(update, name); };
+  window.HaloMotion = { nav, change: scifiChange, homeEnter, cardToModal, warp: hubWarp };
 })();
