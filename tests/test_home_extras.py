@@ -85,7 +85,7 @@ class HomeExtrasGuardsTest(unittest.TestCase):
     def test_todo_link_styles(self):
         self.assertRegex(self.css, r"\.todo-link \{[^}]*text-decoration: underline;[^}]*overflow-wrap: anywhere;")
         self.assertIn(".todo-link:focus-visible { outline: 2px solid var(--accent);", self.css)
-        todo = self.css[self.css.index("首页待办"):]
+        todo = self.css[self.css.index("首页待办"):self.css.index("科幻特效（html.hub-scifi")]   # 末尾科幻段也有同名手机块
         mobile = todo[todo.rindex("@media (max-width: 760px)"):]
         self.assertIn(".todo-link { padding-block: 5px; }", mobile)
 

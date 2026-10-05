@@ -117,7 +117,8 @@ class StyleGuardTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.css = (ROOT / "static" / "app-v3.css").read_text(encoding="utf-8")
-        cls.todo = cls.css[cls.css.index("首页待办"):]
+        # 截到「科幻特效」段之前：那一段在文件末尾也有同名的手机 @media 块，rindex 会误取到它。
+        cls.todo = cls.css[cls.css.index("首页待办"):cls.css.index("科幻特效（html.hub-scifi")]
 
     def test_clickable_tags_keep_the_tag_font_size(self):
         """`.tag-btn { font: inherit }` 曾把 .tag 的 10.5px 冲成卡片正文的 14px。"""

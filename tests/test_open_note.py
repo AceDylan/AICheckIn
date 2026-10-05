@@ -79,6 +79,8 @@ setTimeout(() => {
     source: cw, origin: __VAULT__, data: Object.assign({ source: 'webobsidian' }, data),
   }, extra || {})));
   const hit = (path) => { switchView('bookmarks'); runHomeSearchRow({ type: 'note', hit: { path, url: __VAULT__ + '/note/x' } }); };
+  // 框说 ready 时 Hub 还会发一条 enter（转场用），按下标取请求 id 只数 open-note。
+  const asks = () => posted.filter((m) => m.d.type === 'open-note');
   hit('p/1.md'); snap('fresh before ready');
   let cw = live();
   fromVault(cw, { type: 'ready' }, { origin: 'https://evil.example' });
@@ -88,11 +90,11 @@ setTimeout(() => {
   cw = live();
   fromVault(cw, { type: 'ready' });
   hit('p/3.md'); snap('in place');
-  fromVault(cw, { type: 'open-note', id: posted[0].d.id, ok: true });
+  fromVault(cw, { type: 'open-note', id: asks()[0].d.id, ok: true });
   send('p/4.md'); snap('in place from chat');
-  fromVault(cw, { type: 'open-note', id: posted[1].d.id + 99, ok: false });   // 别的请求的回话不算数
+  fromVault(cw, { type: 'open-note', id: asks()[1].d.id + 99, ok: false });   // 别的请求的回话不算数
   snap('stray answer ignored');
-  fromVault(cw, { type: 'open-note', id: posted[1].d.id, ok: false }); snap('refused');
+  fromVault(cw, { type: 'open-note', id: asks()[1].d.id, ok: false }); snap('refused');
   cw = live();
   fromVault(cw, { type: 'ready' });
   send('p/5.md'); snap('waiting for an answer');

@@ -139,15 +139,18 @@
   const wall = document.getElementById('homeWall');
   const hud = document.createElement('div');
   hud.className = 'hub-hud'; hud.setAttribute('aria-hidden', 'true');
-  hud.innerHTML = '<i class="hub-hud__rail"></i><i class="hub-hud__rail"></i><span>DEEP SPACE / 01</span><span>ORBITAL ARRAY</span>';
+  hud.innerHTML = '<i class="hub-hud__rail"></i><i class="hub-hud__rail"></i><i class="hub-hud__scan"></i>'
+    + '<span class="hub-hud__link">CORE LINK // STABLE</span><span>DEEP SPACE / 01</span><span>ORBITAL ARRAY</span>';
   wall?.after(hud);
   const hero = document.querySelector('.home-hero');
   if (hero) {
     const orbit = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     orbit.setAttribute('viewBox', '-300 -90 600 180'); orbit.setAttribute('aria-hidden', 'true');
     orbit.setAttribute('class', 'hub-clock-orbit');
-    orbit.innerHTML = '<g class="hub-clock-orbit__outer"><ellipse rx="245" ry="69"/><ellipse rx="230" ry="59" stroke-dasharray="2 14"/></g>'
-      + '<g class="hub-clock-orbit__inner"><ellipse rx="204" ry="48" stroke-dasharray="80 22 4 18"/></g>'
+    orbit.innerHTML = '<g class="hub-clock-orbit__outer"><ellipse rx="245" ry="69"/><ellipse rx="230" ry="59" stroke-dasharray="2 14"/>'
+      + '<ellipse class="hub-clock-orbit__comet" rx="245" ry="69" pathLength="100"/></g>'
+      + '<g class="hub-clock-orbit__inner"><ellipse rx="204" ry="48" stroke-dasharray="80 22 4 18"/>'
+      + '<ellipse class="hub-clock-orbit__comet" rx="204" ry="48" pathLength="100"/></g>'
       + '<path d="M-282 0h42m480 0h42M0-84v14M0 70v14"/><circle cx="-245" r="3"/><circle cx="245" r="3"/>';
     hero.prepend(orbit);
   }
@@ -171,6 +174,23 @@
     field.length = n;
   };
   // Match the wallpaper's cover crop and camera transform, including phone landscape.
+  // 盘面倾角、喷流方向与 tools/make_wallpapers.py 的 starcore() 一致：粒子流正好压在画好的吸积盘上。
+  const DISK_TINTS = ['#cdf6ff', '#5ebeff', '#9664ff', '#ff5cc4'];
+  const flow = Array.from({ length: 160 }, () => {
+    const e = .55 + Math.random() ** .7 * 1.6;
+    return { a: Math.random() * 6.2832, e, lift: (Math.random() - .5) * .07, tint: DISK_TINTS[Math.min(3, ((e - .55) / .4) | 0)] };
+  });
+  const TILT_COS = Math.cos(-.38), TILT_SIN = Math.sin(-.38);
+  let reactorLast = 0, arc = null, nextArc = 0;
+  const onDisk = (r, e, a, lift = 0) => {
+    const x = Math.cos(a) * e * r, y = (Math.sin(a) * e * .3 + lift) * r;
+    return [x * TILT_COS - y * TILT_SIN, x * TILT_SIN + y * TILT_COS];
+  };
+  const glowDot = (x, y, q, color, alpha) => {
+    const g = sctx.createRadialGradient(x, y, 0, x, y, q);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(94,231,255,0)');
+    sctx.globalAlpha = alpha; sctx.fillStyle = g; sctx.fillRect(x - q, y - q, q * 2, q * 2);
+  };
   const drawReactor = (now) => {
     if (root.dataset.wallpaper !== 'starcore' || !wall?.classList.contains('is-ready')) return;
     const portrait = portraitScene.matches, iw = portrait ? 1080 : 2560, ih = portrait ? 1920 : 1440;
@@ -181,22 +201,82 @@
     const cx = sw / 2 + ((portrait ? .68 : .72) - .5) * iw * cover + (moving ? parseFloat(style.getPropertyValue('--wall-px')) || 0 : 0);
     const cy = sh / 2 + ((portrait ? .23 : .46) - .5) * ih * cover + (moving ? parseFloat(style.getPropertyValue('--wall-py')) || 0 : 0);
     const r = Math.min(iw, ih) * (portrait ? .28 : .23) * cover;
-    const t = now / 1000;
-    sctx.save(); sctx.translate(cx, cy); sctx.globalAlpha = .55; sctx.lineWidth = 1;
+    const t = now / 1000, dt = reactorLast && t > reactorLast ? Math.min(.1, t - reactorLast) : 0;
+    const still = stillScene(), small = phone();
+    reactorLast = t;
+    sctx.save(); sctx.translate(cx, cy); sctx.lineCap = 'round';
+    // 锁定准星：虚线环缓慢转动，外加三段反向的轨道光弧。
+    sctx.globalAlpha = .4; sctx.lineWidth = 1; sctx.strokeStyle = '#5ee7ff';
+    sctx.setLineDash([r * .2, r * .07]); sctx.lineDashOffset = -t * r * .06;
+    sctx.beginPath(); sctx.arc(0, 0, r * 1.62, 0, 6.2832); sctx.stroke(); sctx.setLineDash([]);
+    sctx.globalAlpha = .55;
     for (let j = 0; j < 3; j++) {
       const a = t * (j % 2 ? -.12 : .08) + j * 2.1;
       sctx.strokeStyle = j % 2 ? '#af91ff' : '#77eaff';
       sctx.beginPath(); sctx.ellipse(0, 0, r * (1.15 + j * .15), r * (.36 + j * .09), -.38, a, a + 1.8); sctx.stroke();
-      const x = r * (1.15 + j * .15) * Math.cos(a), y = r * (.36 + j * .09) * Math.sin(a);
-      const ox = x * Math.cos(-.38) - y * Math.sin(-.38), oy = x * Math.sin(-.38) + y * Math.cos(-.38);
-      sctx.fillStyle = '#dcfaff'; sctx.beginPath(); sctx.arc(ox, oy, phone() ? 1.3 : 2, 0, Math.PI * 2); sctx.fill();
     }
-    // A soft corona breathes around the static white core; no full-screen flash.
+    sctx.globalCompositeOperation = 'lighter';
+    // 吸积盘粒子流：内圈转得快（开普勒），朝我们转来的左侧更亮。
+    sctx.lineWidth = small ? 1.1 : 1.6;
+    for (let i = 0, n = small ? 60 : flow.length; i < n; i++) {
+      const p = flow[i];
+      p.a += dt * .85 / p.e ** 1.5;
+      const [x0, y0] = onDisk(r, p.e, p.a - .16 / p.e, p.lift), [x1, y1] = onDisk(r, p.e, p.a, p.lift);
+      sctx.globalAlpha = .12 + .7 * (1 - .72 * Math.cos(p.a)) / 1.72;
+      sctx.strokeStyle = p.tint; sctx.beginPath(); sctx.moveTo(x0, y0); sctx.lineTo(x1, y1); sctx.stroke();
+    }
+    // 日冕呼吸 + 每 7 秒一圈沿盘面扩散的冲击波。
     const pulse = .5 + .5 * Math.sin(t * .9);
-    const glow = sctx.createRadialGradient(0, 0, 0, 0, 0, r * .32);
-    glow.addColorStop(0, 'rgba(177,244,255,.3)'); glow.addColorStop(1, 'rgba(94,231,255,0)');
-    sctx.globalAlpha = .25 + pulse * .2; sctx.fillStyle = glow;
-    sctx.fillRect(-r * .32, -r * .32, r * .64, r * .64); sctx.restore();
+    glowDot(0, 0, r * .45, 'rgba(190,246,255,.55)', .25 + pulse * .25);
+    const wave = (t % 7) / 1.8;
+    if (!still && wave < 1) {
+      sctx.globalAlpha = (1 - wave) ** 2 * .7; sctx.strokeStyle = '#9fe9ff'; sctx.lineWidth = .8 + 2.2 * (1 - wave);
+      sctx.beginPath(); sctx.ellipse(0, 0, r * (.3 + wave * 2.1), r * (.3 + wave * 2.1) * .3, -.38, 0, 6.2832); sctx.stroke();
+      sctx.globalAlpha *= .45; sctx.strokeStyle = '#c4b0ff';
+      sctx.beginPath(); sctx.arc(0, 0, r * (.25 + wave * 1.3), 0, 6.2832); sctx.stroke();
+    }
+    // 双极喷流：亮结沿喷流向外涌，越远越淡。
+    for (const sign of [-1, 1]) {
+      for (let k = 0; k < 4; k++) {
+        const s = (t * .2 + k / 4) % 1, d = r * (.2 + s * 3);
+        glowDot(-TILT_SIN * sign * d, TILT_COS * sign * d, r * (.09 * (1 - s) + .02), 'rgba(226,251,255,.9)', (1 - s) * .75);
+      }
+    }
+    // 偶发等离子电弧：从核心表面打到盘上，闪 0.25 秒（桌面）。
+    if (!still && !small) {
+      if (now > nextArc) {
+        const a = Math.random() * 6.2832, e = .8 + Math.random() * .8, b = Math.random() * 6.2832, pts = [];
+        const [ex, ey] = onDisk(1, e, a);
+        for (let i = 0; i <= 9; i++) {
+          const k = i / 9, jit = i && i < 9 ? (Math.random() - .5) * .16 : 0;
+          const x = Math.cos(b) * .1 * (1 - k) + ex * k, y = Math.sin(b) * .1 * (1 - k) + ey * k;
+          pts.push([x - (ey - Math.sin(b) * .1) * jit, y + (ex - Math.cos(b) * .1) * jit]);
+        }
+        arc = { start: now, pts }; nextArc = now + 2400 + Math.random() * 4200;
+      }
+      if (arc && now - arc.start < 250) {
+        sctx.globalAlpha = .5 + .5 * Math.random(); sctx.strokeStyle = '#d9f6ff'; sctx.lineWidth = 1.3;
+        sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 10;
+        sctx.beginPath(); arc.pts.forEach(([x, y], i) => (i ? sctx.lineTo(x * r, y * r) : sctx.moveTo(x * r, y * r))); sctx.stroke();
+        sctx.shadowBlur = 0;
+      }
+    }
+    sctx.globalCompositeOperation = 'source-over';
+    // 遥测读数（宽屏桌面）：一根引线从准星拉到星核右上方——工具条之下、右侧组件栏之上那块空地，数值随时间轻微浮动。
+    if (!small && sw >= 1100 && sw - cx >= 200) {   // 竖长桌面屏上星核贴近右缘，右边没地方就不画
+      const tx = Math.min(r * 1.25, sw - cx - 176), ty = Math.max(96 - cy, -r * 1.12);
+      const ax = r * 1.62 * Math.cos(-.62), ay = r * 1.62 * Math.sin(-.62);
+      sctx.globalAlpha = .55; sctx.strokeStyle = '#5ee7ff'; sctx.lineWidth = 1;
+      sctx.beginPath(); sctx.moveTo(ax, ay); sctx.lineTo(tx - 10, ty + 48); sctx.lineTo(tx + 150, ty + 48); sctx.stroke();
+      sctx.fillStyle = '#9fe9ff'; sctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+      [
+        'STELLAR CORE // Σ-07',
+        'CORE TEMP  ' + (5.8 + .07 * Math.sin(t * 1.7)).toFixed(2) + 'e6 K',
+        'PLASMA FLUX ' + (97.2 + 1.9 * Math.sin(t * .9)).toFixed(1) + '%',
+        'SPIN PHASE  ' + String(Math.floor(t * 12) % 360).padStart(3, '0') + '°',
+      ].forEach((line, i) => sctx.fillText(line, tx, ty + i * 14));
+    }
+    sctx.restore();
   };
   const drawStars = (now, dt) => {
     const warping = !stillScene() && now < warpUntil;
@@ -219,9 +299,19 @@
         sctx.strokeStyle = color; sctx.lineWidth = size; sctx.beginPath();
         const tail = s.z + .18 * energy;
         sctx.moveTo(cx + s.x / tail * scale, cy + s.y / tail * scale); sctx.lineTo(x, y); sctx.stroke();
+        if (!light && energy > .3 && near > .45) {   // 色差拖尾：近处的星在跃迁峰值拖出一道品红 / 青色的余光
+          const far = s.z + .34 * energy;
+          sctx.globalAlpha = alpha * .4 * energy; sctx.strokeStyle = s.tint === '#ffffff' ? '#f472d0' : '#5ee7ff'; sctx.lineWidth = size * 2.2;
+          sctx.beginPath(); sctx.moveTo(cx + s.x / far * scale, cy + s.y / far * scale); sctx.lineTo(cx + s.x / tail * scale, cy + s.y / tail * scale); sctx.stroke();
+        }
       } else { sctx.fillStyle = color; sctx.beginPath(); sctx.arc(x, y, size, 0, 6.2832); sctx.fill(); }
     }
     sctx.globalAlpha = 1;
+    if (!light && energy > .05) {   // 跃迁峰值：中心一团冷光，封顶 .2，不做全屏闪白
+      const q = Math.min(sw, sh) * .45, g = sctx.createRadialGradient(cx, cy, 0, cx, cy, q);
+      g.addColorStop(0, 'rgba(160,240,255,1)'); g.addColorStop(.4, 'rgba(150,110,255,.35)'); g.addColorStop(1, 'rgba(94,231,255,0)');
+      sctx.globalAlpha = energy * .2; sctx.fillStyle = g; sctx.fillRect(cx - q, cy - q, q * 2, q * 2); sctx.globalAlpha = 1;
+    }
     if (!phone() && !stillScene() && !warping) {
       if (now > nextMeteor) { meteor = { start: now, x: sw * (.4 + Math.random() * .5), y: sh * Math.random() * .3 }; nextMeteor = now + 6500 + Math.random() * 5500; }
       if (meteor) {
