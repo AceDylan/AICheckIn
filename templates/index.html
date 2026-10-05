@@ -792,6 +792,7 @@
     </div>
   </div>
 
+  <script src="/static/halo-motion.js"></script>
   <script>
     // ===== 全局状态 =====
     let STATE = { configs: [], bookmarks: [], link_groups: [], proxy_url: '', schedule: {}, admin_required: false, admin_unlocked: true };
@@ -1146,6 +1147,11 @@
       return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
     }
     function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme(); }
+    function tellFrameEnter(name) {
+      const frame = name === 'chat' ? chatFrame() : vaultFrame();
+      const origin = name === 'chat' ? chatOrigin() : vaultOrigin();
+      try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type: 'enter' }, origin); } catch (_) {}
+    }
     function tellFramesTheme() {
       const msg = { source: 'hub', type: 'theme', theme: frameTheme() };
       // 目标源写死成配置的那个：框要是还停在本站的跳板页上（或别处），浏览器直接丢掉这条消息。
@@ -1267,6 +1273,7 @@
       { id: 'galaxy', name: '星河', color: '#12151f', lum: 0.053 },
       { id: 'seabay', name: '海湾落日', color: '#443b46', lum: 0.258 },
       { id: 'flow', name: '流光', color: '#101c1d', lum: 0.037 },
+      { id: 'starcore', name: '星核', color: '#0a0d17', lum: 0.012 },
     ];
     // 默认不开壁纸：内置壁纸都是深色，一开整页就固定成深色场景，和默认的「纸与墨」浅 / 深主题不是一回事。
     // 想要壁纸的人在「壁纸 / 遮罩 / 导航…」里手动打开，选择记在 Cookie 里。
@@ -1655,7 +1662,9 @@
       syncChatActivity();   // 回到聊天页就算看过了；顺带刷新标签页标题
       if (STATE_LOADED && ARRANGE.on && mainName !== 'bookmarks') leaveArrange();   // 先判 STATE_LOADED：脚本顶部的首次调用发生在 ARRANGE 声明之前
       applyLook();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.HaloMotion?.nav(tab, view);
+      if (STATE_LOADED && (mainName === 'chat' || mainName === 'vault')) tellFrameEnter(mainName);
+      window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
     // 标签页标题跟着当前页走：多开几个标签、翻浏览器历史时能认出哪个是哪个（「服务配置 · 签到中心 · Bookmark Hub」）。
     const DOC_TITLES = { checkin: '签到中心', configs: '服务配置 · 签到中心', history: '运行记录 · 签到中心', settings: '系统设置', chat: 'AI 聊天', vault: '笔记' };
@@ -1689,8 +1698,8 @@
       return name === 'checkin' && CHECKIN.page !== 'overview' ? CHECKIN.page : name;
     }
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
-      switchView(tab.dataset.view);
-      if (tab.dataset.view === 'bookmarks') openLibPage('@home');
+      const update = () => { switchView(tab.dataset.view); if (tab.dataset.view === 'bookmarks') openLibPage('@home'); };
+      if (window.HaloMotion) window.HaloMotion.change(update, tab.dataset.view); else update();
     }));
     document.querySelectorAll('[data-checkin-page]').forEach(btn => btn.addEventListener('click', () => {
       switchView('checkin/' + btn.dataset.checkinPage);
@@ -2288,7 +2297,7 @@
         // 自己的站，但仍不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
         frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
         frame.setAttribute('allow', 'clipboard-read; clipboard-write; microphone; camera; display-capture; fullscreen; autoplay');
-        frame.addEventListener('load', () => { $('chatLoading').hidden = true; });
+        frame.addEventListener('load', () => { $('chatLoading').hidden = true; tellFrameEnter('chat'); });
         frame.src = target;
         $('chatStage').appendChild(frame);
         CHAT.src = base;
@@ -2544,7 +2553,7 @@
       if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== vaultOrigin()) return;
       const data = e.data;
       if (!data || typeof data !== 'object' || data.source !== 'webobsidian') return;
-      if (data.type === 'ready') { VAULT_EMBED.ready = frame; VAULT_EMBED.covered = 0; tellVaultKeyboard(); return; }
+      if (data.type === 'ready') { VAULT_EMBED.ready = frame; VAULT_EMBED.covered = 0; tellVaultKeyboard(); tellFrameEnter('vault'); return; }
       const ask = VAULT_EMBED.ask;
       if (data.type !== 'open-note' || !ask || data.id !== ask.id) return;
       if (data.ok !== true) { reopenVaultAt(ask.to); return; }
@@ -2920,7 +2929,7 @@
       if (!nav.clientHeight) return;
       const active = reveal === true && nav.querySelector('.subnav-item.active');
       if (active) {
-        const top = active.offsetTop - nav.offsetTop, bottom = top + active.offsetHeight;
+        const top = active.getBoundingClientRect().top - nav.getBoundingClientRect().top + nav.scrollTop - nav.clientTop, bottom = top + active.offsetHeight;
         if (top < nav.scrollTop) nav.scrollTop = top - 6;
         else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight + 6;
       }
@@ -3599,6 +3608,7 @@
     });
 
     function renderHome() {
+      window.HaloMotion?.homeEnter();
       // 编辑首页只在图标视图里做：卡片密度下临时按「信息」密度画，点「完成」后回到原来的密度。
       const view = ARRANGE.on && homeView() === 'cards' ? 'tiles' : homeView();
       const minimal = view === 'minimal';
@@ -6637,6 +6647,7 @@
       bmDraftFields = (b.fields || []).map(draftFromField);
       renderFieldEditor();
       $('bmModal').classList.add('show');
+      window.HaloMotion?.cardToModal(idx);
     }
     function editBm(i) { if (!guardAdmin()) return; openBmModal(i); }
     // 空站点卡片上的「添加余额 / 到期字段」：打开编辑，直接多出一个新字段、光标在字段名上。

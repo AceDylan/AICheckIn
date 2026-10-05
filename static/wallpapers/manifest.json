@@ -40,5 +40,11 @@
     "name": "流光",
     "color": "#101c1d",
     "lum": 0.037
+  },
+  {
+    "id": "starcore",
+    "name": "星核",
+    "color": "#0a0d17",
+    "lum": 0.012
   }
 ]

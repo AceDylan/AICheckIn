@@ -1979,6 +1979,59 @@ label.set-row { cursor: pointer; }
   html.wall-on .home-toolbar .home-view-toggle { box-shadow: 1px 0 0 rgba(255, 255, 255, .14); }
 }
 
+/* Halo Motion — generated with tools/spring.py; shared by all three services. */
+:root {
+  --dur-micro: 160ms; --dur-std: 240ms; --dur-hero: 560ms; --dur-exit: 140ms;
+  --spring-snappy: cubic-bezier(.16,1,.3,1); --spring-smooth: cubic-bezier(.16,1,.3,1); --spring-gentle: cubic-bezier(.16,1,.3,1);
+  --stagger: 36ms; --recede-scale: .975; --dof-blur: 4px;
+}
+@supports (animation-timing-function: linear(0,1)) { :root {
+  --spring-snappy: linear(0, 0.033, 0.113, 0.214, 0.323, 0.43, 0.528, 0.616, 0.692, 0.756, 0.809, 0.852, 0.887, 0.915, 0.937, 0.954, 0.966, 0.976, 0.983, 0.989, 0.993, 0.995, 0.997, 0.999, 1);
+  --spring-smooth: linear(0, 0.032, 0.109, 0.211, 0.323, 0.434, 0.539, 0.633, 0.715, 0.785, 0.842, 0.888, 0.924, 0.952, 0.972, 0.987, 0.997, 1.004, 1.008, 1.01, 1.011, 1.011, 1.01, 1.009, 1.008, 1.007, 1.005, 1.004, 1);
+  --spring-gentle: linear(0, 0.024, 0.086, 0.172, 0.27, 0.374, 0.475, 0.571, 0.659, 0.737, 0.804, 0.86, 0.907, 0.944, 0.973, 0.994, 1.01, 1.021, 1.027, 1.031, 1.032, 1.031, 1.029, 1.026, 1.023, 1.02, 1.017, 1.014, 1.011, 1.008, 1.006, 1.004, 1.003, 1.002, 1.001, 1, 1);
+} }
+
+/* Halo cinematic: one scene change per operation, geometry stays out of data code. */
+.tabs { position: relative; isolation: isolate; }
+.tabs > .tab, .tabs > .subnav { position: relative; z-index: 1; }
+.cine-nav-pill { position: absolute; left: 0; top: 0; border-radius: 11px; background: var(--surface-hover); pointer-events: none; z-index: 0; transition: transform var(--dur-std) var(--spring-smooth), width var(--dur-std) var(--spring-smooth), height var(--dur-std) var(--spring-smooth); }
+.tabs > .tab.active { background: transparent; }
+:is(.modal,.omni,.home-search-list,.engine-menu,.todo-sort-menu) { animation-timing-function: var(--spring-smooth); animation-duration: var(--dur-std); }
+.modal-mask.show .modal { animation: cine-overlay var(--dur-std) var(--spring-smooth) both; }
+@keyframes cine-overlay { from { opacity: 0; transform: translateY(8px) scale(.975); } to { opacity: 1; transform: none; } }
+.cine-nav-running .cine-nav-pill { transition: none; view-transition-name: hub-nav-pill; }
+.cine-nav-running::view-transition-group(hub-nav-pill) { animation-duration: 240ms; animation-timing-function: var(--spring-smooth); }
+.cine-nav-running .main { view-transition-name: hub-page; }
+.cine-nav-running .view.active { animation: none; }
+.cine-nav-running::view-transition-old(root), .cine-nav-running::view-transition-new(root) { animation: none; }
+.cine-nav-running::view-transition-group(hub-page) { animation-duration: 0s; }
+.cine-nav-running::view-transition-old(hub-page) { animation: cine-page-out 140ms ease-out both; }
+.cine-nav-running::view-transition-new(hub-page) { animation: cine-page-in 240ms var(--spring-smooth) both; }
+@keyframes cine-page-in { from { opacity: 0; transform: translateX(calc(var(--cine-direction,1) * 8px)) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes cine-page-out { to { opacity: 0; transform: scale(.985); } }
+.home-wall::before { transform: translate(var(--wall-px,0px),var(--wall-py,0px)) scale(1.015); transition: transform 240ms var(--spring-smooth), opacity 240ms ease; }
+.cine-search .home-wall::before { transform: translate(var(--wall-px,0px),var(--wall-py,0px)) scale(1.04); }
+.cine-search .home-wall::after { background-color: rgba(0,0,0,.15); }
+.home-body, .home-hero { transition: transform 240ms var(--spring-smooth), opacity 240ms ease; transform-origin: center top; }
+.cine-search .home-body { opacity: .7; }
+.cine-search .home-hero { transform: scale(.98); opacity: .7; }
+.home-search { transition: transform 240ms var(--spring-smooth); }
+.cine-search .home-search { transform: translateY(-4px); }
+#view-chat.active .chat-stage, #view-vault.active .chat-stage { animation: cine-overlay 240ms var(--spring-smooth) both; }
+.cine-card-return { position: fixed; z-index: 9999; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-xl); pointer-events: none; }
+.motion-paused *, .motion-paused *::before, .motion-paused *::after { animation-play-state: paused !important; }
+@media (max-width: 760px), (pointer: coarse) {
+  .home-wall::before, .cine-search .home-wall::before { transform: none; }
+  .cine-search .home-search { transform: none; }
+  .modal-mask, .chat-stage { backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cine-nav-pill, .home-body, .home-hero, .home-search, .home-wall::before { transition: none; }
+  .home-wall::before, .cine-search .home-wall::before, .cine-search .home-body, .cine-search .home-hero, .cine-search .home-search { transform: none; }
+  .modal-mask.show .modal, #view-chat.active .chat-stage, #view-vault.active .chat-stage { animation: cine-fade 120ms ease-out both; }
+  @keyframes cine-fade { from { opacity: 0; } to { opacity: 1; } }
+}
+
 /* ==========================================================================
    首页组件（日历 / 待办 / 倒数日 / 便签 / 到期提醒 / 签到状态）
    和监控小组件同一种卡片（实底 + 细边，不开毛玻璃）。起始页的第一件事是点开网站，组件不该把图标挤到折叠线以下：

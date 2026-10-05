@@ -437,9 +437,40 @@ def flow(size, seed=97):
     return _grain(_field(size, shader), 0.10, seed)
 
 
+def starcore(size, seed=107):
+    """A quiet knowledge constellation with generous black space (no HUD/rings)."""
+    w, h = size
+    def shader(u, v, aspect):
+        glow = _blob(u, v, aspect, .54, .46, .20, .18)
+        violet = _blob(u, v, aspect, .64, .52, .13, .14)
+        return (9 + 17 * glow + 9 * violet, 12 + 22 * glow + 5 * violet, 20 + 38 * glow + 18 * violet)
+    img = _field(size, shader)
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(seed)
+    points = [(w * .54, h * .46)]
+    for i in range(1, 25):
+        angle = i * 2.39996
+        radius = min(w, h) * (.055 + math.sqrt(i / 24) * .24)
+        points.append((w * .54 + math.cos(angle) * radius, h * .46 + math.sin(angle) * radius))
+    for i in range(1, len(points)):
+        a, b = points[i], points[(i - 1) // 3]
+        bend = min(w, h) * .025
+        c = (a[0] + bend, (a[1] + b[1]) / 2)
+        d = (b[0] - bend, (a[1] + b[1]) / 2)
+        path = []
+        for step in range(33):
+            t = step / 32; q = 1 - t
+            path.append((q**3*a[0]+3*q*q*t*c[0]+3*q*t*t*d[0]+t**3*b[0], q**3*a[1]+3*q*q*t*c[1]+3*q*t*t*d[1]+t**3*b[1]))
+        draw.line(path, fill=(46, 58, 81), width=1)
+    for i, (x, y) in enumerate(points):
+        r = 3 if i == 0 else rng.choice([1, 1, 2])
+        draw.ellipse((x-r,y-r,x+r,y+r), fill=(177, 190, 219) if i == 0 else (112, 128, 165))
+    return img
+
+
 WALLPAPERS = [("aurora", "极光", aurora), ("dusk", "暮色群山", dusk), ("mist", "晨雾山林", mist),
               ("inkhill", "月夜墨山", inkhill), ("galaxy", "星河", galaxy), ("seabay", "海湾落日", seabay),
-              ("flow", "流光", flow)]
+              ("flow", "流光", flow), ("starcore", "星核", starcore)]
 
 
 # ---------- 统计与输出 ----------
