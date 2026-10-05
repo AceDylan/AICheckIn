@@ -77,6 +77,17 @@ def main():
         pc.wait_for_timeout(900)
         check("访客：改主题只在本机生效", theme(pc) == "light" and not [x for x in puts if x[0] == "C"], puts)
         check("访客：服务器上的偏好没被改", api(ctx_a, "GET", "/api/deck")[1]["deck"]["prefs"].get("bh_theme") == "dark")
+        # 首页分组折叠：全部展开后刷新不能被服务器上旧的折叠列表盖回来（展开最后一个时以前写的是空值，传不上去）。
+        loaded(pa)
+        pa.click('#homeList [data-home-fold="monitor"]')
+        pa.wait_for_timeout(900)
+        check("折叠站点看板同步到服务器", api(ctx_a, "GET", "/api/deck")[1]["deck"]["prefs"].get("bh_home_fold") == "monitor")
+        pa.click('#homeList [data-home-fold="monitor"]')
+        pa.wait_for_timeout(900)
+        check("全部展开也同步到服务器", api(ctx_a, "GET", "/api/deck")[1]["deck"]["prefs"].get("bh_home_fold") == "none")
+        loaded(pa)
+        check("刷新后站点看板仍是展开的", pa.locator('#homeList [data-home-fold="monitor"]').get_attribute("aria-expanded") == "true",
+              bh_cookies(ctx_a).get("bh_home_fold"))
         check("没有页面错误", not errors, errors)
         b.close()
     failed = [r for r in RESULTS if not r["ok"]]

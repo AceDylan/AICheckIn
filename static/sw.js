@@ -41,7 +41,8 @@
 // v63：蓝紫等离子星核壁纸、轨道动画、流星、HUD 舱窗与全息时钟环；更新缓存中的旧壁纸。
 // v64：星核重画（多普勒吸积盘、引力透镜光弧、喷流、行星弧光、镜头光斑）；吸积盘粒子流 / 冲击波 / 电弧 / 遥测读数、
 // 色差跃迁、HUD 扫描线与时钟彗星。壁纸重画了，换号让 cache-first 的旧星核失效。
-const CACHE_VERSION = 'bh-shell-v64';
+// v65：首页分组全部展开后刷新不再被同步的旧折叠列表盖回去（全部展开写 none）。
+const CACHE_VERSION = 'bh-shell-v65';
 const SHELL = [
   '/',
   '/static/app-v3.css',

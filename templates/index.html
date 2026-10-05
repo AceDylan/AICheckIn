@@ -3485,18 +3485,19 @@
 
     // ----- 分组折叠 -----
     // 不常用的分组可以留在首页但收成一行标题。记在本机 Cookie bh_home_fold 里（分组 id 用 . 连接，站点看板记作 monitor），
-    // 各设备各折各的；读的时候按字符集白名单过滤，写的时候顺手清掉已经不存在的分组。极简密度没有分组标题，折叠不生效。
+    // 登录后跟着偏好同步；读的时候按字符集白名单过滤，写的时候顺手清掉已经不存在的分组。极简密度没有分组标题，折叠不生效。
+    // 全部展开时写 none 而不是空值：同步只收非空值，空值传不上去，下次打开会被服务器上旧的折叠列表盖回来（同 writeDeckList）。
     const HOME_FOLD_MAX = 40;
     function homeFolds() {
       const m = document.cookie.match(/(?:^|; )bh_home_fold=([A-Za-z0-9_.-]{1,1400})(?:;|$)/);
-      return m ? m[1].split('.').filter(Boolean) : [];
+      return m ? m[1].split('.').filter(id => id && id !== 'none') : [];
     }
     function toggleHomeFold(page) {
       const known = new Set(['monitor'].concat(libGroups().map(g => g.id)));
       if (!known.has(page)) return;
       const kept = homeFolds().filter(id => known.has(id));
       const next = kept.includes(page) ? kept.filter(id => id !== page) : kept.concat(page);
-      writePref('bh_home_fold', next.slice(-HOME_FOLD_MAX).join('.'));
+      writePref('bh_home_fold', next.length ? next.slice(-HOME_FOLD_MAX).join('.') : 'none');
       renderHome();
       const btn = $('homeList').querySelector(`[data-home-fold="${CSS.escape(page)}"]`);
       if (btn) btn.focus();

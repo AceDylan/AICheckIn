@@ -187,6 +187,10 @@ class HomeExtrasScriptTest(unittest.TestCase):
             toggleHomeFold('big');
             assert.deepEqual(homeFolds(), ['monitor']);
             assert.ok(html().includes('站点0') && html().includes('data-home-fold="big" aria-expanded="true"'));
+            toggleHomeFold('monitor');                                                        // 全部展开：写 none，不写空值
+            assert.deepEqual(homeFolds(), []);
+            assert.ok(document.cookie.includes('bh_home_fold=none') && PREF_VALUE_RE.test('none'));
+            assert.ok(html().includes('看板甲'));
         """)
 
     def test_fold_cookie_is_whitelisted_and_pruned(self):
