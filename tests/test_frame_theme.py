@@ -28,6 +28,12 @@ globalThis.addEventListener = (type, fn) => { (L[type] = L[type] || []).push(fn)
 const attrs = {};
 document.documentElement.setAttribute = (k, v) => { attrs[k] = String(v); };
 document.documentElement.getAttribute = (k) => (k in attrs ? attrs[k] : null);
+// 替身的 document.cookie 每次赋值整串覆盖；这里按名合并（同浏览器），换主题时壁纸的 Cookie 才还在。
+const jar = new Map();
+Object.defineProperty(document, 'cookie', {
+  get: () => [...jar].map(([k, v]) => k + '=' + v).join('; '),
+  set: (text) => { const [pair] = String(text).split(';'); const i = pair.indexOf('='); jar.set(pair.slice(0, i).trim(), pair.slice(i + 1)); },
+});
 VIEWS.push('chat', 'vault');
 for (const n of ['chat', 'vault']) {
   const v = el('view-' + n);
@@ -66,6 +72,13 @@ setTimeout(async () => {
   window.matchMedia = (q) => ({ matches: /light/.test(q), addEventListener() {}, addListener() {} });
   setTheme('system'); await tick(); snap('system (light device) under the wallpaper');
   openChat(true); await tick(); snap('reopened, system under the wallpaper');
+  // 星核壁纸：两个框进场景（聊天深色、笔记 neural），设备 / 主题是浅色也一样；换走星核再回到主题。
+  openVault(true); await tick(); posted.splice(0);
+  writePref('bh_wallpaper', 'starcore'); applyLook(); await tick(); snap('starcore turned on');
+  applyLook(); await tick(); snap('starcore, look applied again');
+  openChat(true); openVault(true); await tick(); snap('reopened under starcore');
+  setTheme('light'); await tick(); snap('light under starcore');
+  writePref('bh_wallpaper', 'galaxy'); applyLook(); await tick(); snap('starcore to galaxy');
   out.errors = __CALLS.errors;
   console.log(JSON.stringify(out));
 }, 60);
@@ -149,7 +162,33 @@ class FrameThemeScriptTest(unittest.TestCase):
         self.assertEqual(self.steps["reopened, system under the wallpaper"]["chat"], HALO + "/#hub_theme=light")
 
 
+    def test_the_starcore_wallpaper_puts_both_frames_in_its_scene(self):
+        step = self.steps["starcore turned on"]
+        self.assertEqual(step["theme"], "light")   # 本站自己的主题不变，只是框进场景
+        sent = {p["kind"]: (p["msg"]["theme"], p["origin"]) for p in step["posted"]}
+        self.assertEqual(sent, {"chat": ("dark", HALO), "vault": ("neural", NOTES)})
+        self.assertEqual(self.steps["starcore, look applied again"]["posted"], [])   # 场景没变不重复发
+
+    def test_frames_opened_under_starcore_start_in_its_scene(self):
+        step = self.steps["reopened under starcore"]
+        self.assertEqual(step["chat"], HALO + "/#hub_theme=dark")
+        self.assertIn("&theme=neural&target=hub-vault-", step["hop"])
+        sent = {p["kind"]: p["msg"]["theme"] for p in self.steps["light under starcore"]["posted"]}
+        self.assertEqual(sent, {"chat": "dark", "vault": "neural"})
+
+    def test_leaving_starcore_gives_the_frames_the_theme_back(self):
+        step = self.steps["starcore to galaxy"]
+        sent = {p["kind"]: p["msg"]["theme"] for p in step["posted"]}
+        self.assertEqual(sent, {"chat": "light", "vault": "light"})
+
+
 class VaultOpenThemeTest(VaultCase):
+    def test_neural_rides_on_the_fragment_and_the_page_is_dark(self):
+        self.unlock()
+        resp = self.open_page("?to=%2F&theme=neural")
+        self.assertEqual(parse(resp).forms, [("post", VAULT + "/auth/hub/sso#hub_theme=neural")])
+        self.assertIn(":root { color-scheme: dark; }", resp.get_data(as_text=True))
+
     def test_the_theme_rides_on_the_form_address_fragment(self):
         self.unlock()
         for theme in ("dark", "light"):

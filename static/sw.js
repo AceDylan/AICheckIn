@@ -42,7 +42,8 @@
 // v64：星核重画（多普勒吸积盘、引力透镜光弧、喷流、行星弧光、镜头光斑）；吸积盘粒子流 / 冲击波 / 电弧 / 遥测读数、
 // 色差跃迁、HUD 扫描线与时钟彗星。壁纸重画了，换号让 cache-first 的旧星核失效。
 // v65：首页分组全部展开后刷新不再被同步的旧折叠列表盖回去（全部展开写 none）。
-const CACHE_VERSION = 'bh-shell-v65';
+// v66：选了星核壁纸时「AI 聊天」框给深色、「笔记」框给 neural（WebObsidian 黑金主题）。
+const CACHE_VERSION = 'bh-shell-v66';
 const SHELL = [
   '/',
   '/static/app-v3.css',

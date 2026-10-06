@@ -6892,8 +6892,9 @@ _VAULT_SSO_HINTS = {
 _VAULT_FRAME_NAME = re.compile(r"hub-vault-[0-9]{1,9}")
 
 
-# Hub 此刻的深浅色（见 index.html 的 frameTheme）：只认这两个值，别的当没给。
-_VAULT_THEMES = ("dark", "light")
+# Hub 此刻的深浅色（见 index.html 的 frameTheme）：只认这几个值，别的当没给。
+# neural = 星核壁纸场景，WebObsidian 用黑金主题；它是深色的，跳板页按 dark 画。
+_VAULT_THEMES = ("dark", "light", "neural")
 
 
 def _vault_open_page(state, status, message="", ticket="", to="/", target="", theme=""):
@@ -6905,14 +6906,14 @@ def _vault_open_page(state, status, message="", ticket="", to="/", target="", th
     - Referrer-Policy: strict-origin（全站是 no-referrer）：no-referrer 会让浏览器在跨源表单 POST 上
       把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。
 
-    theme（dark / light）挂在表单地址的 # 上：对面登录后 303 到笔记页时浏览器把 # 带过去（重定向的
+    theme（dark / light，星核场景下是 neural）挂在表单地址的 # 上：对面登录后 303 到笔记页时浏览器把 # 带过去（重定向的
     Location 没有 # 时沿用原地址的），WebObsidian 据此在「跟随系统」时跟着 Hub 的深浅色。# 不会发给服务器。"""
     nonce = secrets.token_urlsafe(16)
     theme = theme if theme in _VAULT_THEMES else ""
     action = VAULT_URL + "/auth/hub/sso" + ("#hub_theme=" + theme if theme else "")
     body = render_template("vault_open.html", state=state, message=message, ticket=ticket, to=to, target=target,
                            action=action, vault_host=VAULT_URL.split("://", 1)[-1],
-                           nonce=nonce, theme=theme)
+                           nonce=nonce, theme="dark" if theme == "neural" else theme)
     resp = app.response_class(body, status=status, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["X-Frame-Options"] = "SAMEORIGIN"

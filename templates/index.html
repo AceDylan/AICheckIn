@@ -1149,19 +1149,29 @@
     // 给的是本站的主题设置，不看壁纸：本站选「跟随系统」时就是顶层页面读到的设备深浅色（框里读不准，见上），
     // 设备换深浅色时上面的监听会再告诉框。开着壁纸时工作区虽然固定是深色玻璃（见 applyLook），框里的页面
     // 仍按设备 / 主题来——曾经让壁纸把框也压成深色，浅色设备上聊天也跟着变黑，用户要的是跟真实系统走。
-    function frameTheme() {
+    // 例外是星核壁纸（用户 2026-10-07 定）：它是一整套深色科幻场景，选了它两个框也进场景——聊天框给深色，
+    // 笔记框给 neural（WebObsidian 的黑金主题）。两边照旧只在自己设的是「跟随系统」时照办。
+    const FRAME_SCENES = { starcore: { chat: 'dark', vault: 'neural' } };
+    let FRAME_SCENE = '';   // applyLook 记下此刻生效的场景壁纸，进出场景时再告诉框
+    function frameScene() {
+      const w = currentWallpaper();
+      return w && FRAME_SCENES[w.id] ? w.id : '';
+    }
+    function frameTheme(name) {
+      const scene = frameScene();
+      if (scene) return FRAME_SCENES[scene][name];
       return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
     }
-    function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme(); }
+    function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme('chat'); }
     function tellFrameEnter(name) {
       const frame = name === 'chat' ? chatFrame() : vaultFrame();
       const origin = name === 'chat' ? chatOrigin() : vaultOrigin();
       try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type: 'enter' }, origin); } catch (_) {}
     }
     function tellFramesTheme() {
-      const msg = { source: 'hub', type: 'theme', theme: frameTheme() };
       // 目标源写死成配置的那个：框要是还停在本站的跳板页上（或别处），浏览器直接丢掉这条消息。
-      [[chatFrame(), chatOrigin()], [vaultFrame(), vaultOrigin()]].forEach(([frame, origin]) => {
+      [['chat', chatFrame(), chatOrigin()], ['vault', vaultFrame(), vaultOrigin()]].forEach(([name, frame, origin]) => {
+        const msg = { source: 'hub', type: 'theme', theme: frameTheme(name) };
         try { if (frame && frame.contentWindow && origin) frame.contentWindow.postMessage(msg, origin); } catch (_) { /* 下次开框时地址里带着 */ }
       });
     }
@@ -1357,7 +1367,12 @@
       const w = currentWallpaper();
       root.dataset.wallpaper = w ? w.id : 'off';
       const rail = homeNavPref() === 'rail';
-      root.classList.toggle('wall-on', !!w);   // 框不跟着变：它们跟主题 / 设备走（见 frameTheme）
+      root.classList.toggle('wall-on', !!w);   // 框不跟着变：它们跟主题 / 设备走，星核场景除外（见 frameTheme）
+      const scene = frameScene();
+      if (scene !== FRAME_SCENE) {
+        FRAME_SCENE = scene;
+        if (STATE_LOADED) tellFramesTheme();   // 数据到位前没有框；脚本顶部那次调用时框相关的常量也还没初始化
+      }
       applyThemeColor(w ? 'dark' : readTheme());   // 开着壁纸整页是深色场景
       root.classList.toggle('nav-rail', rail);
       root.classList.toggle('hub-scifi', scifiPref() === 'on');   // 样式见 app-v3.css「科幻特效」，星空 / 开场见 halo-motion.js
@@ -2439,8 +2454,8 @@
       $('vaultHost').textContent = base.replace(/^https?:\/\//, '');
       $('vaultLoading').hidden = false;
       closeVault();   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
-      // 本站自己的一页；没解锁、密码不合格时它只回一段说明。theme：本站此刻的深浅色，它转给 WebObsidian（见 frameTheme）
-      const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme();
+      // 本站自己的一页；没解锁、密码不合格时它只回一段说明。theme：本站此刻的深浅色（星核场景下是 neural），它转给 WebObsidian（见 frameTheme）
+      const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme('vault');
       const name = 'hub-vault-' + (++VAULT_EMBED.seq);
       const frame = document.createElement('iframe');
       frame.className = 'chat-frame';
