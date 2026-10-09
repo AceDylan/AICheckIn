@@ -1584,7 +1584,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
     border: 1px solid rgba(255, 255, 255, .13); border-radius: 20px;
     box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .08);
   }
-  /* 聊天 / 笔记和侧栏一样浮成一块圆角玻璃面板，四周露出壁纸；工具条是面板的顶边，框填满其余部分
+  /* 聊天 / 笔记和侧栏一样浮成一块圆角玻璃面板，四周露出壁纸；框填满整块面板
      （框自己不透明，玻璃只在载入时看得到）。 */
   html.wall-on #view-chat.active, html.wall-on #view-vault.active {
     height: calc(100vh - 20px); margin: 10px 10px 10px 8px; overflow: hidden;
@@ -2480,18 +2480,10 @@ html.wall-on .home-todo { --todo-drag-bg: #23262d; }
 }
 /* ===== AI 聊天 / 笔记：HaloWebUI、WebObsidian 各嵌在自己标签页的 iframe 里 =====
    整块铺满内容区：<html class="chat-on"> 由 switchView 切换（两个页面都用它），去掉内容区的留白与最大宽度，
-   工具条 + 提示条 + 框三段纵向排开，框吃掉剩下的全部高度。笔记页直接复用下面这套 .chat-* 样式。 */
+   提示条 + 框纵向排开，框吃掉剩下的全部高度（不放工具条：框里的页面从内容区最上沿开始）。笔记页直接复用下面这套 .chat-* 样式。 */
 html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 #view-chat.active, #view-vault.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
 @media (min-width: 761px) { html:not(.wall-on) #view-chat.active, html:not(.wall-on) #view-vault.active { height: calc(100vh - 18px); } }
-.chat-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
-  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface);
-}
-.chat-bar-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; font-weight: 580; letter-spacing: -.01em; }
-.chat-bar-title svg.ic { color: var(--accent); }
-.chat-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; font-weight: 500; }
-.chat-bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .chat-note {
   display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0;
   padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
@@ -2514,16 +2506,8 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .chat-loading::before { animation: none; } }
 .chat-loading[hidden] { display: none; }
-/* 工具条：页名用展示字体，地址是一枚等宽小标签（看得出连的是哪台），两个按钮靠右。 */
-.chat-bar-title > span:not(.chat-host) { font-family: var(--font-display); font-weight: 640; letter-spacing: -.015em; }
-.chat-host {
-  padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0;
-}
-.chat-host:empty { display: none; }
-/* 开了壁纸（桌面宽度）：聊天 / 笔记的玻璃面板见「浮动玻璃侧栏」一节；面板里的工具条、提示条、框底透明。 */
+/* 开了壁纸（桌面宽度）：聊天 / 笔记的玻璃面板见「浮动玻璃侧栏」一节；面板里的提示条、框底透明。 */
 @media (min-width: 761px) {
-  html.wall-on .chat-bar { padding: 9px 12px 9px 16px; border-bottom-color: rgba(255, 255, 255, .09); background: transparent; }
   html.wall-on .chat-note { background: rgba(255, 255, 255, .04); border-bottom-color: rgba(255, 255, 255, .09); }
   html.wall-on .chat-stage { background: transparent; }
 }
@@ -2531,8 +2515,6 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   /* 底部固定标签栏约 66px + 安全区：框到它上沿为止，别让最后一行输入框藏在标签栏后面。 */
   html.chat-on .content { padding: 0; }
   #view-chat.active, #view-vault.active { height: calc(100vh - 76px - env(safe-area-inset-bottom)); }
-  .chat-bar { padding: 8px 12px; }
-  .chat-host { display: none; }
 }
 
 @media (max-width: 760px) {

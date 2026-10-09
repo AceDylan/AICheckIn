@@ -32,7 +32,7 @@
     </form>
     <!-- 带 target 时本页在 Hub 旁边一张看不见的小框里，表单提交进那张还空着的笔记框（它的第一次导航不留历史）。
          提交前确认那张框还在：名字对不上的 target 会让浏览器新开一个窗口。
-         不带 target（「新标签页打开」、旧页面）时本页自己就是框里的第一页，表单提交会在整页历史里留下本页这一条：
+         不带 target（直接打开本页、旧页面）时本页自己就是框里的第一页，表单提交会在整页历史里留下本页这一条：
          在笔记里按「返回」（手机的返回手势）会回到这里。这时不再登录一遍、把人送回笔记，而是接着往回退。 -->
     <script nonce="{{ nonce }}">
       var nav = window.performance && performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;

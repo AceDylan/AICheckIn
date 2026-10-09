@@ -784,7 +784,7 @@ class PageShapeTest(unittest.TestCase):
 
     def test_the_prompt_goes_out_as_json_not_in_the_address(self):
         block = self.html[self.html.index("async function openChat"):]
-        block = block[:block.index("$('chatReload')")]
+        block = block[:block.index("function reenterChat")]
         self.assertIn("body: JSON.stringify(prompt ? { prompt } : back ? { back } : {})", block)
         self.assertNotIn("?q=", block)
 

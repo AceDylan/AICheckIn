@@ -205,13 +205,9 @@ def admin_desktop(b, halo):
     page.wait_for_timeout(200)
     check("切回来：还是同一个框", page.evaluate("() => (document.querySelector('#chatStage iframe') || {}).__hubKeep") == "kept")
 
-    # 重新载入：新的一张票
-    page.click("#chatReload")
-    page.wait_for_function("(old) => { const f = document.querySelector('#chatStage iframe'); return !!(f && f.src && f.src !== old); }", arg=src)
-    src2 = page.query_selector("#chatStage iframe").get_attribute("src")
-    claims2 = verify_ticket(src2.split("/auth#hub_ticket=", 1)[1].split("&", 1)[0])
-    check("「重新载入」换了一张新票（nonce 不同）", bool(claims2) and claims2["nonce"] != claims["nonce"])
-    check("「新标签页打开」指向 HaloWebUI 首页（不带票据）", page.get_attribute("#chatPopout", "href") == halo + "/")
+    # 框上方不再有工具条：框的上沿就是聊天页的上沿
+    gap = page.evaluate("() => { const v = document.getElementById('view-chat').getBoundingClientRect(); const f = document.querySelector('#chatStage iframe').getBoundingClientRect(); return f.top - v.top; }")
+    check("聊天页没有工具条，框从页面最上沿开始", page.query_selector("#view-chat .chat-bar") is None and abs(gap) < 1, gap)
 
     # 锁定：入口与框一起收起
     page.evaluate("() => fetch('/api/logout', { method: 'POST' })")

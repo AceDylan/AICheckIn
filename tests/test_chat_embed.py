@@ -445,6 +445,12 @@ class PageShapeTest(unittest.TestCase):
         for selector in ("html.chat-on .content", "#view-chat.active", ".chat-stage", ".chat-frame", ".chat-note"):
             self.assertIn(selector, self.css, selector)
 
+    def test_the_embedded_pages_have_no_toolbar_above_the_frame(self):
+        # 聊天 / 笔记页不放「页名 + 地址 + 重新载入 / 新标签页打开」那一行：框从内容区最上沿开始。
+        for token in ("chat-bar", "chat-host", "chatReload", "chatPopout", "vaultReload", "vaultPopout"):
+            self.assertNotIn(token, self.html, token)
+            self.assertNotIn(token, self.css, token)
+
     def test_the_frame_follows_the_browser_color_scheme_not_the_workspace(self):
         # 框里的 prefers-color-scheme 取 iframe 元素自己的 color-scheme；不声明就继承开壁纸时工作区的 dark。
         rule = re.search(r"^\.chat-frame \{([^}]*)\}", self.css, re.M)

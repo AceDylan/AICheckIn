@@ -390,16 +390,6 @@
         <!-- ===== 签到中心：概览、服务配置和运行记录共用一个工作区 ===== -->
         <!-- ===== AI 聊天：HaloWebUI 嵌在这里 ===== -->
         <section class="view" id="view-chat" aria-label="AI 聊天">
-          <div class="chat-bar">
-            <div class="chat-bar-title">
-              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.2a7.6 7.6 0 0 1-11.2 6.7L4 20.4l1.5-4.6A7.6 7.6 0 1 1 20 12.2z"/><path d="M9 10.8h6M9 13.9h3.6"/></svg>
-              <span>AI 聊天</span><span class="chat-host" id="chatHost"></span>
-            </div>
-            <div class="chat-bar-actions">
-              <button class="btn sm ghost" id="chatReload" type="button" title="重新载入这一页；免登录可用时会顺带重新登录">重新载入</button>
-              <a class="btn sm ghost" id="chatPopout" target="_blank" rel="noopener noreferrer" title="在新标签页里打开 HaloWebUI">新标签页打开</a>
-            </div>
-          </div>
           <div class="chat-note" id="chatNote" role="status" hidden>
             <span id="chatNoteText"></span>
             <button class="icon-btn chat-note-close" id="chatNoteClose" type="button" title="知道了，不再提示" aria-label="关闭提示"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
@@ -411,16 +401,6 @@
 
         <!-- ===== 笔记：WebObsidian 嵌在这里（样式与「AI 聊天」共用） ===== -->
         <section class="view" id="view-vault" aria-label="笔记">
-          <div class="chat-bar">
-            <div class="chat-bar-title">
-              <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 5A2 2 0 0 1 7.5 3H19v15H7.5a2 2 0 0 0-2 2z"/><path d="M5.5 20a2 2 0 0 0 2 2H19v-4"/><path d="M9.5 7.5h5.5M9.5 11h3.5"/></svg>
-              <span>笔记</span><span class="chat-host" id="vaultHost"></span>
-            </div>
-            <div class="chat-bar-actions">
-              <button class="btn sm ghost" id="vaultReload" type="button" title="重新载入笔记，并顺带重新登录">重新载入</button>
-              <a class="btn sm ghost" id="vaultPopout" href="/vault/open" target="_blank" rel="noopener noreferrer" title="在新标签页里打开笔记（同样免登录）">新标签页打开</a>
-            </div>
-          </div>
           <div class="chat-stage" id="vaultStage">
             <div class="chat-loading" id="vaultLoading">正在打开笔记…</div>
           </div>
@@ -2258,8 +2238,8 @@
     // 框里是自己的 HaloWebUI（地址来自部署的 HUB_CHAT_URL，随 /api/configs 只发给已解锁的人）。
     // 第一次点开才加载，之后切到别的标签页也不卸载——聊到一半去翻个收藏再回来，对话还在。
     // back：下一次开框登录后落到哪个对话（见 reenterChat）；sso：当前这张框是不是本站替它登录的；
-    // reenteredAt：上一次应框里的请求重新登录的时间；place：框里正开着的对话（框自己报来的 /c/<id>，见 placeChat）。
-    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0, place: '' };
+    // reenteredAt：上一次应框里的请求重新登录的时间。
+    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0 };
     function chatPlace(path) { return typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : ''; }
     const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
     function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
@@ -2274,8 +2254,7 @@
       const frame = chatFrame();
       if (frame) frame.remove();
       CHAT.src = '';
-      CHAT.place = '';
-      // 框没了，它报过的状态也就作废（锁定 / 会话过期 / 重新载入）。
+      // 框没了，它报过的状态也就作废（锁定 / 会话过期 / 重新登录）。
       if (CHAT_ACTIVITY.state !== 'idle' || CHAT_ACTIVITY.unseen) {
         CHAT_ACTIVITY.state = 'idle';
         CHAT_ACTIVITY.unseen = false;
@@ -2293,8 +2272,6 @@
       const base = STATE.chat.url;
       CHAT.busy = true;
       try {
-        $('chatHost').textContent = base.replace(/^https?:\/\//, '');
-        $('chatPopout').href = base + '/';
         $('chatLoading').hidden = false;
         let target = base + '/', note = ['', ''], sso = false;
         try {
@@ -2310,14 +2287,13 @@
           // 地址装不下整段问题时后端会自己截断。这属于这一次发送的事，说一声就过去，
           // 不做成顶部那条可以「不再提示」的提示条。
           if (data.ok && data.prompt_truncated) toast('问题太长，已截断到地址放得下的长度', 'err');
-          if (data.ok && data.framed_ok === false) note = ['framed', 'HaloWebUI 还没有允许本站嵌入它（它的 HUB_URL 要写成本站的地址）。下面若是空白，请先用「新标签页打开」。'];
+          if (data.ok && data.framed_ok === false) note = ['framed', 'HaloWebUI 还没有允许本站嵌入它（它的 HUB_URL 要写成本站的地址）。下面若是空白，请先在新标签页里直接打开它。'];
           else if (data.ok && !data.sso && data.hint) note = [data.reason, data.hint];
         } catch (_) { /* 拿不到票据不耽误打开：框里自己登录就是了 */ }
         if (!chatAvailable()) return;   // 等票据的工夫被锁定了
         target = withFrameTheme(target);
         showChatNote(note[0], note[1]);
         closeChat();   // 换一个新的框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
-        placeChat(back);   // 落回哪个对话，「新标签页打开」先指向那里；框加载后会自己再报一次
         const frame = document.createElement('iframe');
         frame.className = 'chat-frame';
         frame.title = 'HaloWebUI';
@@ -2332,18 +2308,9 @@
         CHAT.sso = sso;
       } finally { CHAT.busy = false; }
     }
-    // 重新载入 = 换一张新框，但落回框里正开着的那个对话（框卡住了才点它，回到空白新对话等于丢了位置）。
-    $('chatReload').addEventListener('click', () => { CHAT.back = CHAT.place; openChat(true); });
-    // 框里的 HaloWebUI 每换一个对话报一次：「新标签页打开」就打开这个对话，而不是它的首页。
-    function placeChat(path) {
-      CHAT.place = chatPlace(path);
-      if (!STATE.chat || !STATE.chat.url) return;
-      $('chatPopout').href = STATE.chat.url + (CHAT.place || '/');
-      $('chatPopout').title = CHAT.place ? '在新标签页里打开这个对话' : '在新标签页里打开 HaloWebUI';
-    }
     // 本站替它登录的会话 12 小时到期，而本页（浏览器起始页、手机上一直开着的标签页）常常一开好几天。
     // 到期后框里的 HaloWebUI 发来 reauth：换一张新票据重新开框，落回它刚才停着的那个对话——
-    // 不再让人对着「会话已过期，请重新登录」去找「重新载入」。
+    // 不再让人对着「会话已过期，请重新登录」干等。
     // 一分钟最多一次，而且只在这张框确实是本站替它登录的时候：签不了票时框里本来就是登录页，再开也一样。
     function reenterChat(path) {
       const now = Date.now();
@@ -2399,7 +2366,6 @@
       // 只是换个标签页、打开自己库里的一篇，最坏也就是开错一篇；路径照样过 cleanNotePath。
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
       if (data.type === 'reauth') { reenterChat(data.path); return; }
-      if (data.type === 'place') { placeChat(data.path); return; }
       if (data.type !== 'activity' || !CHAT_ACTIVITY_STATES.includes(data.state)) return;
       onChatActivity(data.state);
     });
@@ -2439,7 +2405,7 @@
       if (VAULT_EMBED.hop) VAULT_EMBED.hop.remove();
       VAULT_EMBED.hop = null;
     }
-    // signOut：锁定 / 会话过期时顺带让对面也退出；换一个新框（重新载入）时不用。
+    // signOut：锁定 / 会话过期时顺带让对面也退出；换一个新框（打开另一篇笔记）时不用。
     function closeVault(signOut) {
       const frame = vaultFrame();
       if (frame) frame.remove();
@@ -2455,7 +2421,6 @@
       VAULT_EMBED.to = '';
       if (!vaultEmbedAvailable() || (VAULT_EMBED.url && !force && !to)) return;
       const base = STATE.vault_embed.url;
-      $('vaultHost').textContent = base.replace(/^https?:\/\//, '');
       $('vaultLoading').hidden = false;
       closeVault();   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
       // 本站自己的一页；没解锁、密码不合格时它只回一段说明。theme：本站此刻的深浅色（星核场景下是 neural），它转给 WebObsidian（见 frameTheme）
@@ -2498,7 +2463,6 @@
     function frameIsBlank(frame) {
       try { return frame.contentWindow.location.href === 'about:blank'; } catch (_) { return false; }   // 跨源了＝已经不是空框
     }
-    $('vaultReload').addEventListener('click', () => openVault(true));
     // 有鼠标键盘的设备上，到了笔记页就把键盘交给框。不然焦点还停在本站的标签按钮上，框里提示的
     // Ctrl+O / Ctrl+P 按下去是浏览器自己的「打开文件」「打印」，得先在框里点一下才行。
     // （聊天框不用：HaloWebUI 自己会把焦点放进输入框。）手机上不动：没有实体键盘，平白聚焦只会让页面跳。
@@ -2508,7 +2472,7 @@
       if (!frame || currentViewName() !== 'vault') return;
       if (!(typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches)) return;
       const here = document.activeElement;
-      if (here && here !== document.body && here !== frame && !(here.closest && here.closest('.tabs, .chat-bar'))) return;
+      if (here && here !== document.body && here !== frame && !(here.closest && here.closest('.tabs'))) return;
       try {
         frame.focus({ preventScroll: true });
         // 框里换过页（/vault/open → WebObsidian）后，框元素仍是焦点、里面的新页面却没拿到，还得点一下它的窗口。

@@ -369,7 +369,6 @@ class PageShapeTest(unittest.TestCase):
         self.assertIn("const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme('vault');", self.js)
         self.assertNotIn("ticket", self.js.lower().replace("一次性票据", ""))
         self.assertEqual(re.findall(r"\b(?:frame|hop)\.src = ([^;]+);", self.js), ["open", "open + '&target=' + name"])
-        self.assertIn('id="vaultPopout" href="/vault/open"', self.html)
 
     def test_the_frame_is_sandboxed_without_top_navigation(self):
         sandbox = re.search(r"frame\.setAttribute\('sandbox', '([^']+)'\)", self.js).group(1).split()
