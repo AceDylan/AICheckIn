@@ -1289,7 +1289,7 @@
       { id: 'galaxy', name: '星河', color: '#12151f', lum: 0.053 },
       { id: 'seabay', name: '海湾落日', color: '#443b46', lum: 0.258 },
       { id: 'flow', name: '流光', color: '#101c1d', lum: 0.037 },
-      { id: 'starcore', name: '星核', color: '#282350', lum: 0.172 },
+      { id: 'starcore', name: '星核', color: '#191537', lum: 0.082 },
     ];
     // 默认不开壁纸：内置壁纸都是深色，一开整页就固定成深色场景，和默认的「纸与墨」浅 / 深主题不是一回事。
     // 想要壁纸的人在「壁纸 / 遮罩 / 导航…」里手动打开，选择记在 Cookie 里。
@@ -3624,6 +3624,7 @@
       const kinds = Object.keys(counts).filter(k => counts[k]);
       strip.hidden = !kinds.length;
       strip.innerHTML = kinds.map(k => `<button type="button" class="alert-chip ${ALERT_META[k].cls}" data-home-alert="${k}" title="到站点看板查看">${icon(ALERT_META[k].icon)}${counts[k]} 个${ALERT_META[k].label}</button>`).join('');
+      window.HaloMotion?.telemetry({ alerts: kinds.reduce((n, k) => n + counts[k], 0) });   // 星核反应堆的读数
     }
     $('homeNotice').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-home-alert]');
@@ -3654,6 +3655,7 @@
         b.setAttribute('aria-pressed', String(on));
       });
       renderHomeNotice();
+      window.HaloMotion?.telemetry({ links: STATE_LOADED ? total : null, monitors: STATE_LOADED ? allSites.length : null, locked: STATE_LOADED && libraryLocked() });
       // 没有编辑权限的访客用不上「添加 / 编辑」：收起来，工具条只剩密度和外观。
       $('homeAddLink').hidden = $('homeEditBtn').hidden = !canEdit();
       // 先定版面再出图标：右侧有没有组件那一列、是哪种密度，都会改变主区放得下几列。

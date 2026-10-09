@@ -2726,39 +2726,67 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 html.hub-scifi .hub-stars { display: block; }
 html.wall-on .hub-stars { opacity: .7; }
 
-/* 舱窗边缘与时钟轨道只作装饰，不占版面、不截获输入。 */
-.hub-hud, .hub-clock-orbit { display: none; pointer-events: none; }
+/* 舱窗边缘与反应堆只作装饰，不占版面、不截获输入。 */
+.hub-hud, .hub-reactor { display: none; pointer-events: none; }
 html.hub-scifi .hub-hud { display: block; position: fixed; inset: 20px 18px; z-index: -1; color: var(--sf-cyan); opacity: .45; }
-.hub-hud::before, .hub-hud::after { content: ""; position: absolute; width: 56px; height: 38px; border: 1px solid currentColor; }
-.hub-hud::before { top: 0; right: 0; border-left: 0; border-bottom: 0; }
-.hub-hud::after { bottom: 0; left: 0; border-top: 0; border-right: 0; }
 .hub-hud__rail { position: absolute; top: 90px; bottom: 90px; width: 3px; background: repeating-linear-gradient(to bottom, var(--sf-line) 0 2px, transparent 2px 10px); }
 .hub-hud__rail:first-child { right: 0; }
 .hub-hud__rail:nth-child(2) { left: 0; }
 .hub-hud__rail::after { content: ""; position: absolute; top: 0; width: 3px; height: 54px; background: linear-gradient(transparent, var(--sf-cyan), transparent); animation: sf-rail-travel 12s ease-in-out infinite alternate; }
 .hub-hud__rail:nth-child(2)::after { animation-delay: -6s; }
 @keyframes sf-rail-travel { to { top: calc(100% - 54px); } }
-.hub-hud span { position: absolute; font: 9px ui-monospace, monospace; letter-spacing: .22em; }
-.hub-hud span:nth-last-child(2) { right: 5px; top: 76px; writing-mode: vertical-rl; }
-.hub-hud span:last-child { left: 16px; bottom: 12px; }
-.hub-hud span.hub-hud__link { right: 5px; bottom: 76px; writing-mode: vertical-rl; }   /* 右侧竖排，和 DEEP SPACE 一上一下，不压工具条 */
-.hub-hud__link::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-bottom: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; animation: sf-blink 2.4s steps(1) infinite; }
-@keyframes sf-blink { 50% { opacity: .2; } }
 /* 扫描线：每 11 秒从上往下扫一遍舱窗 */
 .hub-hud__scan { position: absolute; left: 0; right: 0; top: 0; height: 1px; opacity: 0; background: linear-gradient(90deg, transparent, var(--sf-cyan) 18% 82%, transparent); box-shadow: 0 0 14px 1px var(--sf-glow); animation: sf-hud-scan 11s linear infinite; }
 @keyframes sf-hud-scan { 0% { transform: translateY(0); opacity: 0; } 6% { opacity: .55; } 75% { opacity: .3; } 100% { transform: translateY(calc(100vh - 40px)); opacity: 0; } }
-html.hub-scifi .hub-clock-orbit { display: block; position: absolute; width: min(600px, 100%); height: 180px; left: 50%; top: 48%; transform: translate(-50%, -50%); z-index: -1; overflow: visible; fill: none; stroke: var(--sf-cyan); stroke-width: .8; opacity: .38; }
-.hub-clock-orbit__outer { transform-origin: center; animation: sf-clock-orbit 28s ease-in-out infinite alternate; }
-.hub-clock-orbit__inner { stroke: var(--sf-violet); transform-origin: center; animation: sf-clock-orbit 18s ease-in-out infinite alternate-reverse; }
-@keyframes sf-clock-orbit { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
-/* 彗星光点沿时钟轨道跑：一小段虚线绕椭圆走 */
-.hub-clock-orbit__comet { stroke: #e0fbff; stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 3 97; filter: drop-shadow(0 0 4px var(--sf-cyan)) drop-shadow(0 0 10px var(--sf-violet)); animation: sf-comet 9s linear infinite; }
-.hub-clock-orbit__inner .hub-clock-orbit__comet { stroke-dasharray: 2 98; animation-duration: 6.5s; animation-direction: reverse; }
-@keyframes sf-comet { to { stroke-dashoffset: -100; } }
-html[data-theme="light"]:not(.wall-on) .hub-clock-orbit__comet { stroke: var(--sf-violet); }
+
+/* 星核反应堆：以时钟为圆心（同 HaloWebUI 首页那一圈）。刻度环慢转、虚线环反转、三段渐变光弧快转、雷达扫描、
+   两颗轨道光点；三组读数是真实数据（halo-motion.js 的 telemetry）。星核壁纸下 canvas 在同一圆心画星核本体。 */
+.home-hero { --clock-size: clamp(52px, 6.4vw, 80px); }
+@media (width > 760px) and (height > 720px) { html.hub-scifi .home-hero { --hero-pad: calc(var(--clock-size) * 1.45); padding-top: var(--hero-pad); } }
+html.hub-scifi .hub-reactor {
+  display: block; position: absolute; left: 50%; top: calc(var(--hero-pad) + var(--clock-size) / 2);
+  width: calc(var(--clock-size) * 5.6); aspect-ratio: 1; transform: translate(-50%, -50%); z-index: -1;
+  animation: sf-reactor-in 1.2s cubic-bezier(.16, 1, .3, 1) both;
+}
+@keyframes sf-reactor-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.55) rotate(-40deg); filter: blur(8px); } }
+.hub-reactor__svg, .hub-reactor__sweep {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 2%, #000 16%, #000 52%, transparent 88%);
+  mask-image: linear-gradient(to bottom, transparent 2%, #000 16%, #000 52%, transparent 88%);
+}
+.hub-reactor__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; }
+.hub-reactor__svg * { transform-box: view-box; transform-origin: 0 0; }
+.hub-reactor__ticks { stroke: var(--sf-cyan); stroke-width: 1; opacity: .4; animation: sf-rot 80s linear infinite; }
+.hub-reactor__ticks .major { stroke-width: 1.8; opacity: 1; }
+.hub-reactor__dash { stroke: var(--sf-violet); stroke-width: 1; stroke-dasharray: 2 7; opacity: .6; animation: sf-rot 46s linear infinite reverse; }
+.hub-reactor__arcs { stroke: url(#hubReactorArc); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 6px var(--sf-glow)); animation: sf-rot 14s linear infinite; }
+.hub-reactor__orbit { fill: var(--sf-cyan); filter: drop-shadow(0 0 4px var(--sf-cyan)); animation: sf-rot 9s linear infinite; }
+.hub-reactor__orbit.is-slow { fill: var(--sf-magenta); filter: drop-shadow(0 0 4px var(--sf-magenta)); animation-duration: 24s; animation-direction: reverse; }
+.hub-reactor__sweep {
+  position: absolute; inset: 8%; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 80%, rgb(94 231 255 / .24) 98%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle, transparent 30%, #000 31%, #000 70%, transparent 71%); mask-image: radial-gradient(circle, transparent 30%, #000 31%, #000 70%, transparent 71%);
+  animation: sf-rot 4.8s linear infinite;
+}
+html[data-theme="light"]:not(.wall-on) .hub-reactor__sweep { background: conic-gradient(from 0deg, transparent 0 84%, rgb(8 145 178 / .12) 98%, transparent 100%); }
+.hub-reactor__hud {
+  position: absolute; font: 9.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .16em; color: var(--sf-cyan);
+  opacity: .8; white-space: nowrap; text-shadow: 0 0 8px var(--sf-glow); animation: sf-hud-in 900ms 600ms steps(6) both;
+}
+.hub-reactor__hud b { font-weight: 700; color: var(--sf-violet); }
+.hub-reactor__hud i { font-style: normal; opacity: .78; }
+.hub-reactor__hud::before { content: ""; position: absolute; top: -6px; width: 14px; height: 14px; border: 1px solid var(--sf-cyan); border-bottom: 0; opacity: .6; }
+.hub-reactor__hud.is-tl { right: 96%; top: 30%; text-align: right; }
+.hub-reactor__hud.is-tl::before { right: -20px; border-left: 0; }
+.hub-reactor__hud.is-tr { left: 96%; top: 30%; }
+.hub-reactor__hud.is-br { left: 99%; top: 62%; }
+:is(.hub-reactor__hud.is-tr, .hub-reactor__hud.is-br)::before { left: -20px; border-right: 0; }
+.hub-reactor__hud.is-warn b { color: var(--sf-magenta); animation: sf-blink 1.6s steps(1) infinite; }
+@keyframes sf-blink { 50% { opacity: .35; } }
+@keyframes sf-hud-in { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
 html.hub-scifi .home-hero { isolation: isolate; }
 html.hub-scifi .hero-clock { text-shadow: none; }
-html.hub-scifi[data-wallpaper="starcore"] .home-wall::after { background-image: linear-gradient(90deg, rgb(4 7 12 / .22), transparent 65%), linear-gradient(180deg, rgb(4 7 12 / .24), transparent 35%, rgb(4 7 12 / .32)); background-color: rgb(4 7 12 / var(--wall-dim, .38)); }
+/* 星核：上方正中那团星云辉光是星核的舞台，不压；越往下越暗，托住书签。 */
+html.hub-scifi[data-wallpaper="starcore"] .home-wall::after { background-image: linear-gradient(180deg, transparent 0, rgb(4 7 12 / .1) 30%, rgb(4 7 12 / .38)); background-color: rgb(4 7 12 / calc(var(--wall-dim, .38) * .6)); }
 
 /* 舞台：主面板透出星场，四周一圈冷光 */
 html.hub-scifi[data-theme="dark"]:not(.wall-on) body {
@@ -2790,10 +2818,11 @@ html.hub-scifi .hero-clock {
 }
 html.hub-scifi[data-theme="dark"] .hero-clock, html.hub-scifi.wall-on .hero-clock {
   background: linear-gradient(100deg, #e0fbff 0%, #5ee7ff 35%, #a78bfa 68%, #f472d0 100%);
-  -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 0 22px rgb(94 231 255 / .32));
+  -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 0 14px rgb(94 231 255 / .45)) drop-shadow(0 0 34px rgb(167 139 250 / .35));
 }
 html.hub-scifi .home-hero { position: relative; }
 html.hub-scifi .hero-meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+@media (width > 760px) and (height > 720px) { html.hub-scifi[data-wallpaper="starcore"] .hero-meta { margin-top: 6px; } }
 html.hub-scifi .hero-meta #heroGreeting { color: var(--sf-cyan); text-shadow: 0 0 10px var(--sf-glow); }
 html.hub-scifi .hero-meta::before, html.hub-scifi .hero-meta::after {
   content: ""; width: clamp(22px, 4vw, 56px); height: 1px; background: linear-gradient(90deg, transparent, var(--sf-cyan)); opacity: .7;
@@ -2823,30 +2852,37 @@ html.hub-scifi .home-search-bar:focus-within { box-shadow: 0 0 0 1px var(--sf-li
 html.hub-scifi .home-search-bar:focus-within::after { opacity: 1; animation-duration: 2.8s; }
 html.hub-scifi .home-search-bar { background-image: linear-gradient(115deg, rgb(94 231 255 / .035), transparent 45%, rgb(167 139 250 / .04)); }
 html.hub-scifi .home-search-dropdown { border-color: var(--sf-line); box-shadow: 0 18px 48px rgb(0 0 0 / .25), 0 0 0 1px var(--sf-line); }
-html.hub-scifi .home-widget { border-color: var(--sf-line); box-shadow: inset 2px 0 0 var(--sf-line); }
-html.hub-scifi .home-widget:hover { box-shadow: inset 2px 0 0 var(--sf-cyan), 0 0 24px -10px var(--sf-glow); }
 
-/* 卡片：HUD 四角 + 悬停冷光；图标悬停一圈青光 */
-html.hub-scifi :is(.deck-card, .bookmark-card) {
-  background-image:
-    linear-gradient(var(--sf-cyan), var(--sf-cyan)), linear-gradient(var(--sf-cyan), var(--sf-cyan)),
-    linear-gradient(var(--sf-cyan), var(--sf-cyan)), linear-gradient(var(--sf-cyan), var(--sf-cyan)),
-    linear-gradient(var(--sf-cyan), var(--sf-cyan)), linear-gradient(var(--sf-cyan), var(--sf-cyan)),
-    linear-gradient(var(--sf-cyan), var(--sf-cyan)), linear-gradient(var(--sf-cyan), var(--sf-cyan));
-  background-size: 12px 1.5px, 1.5px 12px, 12px 1.5px, 1.5px 12px, 12px 1.5px, 1.5px 12px, 12px 1.5px, 1.5px 12px;
-  background-position: 10px 0, 0 10px, calc(100% - 10px) 0, 100% 10px, 10px 100%, 0 calc(100% - 10px), calc(100% - 10px) 100%, 100% calc(100% - 10px);
-  background-repeat: no-repeat;
+/* 卡片：HaloWebUI 的全息面板——顶上一道青色高光、细冷光边，悬停边框亮起 + 光晕（不加位移：卡片里有按钮和菜单）；图标悬停一圈青光 */
+html.hub-scifi :is(.deck-card, .bookmark-card, .home-widget) {
   border-color: var(--sf-line);
-  transition: box-shadow .25s ease, border-color .25s ease, transform .25s ease;
+  background-image: linear-gradient(180deg, rgb(94 231 255 / .07), transparent 38%), radial-gradient(120% 80% at 100% 0%, rgb(167 139 250 / .08), transparent 60%);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .10), 0 10px 30px -18px rgb(0 0 0 / .6);
+  transition: box-shadow .25s ease, border-color .25s ease;
 }
-html.hub-scifi :is(.deck-card, .bookmark-card):hover { border-color: var(--sf-cyan); box-shadow: 0 0 0 1px var(--sf-line), 0 0 34px -8px var(--sf-glow); }
+html.hub-scifi :is(.deck-card, .bookmark-card, .home-widget):hover {
+  border-color: rgb(94 231 255 / .55);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .18), 0 0 0 1px var(--sf-line), 0 0 34px -6px var(--sf-glow), 0 16px 34px -18px rgb(0 0 0 / .7);
+}
 html.hub-scifi .home-tile:hover .tile-avatar, html.hub-scifi .tile-link:focus-visible .tile-avatar {
   box-shadow: 0 0 0 1.5px var(--sf-cyan), 0 0 26px -2px var(--sf-glow), 0 14px 28px -10px rgba(0, 0, 0, .55);
 }
 html.hub-scifi .section-label { letter-spacing: .04em; }
 html.hub-scifi .section-label { position: relative; }
-/* 标题前一道冷光竖条：挂在左边线外侧，标题和图标仍对齐同一条线 */
-html.hub-scifi .section-label::before { content: ""; position: absolute; left: -11px; top: 50%; width: 3px; height: 14px; margin-top: -7px; border-radius: 2px; background: linear-gradient(var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 8px var(--sf-glow); pointer-events: none; }
+/* 分组标题：标题右边那条分隔线换成青→紫、往右淡出的渐变（HaloWebUI 的分节样式）；不再在左边线外挂竖条 */
+html.hub-scifi .home-list .section-label::after { height: 1px; background: linear-gradient(90deg, rgb(94 231 255 / .5), rgb(167 139 250 / .25) 40%, transparent 85%); }
+
+/* 首屏入场（halo-motion.js 在页面打开后 3 秒内挂 .sf-entering）：分组、组件、预警条依次从模糊里扫描显形。 */
+html.hub-scifi.sf-entering :is(.home-section, .deck-card, .home-notice) { animation: sf-rise .85s cubic-bezier(.16, 1, .3, 1) both; }
+html.hub-scifi.sf-entering .home-notice { animation-delay: .1s; }
+html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(2) { animation-delay: .16s; }
+html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(3) { animation-delay: .24s; }
+html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(4) { animation-delay: .32s; }
+html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(5) { animation-delay: .4s; }
+html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(6) { animation-delay: .48s; }
+html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(n + 7) { animation-delay: .56s; }
+/* 只动不透明度、模糊和裁切（从上往下扫出来），不动 transform：版面量出来的位置、尺寸在动画中途也是真的。 */
+@keyframes sf-rise { from { opacity: 0; filter: blur(8px) brightness(1.8); clip-path: inset(0 0 100% 0); } 60% { clip-path: inset(0); } to { opacity: 1; filter: none; clip-path: inset(0); } }
 
 /* 导航：选中胶囊带冷光 */
 html.hub-scifi .cine-nav-pill { box-shadow: inset 0 0 0 1px var(--sf-line), 0 0 18px -4px var(--sf-glow); background: linear-gradient(135deg, rgb(94 231 255 / .14), rgb(167 139 250 / .12)); }
@@ -2907,24 +2943,23 @@ html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: sf-j
 .hub-boot__skip { position: absolute; bottom: 1.5rem; font-size: 10px; letter-spacing: .3em; color: rgb(191 246 255 / .4); }
 
 @media (max-width: 760px), (max-height: 720px) {
-  html.hub-scifi .hub-clock-orbit { display: none; }
+  html.hub-scifi .hub-reactor { display: none; }
   html.hub-scifi .hub-hud { inset: 10px 7px 86px; opacity: .25; }
-  .hub-hud span, .hub-hud__scan { display: none; }
+  .hub-hud__scan { display: none; }
   .hub-hud__rail::after { animation: none; }
 }
-html.scene-still :is(.hub-clock-orbit__outer, .hub-clock-orbit__inner, .hub-hud__rail)::after,
-html.scene-still :is(.hub-clock-orbit__outer, .hub-clock-orbit__inner),
-html.scene-still .home-search-bar::after, html.scene-still .hub-hud__link::before,
-html.scene-still :is(.hub-clock-orbit__comet, .hub-hud__scan) { animation: none !important; }
+@media (max-width: 1180px) { .hub-reactor__hud { display: none; } }
+html.scene-still .hub-hud__rail::after, html.scene-still .home-search-bar::after, html.scene-still .hub-hud__scan,
+html.scene-still :is(.hub-reactor, .hub-reactor__ticks, .hub-reactor__dash, .hub-reactor__arcs, .hub-reactor__orbit, .hub-reactor__sweep, .hub-reactor__hud) { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   html.hub-scifi .hero-clock, html.hub-scifi .home-search-bar::after { animation: none !important; }
   html.hub-scifi.cine-nav-running::view-transition-old(hub-page), html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: none !important; }
-  .hub-clock-orbit__outer, .hub-clock-orbit__inner, .hub-hud__rail::after, .hub-clock-orbit__comet, .hub-hud__scan, .hub-hud__link::before { animation: none !important; }
+  .hub-hud__rail::after, .hub-hud__scan, .hub-reactor, .hub-reactor *, .hub-reactor__hud.is-warn b , html.sf-entering :is(.home-section, .deck-card, .home-notice) { animation: none !important; }
   .hub-boot { display: none; }
 }
 @media (prefers-contrast: more), (forced-colors: active) {
-  html.hub-scifi :is(.hub-stars, .hub-hud, .hub-clock-orbit), .hub-boot { display: none; }
+  html.hub-scifi :is(.hub-stars, .hub-hud, .hub-reactor), .hub-boot { display: none; }
   html.hub-scifi .hero-clock { background: none; color: var(--text); filter: none; animation: none; }
   html.hub-scifi .main::before, html.hub-scifi .home-search-bar::after { display: none; }
 }

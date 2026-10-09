@@ -137,23 +137,54 @@
   const stillScene = () => reduced.matches || Boolean(connection?.saveData);
   const sceneAllowed = () => scifiOn() && !contrast.matches;
   const wall = document.getElementById('homeWall');
+  // 舱窗：两侧一道刻度导轨 + 每 11 秒一遍扫描线。只是边框，不写字。
   const hud = document.createElement('div');
   hud.className = 'hub-hud'; hud.setAttribute('aria-hidden', 'true');
-  hud.innerHTML = '<i class="hub-hud__rail"></i><i class="hub-hud__rail"></i><i class="hub-hud__scan"></i>'
-    + '<span class="hub-hud__link">CORE LINK // STABLE</span><span>DEEP SPACE / 01</span><span>ORBITAL ARRAY</span>';
+  hud.innerHTML = '<i class="hub-hud__rail"></i><i class="hub-hud__rail"></i><i class="hub-hud__scan"></i>';
   wall?.after(hud);
+
+  // ===== 星核反应堆 =====
+  // 以时钟为圆心：DOM 里是 .hub-reactor（刻度环 / 虚线环 / 渐变光弧 / 雷达扫描 / 轨道光点 / 三组读数，SVG + CSS，
+  // 跟着首页一起滚动）；星核壁纸下 canvas 再在同一圆心实时画星核本体（drawReactor）。读数只写真实的东西：
+  // 秒级时钟、首页网址数、看板站点数、预警数（index.html 渲染首页时经 HaloMotion.telemetry 报过来）。
   const hero = document.querySelector('.home-hero');
+  const hudSlots = {};
   if (hero) {
-    const orbit = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    orbit.setAttribute('viewBox', '-300 -90 600 180'); orbit.setAttribute('aria-hidden', 'true');
-    orbit.setAttribute('class', 'hub-clock-orbit');
-    orbit.innerHTML = '<g class="hub-clock-orbit__outer"><ellipse rx="245" ry="69"/><ellipse rx="230" ry="59" stroke-dasharray="2 14"/>'
-      + '<ellipse class="hub-clock-orbit__comet" rx="245" ry="69" pathLength="100"/></g>'
-      + '<g class="hub-clock-orbit__inner"><ellipse rx="204" ry="48" stroke-dasharray="80 22 4 18"/>'
-      + '<ellipse class="hub-clock-orbit__comet" rx="204" ry="48" pathLength="100"/></g>'
-      + '<path d="M-282 0h42m480 0h42M0-84v14M0 70v14"/><circle cx="-245" r="3"/><circle cx="245" r="3"/>';
-    hero.prepend(orbit);
+    const reactor = document.createElement('div');
+    reactor.className = 'hub-reactor'; reactor.setAttribute('aria-hidden', 'true');
+    const ticks = Array.from({ length: 120 }, (_, i) => `<line y1="${i % 10 ? -180 : -187}" y2="-172" transform="rotate(${i * 3})"${i % 10 ? '' : ' class="major"'}/>`).join('');
+    reactor.innerHTML = '<div class="hub-reactor__sweep"></div>'
+      + '<svg class="hub-reactor__svg" viewBox="-200 -200 400 400"><defs><linearGradient id="hubReactorArc" x1="0" y1="0" x2="1" y2="1">'
+      + '<stop offset="0" stop-color="#5ee7ff"/><stop offset=".6" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472d0"/></linearGradient></defs>'
+      + `<g class="hub-reactor__ticks">${ticks}</g><circle class="hub-reactor__dash" r="152"/>`
+      + '<g class="hub-reactor__arcs"><circle r="128" pathLength="100" stroke-dasharray="18 82"/>'
+      + '<circle r="128" pathLength="100" stroke-dasharray="9 91" stroke-dashoffset="-40"/><circle r="128" pathLength="100" stroke-dasharray="14 86" stroke-dashoffset="-68"/></g>'
+      + '<g class="hub-reactor__orbit"><circle cy="-140" r="2.6"/><circle cy="140" r="1.6"/></g>'
+      + '<g class="hub-reactor__orbit is-slow"><circle cx="-164" r="2"/></g></svg>'
+      + '<div class="hub-reactor__hud is-tl"><b>SYS</b> ONLINE<br><i data-hud="clock">T+ --:--:--</i></div>'
+      + '<div class="hub-reactor__hud is-tr"><b>LINKS</b> <span data-hud="links">--</span><br><i>MONITOR <span data-hud="monitors">--</span></i></div>'
+      + '<div class="hub-reactor__hud is-br"><b data-hud="state">ALL NOMINAL</b><br><i data-hud="alerts">ALERT 0</i></div>';
+    hero.prepend(reactor);
+    reactor.querySelectorAll('[data-hud]').forEach(el => { hudSlots[el.dataset.hud] = el; });
   }
+  const tele = {};
+  const paintHud = () => {
+    if (!hudSlots.clock) return;
+    const locked = Boolean(tele.locked), alerts = tele.alerts || 0;
+    hudSlots.links.textContent = locked || tele.links == null ? '--' : String(tele.links);
+    hudSlots.monitors.textContent = locked || tele.monitors == null ? '--' : String(tele.monitors);
+    hudSlots.state.textContent = locked ? 'VAULT LOCKED' : alerts ? 'ATTENTION' : 'ALL NOMINAL';
+    hudSlots.alerts.textContent = locked ? 'AUTH REQUIRED' : 'ALERT ' + alerts;
+    hudSlots.state.parentElement.classList.toggle('is-warn', !locked && alerts > 0);
+  };
+  const telemetry = (data) => { Object.assign(tele, data || {}); paintHud(); };
+  const tickHud = () => {
+    if (!hudSlots.clock || document.hidden || !scifiOn()) return;
+    const d = new Date();
+    hudSlots.clock.textContent = 'T+ ' + [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+  };
+  tickHud(); setInterval(tickHud, 1000);
+
   const stars = document.createElement('canvas');
   stars.className = 'hub-stars'; stars.setAttribute('aria-hidden', 'true');
   (document.getElementById('homeWall') || document.body.firstChild)?.after(stars);
@@ -173,108 +204,122 @@
     while (field.length < n) field.push(spawn(false));
     field.length = n;
   };
-  // Match the wallpaper's cover crop and camera transform, including phone landscape.
-  // 盘面倾角、喷流方向与 tools/make_wallpapers.py 的 starcore() 一致：粒子流正好压在画好的吸积盘上。
-  const DISK_TINTS = ['#cdf6ff', '#5ebeff', '#9664ff', '#ff5cc4'];
-  const flow = Array.from({ length: 160 }, () => {
-    const e = .55 + Math.random() ** .7 * 1.6;
-    return { a: Math.random() * 6.2832, e, lift: (Math.random() - .5) * .07, tint: DISK_TINTS[Math.min(3, ((e - .55) / .4) | 0)] };
+  // 星核本体（星核壁纸下）：外圈辉光、横向镜头光束、吸积盘粒子流（内圈转得快、朝我们转来的左侧更亮）、
+  // 日冕射线、被引力透镜弯到核上方的盘影、暗核 + 光子环、冲击波、偶发电弧。暗核正好托在时钟数字后面，
+  // 字永远读得清；盘的近半边从数字下方掠过，正对文字那一段淡掉。跃迁（切页 / 开场）时整体增亮、加速。
+  const clockEl = document.getElementById('heroClock');
+  const DISK_TINTS = ['#e6fbff', '#7fe3ff', '#a78bfa', '#f472d0'];
+  const flow = Array.from({ length: 220 }, () => {
+    const e = 1.22 + Math.random() ** 1.4 * 2.3;
+    return { a: Math.random() * 6.2832, e, lift: (Math.random() - .5) * .05, len: .1 + Math.random() * .16, tint: DISK_TINTS[Math.min(3, ((e - 1.22) / .6) | 0)] };
   });
-  const TILT_COS = Math.cos(-.38), TILT_SIN = Math.sin(-.38);
+  const RAYS = Array.from({ length: 72 }, (_, i) => ({ a: i / 72 * 6.2832 + Math.random() * .05, len: .2 + Math.random() ** 2 * 1.2, ph: Math.random() * 6.28 }));
+  const DISK_TILT = -.08, TC = Math.cos(DISK_TILT), TS = Math.sin(DISK_TILT);
+  let DISK_FLAT = .3;
   let reactorLast = 0, arc = null, nextArc = 0;
   const onDisk = (r, e, a, lift = 0) => {
-    const x = Math.cos(a) * e * r, y = (Math.sin(a) * e * .3 + lift) * r;
-    return [x * TILT_COS - y * TILT_SIN, x * TILT_SIN + y * TILT_COS];
+    const x = Math.cos(a) * e * r, y = (Math.sin(a) * e * DISK_FLAT + lift) * r;
+    return [x * TC - y * TS, x * TS + y * TC];
   };
-  const glowDot = (x, y, q, color, alpha) => {
-    const g = sctx.createRadialGradient(x, y, 0, x, y, q);
-    g.addColorStop(0, color); g.addColorStop(1, 'rgba(94,231,255,0)');
-    sctx.globalAlpha = alpha; sctx.fillStyle = g; sctx.fillRect(x - q, y - q, q * 2, q * 2);
+  const reactorAnchor = () => {
+    if (root.dataset.wallpaper !== 'starcore' || !clockEl) return null;
+    const b = clockEl.getBoundingClientRect();
+    if (!b.width || b.bottom < -b.height * 3 || b.top > sh) return null;
+    // 桌面：暗核要装得下整排数字和下面那行问候；手机：时钟只有 32px，画扁平版（没有暗核和光环，见 drawReactor）。
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: phone() ? Math.max(30, b.height) : Math.max(b.height * 1.3, b.width * .64) };
   };
-  const drawReactor = (now) => {
-    if (root.dataset.wallpaper !== 'starcore' || !wall?.classList.contains('is-ready')) return;
-    const portrait = portraitScene.matches, iw = portrait ? 1080 : 2560, ih = portrait ? 1920 : 1440;
-    const moving = desktop.matches && !reduced.matches;
-    const zoom = moving ? (root.classList.contains('cine-search') ? 1.04 : 1.015) : 1;
-    const cover = Math.max(sw / iw, sh / ih) * zoom;
-    const style = getComputedStyle(root);
-    const cx = sw / 2 + ((portrait ? .68 : .72) - .5) * iw * cover + (moving ? parseFloat(style.getPropertyValue('--wall-px')) || 0 : 0);
-    const cy = sh / 2 + ((portrait ? .23 : .46) - .5) * ih * cover + (moving ? parseFloat(style.getPropertyValue('--wall-py')) || 0 : 0);
-    const r = Math.min(iw, ih) * (portrait ? .28 : .23) * cover;
-    const t = now / 1000, dt = reactorLast && t > reactorLast ? Math.min(.1, t - reactorLast) : 0;
+  const drawReactor = (now, energy) => {
+    const at = reactorAnchor();
+    if (!at) return;
+    const r = at.r, t = now / 1000, dt = reactorLast && t > reactorLast ? Math.min(.1, t - reactorLast) : 0;
     const still = stillScene(), small = phone();
+    DISK_FLAT = small ? .16 : .3;
+    const boost = 1 + energy * 1.6 + (root.classList.contains('cine-search') ? .35 : 0), lift = Math.min(1.5, boost);
+    const breathe = .5 + .5 * Math.sin(t * .9);
     reactorLast = t;
-    sctx.save(); sctx.translate(cx, cy); sctx.lineCap = 'round';
-    // 锁定准星：虚线环缓慢转动，外加三段反向的轨道光弧。
-    sctx.globalAlpha = .4; sctx.lineWidth = 1; sctx.strokeStyle = '#5ee7ff';
-    sctx.setLineDash([r * .2, r * .07]); sctx.lineDashOffset = -t * r * .06;
-    sctx.beginPath(); sctx.arc(0, 0, r * 1.62, 0, 6.2832); sctx.stroke(); sctx.setLineDash([]);
-    sctx.globalAlpha = .55;
-    for (let j = 0; j < 3; j++) {
-      const a = t * (j % 2 ? -.12 : .08) + j * 2.1;
-      sctx.strokeStyle = j % 2 ? '#af91ff' : '#77eaff';
-      sctx.beginPath(); sctx.ellipse(0, 0, r * (1.15 + j * .15), r * (.36 + j * .09), -.38, a, a + 1.8); sctx.stroke();
-    }
+    sctx.save(); sctx.translate(at.x, at.y); sctx.lineCap = 'round';
     sctx.globalCompositeOperation = 'lighter';
-    // 吸积盘粒子流：内圈转得快（开普勒），朝我们转来的左侧更亮。
-    sctx.lineWidth = small ? 1.1 : 1.6;
-    for (let i = 0, n = small ? 60 : flow.length; i < n; i++) {
-      const p = flow[i];
-      p.a += dt * .85 / p.e ** 1.5;
-      const [x0, y0] = onDisk(r, p.e, p.a - .16 / p.e, p.lift), [x1, y1] = onDisk(r, p.e, p.a, p.lift);
-      sctx.globalAlpha = .12 + .7 * (1 - .72 * Math.cos(p.a)) / 1.72;
-      sctx.strokeStyle = p.tint; sctx.beginPath(); sctx.moveTo(x0, y0); sctx.lineTo(x1, y1); sctx.stroke();
+    let g = sctx.createRadialGradient(0, 0, r * .8, 0, 0, r * 4.4);
+    g.addColorStop(0, 'rgba(167,139,250,.34)'); g.addColorStop(.35, 'rgba(94,231,255,.11)'); g.addColorStop(1, 'rgba(94,231,255,0)');
+    sctx.globalAlpha = (.6 + .4 * breathe) * lift; sctx.fillStyle = g; sctx.fillRect(-r * 4.4, -r * 4.4, r * 8.8, r * 8.8);
+    const beam = Math.min(sw * .8, r * 9);
+    g = sctx.createLinearGradient(-beam, 0, beam, 0);
+    g.addColorStop(0, 'rgba(94,231,255,0)'); g.addColorStop(.5, 'rgba(214,248,255,.95)'); g.addColorStop(1, 'rgba(94,231,255,0)');
+    sctx.fillStyle = g; sctx.globalAlpha = (.4 + .25 * breathe) * lift; sctx.fillRect(-beam, -.8, beam * 2, 1.6);
+    sctx.globalAlpha *= .3; sctx.fillRect(-beam * .75, -6, beam * 1.5, 12);
+    const disk = (front) => {
+      sctx.lineWidth = small ? 1.1 : 1.6;
+      for (let i = 0, n = small ? 100 : flow.length; i < n; i++) {
+        const p = flow[i];
+        if (!front) p.a += dt * (.5 + energy * 2.4) / p.e ** 1.5;
+        if ((Math.sin(p.a) > 0) !== front) continue;
+        const [x0, y0] = onDisk(r, p.e, p.a - p.len / p.e, p.lift), [x1, y1] = onDisk(r, p.e, p.a, p.lift);
+        let alpha = (.16 + .66 * (1 - .7 * Math.cos(p.a)) / 1.7) * (1 - .5 * (p.e - 1.22) / 2.3);
+        if (front) alpha *= Math.min(1, Math.max(.1, (Math.abs(x1) - r * .5) / r));
+        sctx.globalAlpha = alpha * lift; sctx.strokeStyle = p.tint;
+        sctx.beginPath(); sctx.moveTo(x0, y0); sctx.lineTo(x1, y1); sctx.stroke();
+      }
+    };
+    disk(false);
+    if (!small) {   // 手机上到此为止只剩辉光、光束与扁平盘：暗核、光环、透镜弧都不画
+      sctx.lineWidth = 1; sctx.strokeStyle = '#9fe9ff';
+      for (const ray of RAYS) {
+        const a = ray.a + t * .025, len = ray.len * (.65 + .35 * Math.sin(t * 1.3 + ray.ph));
+        sctx.globalAlpha = .08 * lift;
+        sctx.beginPath(); sctx.moveTo(Math.cos(a) * r * 1.06, Math.sin(a) * r * 1.06);
+        sctx.lineTo(Math.cos(a) * r * (1.06 + len), Math.sin(a) * r * (1.06 + len)); sctx.stroke();
+      }
     }
-    // 日冕呼吸 + 每 7 秒一圈沿盘面扩散的冲击波。
-    const pulse = .5 + .5 * Math.sin(t * .9);
-    glowDot(0, 0, r * .45, 'rgba(190,246,255,.55)', .25 + pulse * .25);
+    if (!small) {
+      g = sctx.createLinearGradient(-r * 1.2, 0, r * 1.2, 0);
+      g.addColorStop(0, '#5ee7ff'); g.addColorStop(.45, '#f2fbff'); g.addColorStop(1, '#f472d0');
+      sctx.strokeStyle = g; sctx.shadowColor = '#a78bfa'; sctx.shadowBlur = small ? 6 : 16;
+      sctx.lineWidth = small ? 1.6 : 2.4; sctx.globalAlpha = (.55 + .3 * breathe) * Math.min(1.4, boost);
+      sctx.beginPath(); sctx.ellipse(0, -r * .04, r * 1.17, r * 1.1, 0, Math.PI * 1.04, Math.PI * 1.96); sctx.stroke();
+      sctx.lineWidth = 1.2; sctx.globalAlpha *= .5;
+      sctx.beginPath(); sctx.ellipse(0, r * .02, r * 1.08, r * 1.04, 0, Math.PI * .1, Math.PI * .9); sctx.stroke();
+      sctx.shadowBlur = 0;
+      sctx.globalCompositeOperation = 'source-over';
+      g = sctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.03);
+      g.addColorStop(0, 'rgba(2,3,10,.95)'); g.addColorStop(.85, 'rgba(3,4,14,.92)'); g.addColorStop(1, 'rgba(3,4,14,0)');
+      sctx.globalAlpha = 1; sctx.fillStyle = g; sctx.beginPath(); sctx.arc(0, 0, r * 1.03, 0, 6.2832); sctx.fill();
+      sctx.globalCompositeOperation = 'lighter';
+      sctx.lineWidth = 1.4; sctx.strokeStyle = '#dff8ff'; sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = small ? 4 : 12;
+      sctx.globalAlpha = (.5 + .35 * breathe) * Math.min(1.4, boost);
+      sctx.beginPath(); sctx.arc(0, 0, r, 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
+    }
+    disk(true);
     const wave = (t % 7) / 1.8;
     if (!still && wave < 1) {
-      sctx.globalAlpha = (1 - wave) ** 2 * .7; sctx.strokeStyle = '#9fe9ff'; sctx.lineWidth = .8 + 2.2 * (1 - wave);
-      sctx.beginPath(); sctx.ellipse(0, 0, r * (.3 + wave * 2.1), r * (.3 + wave * 2.1) * .3, -.38, 0, 6.2832); sctx.stroke();
-      sctx.globalAlpha *= .45; sctx.strokeStyle = '#c4b0ff';
-      sctx.beginPath(); sctx.arc(0, 0, r * (.25 + wave * 1.3), 0, 6.2832); sctx.stroke();
+      const k = 1.05 + wave * 3;
+      sctx.globalAlpha = (1 - wave) ** 2 * .6; sctx.strokeStyle = '#9fe9ff'; sctx.lineWidth = .8 + 2 * (1 - wave);
+      sctx.beginPath(); sctx.ellipse(0, 0, r * k, r * k * DISK_FLAT, DISK_TILT, 0, 6.2832); sctx.stroke();
+      sctx.globalAlpha *= .5; sctx.strokeStyle = '#c4b0ff';
+      sctx.beginPath(); sctx.arc(0, 0, r * (1.02 + wave * 1.4), 0, 6.2832); sctx.stroke();
     }
-    // 双极喷流：亮结沿喷流向外涌，越远越淡。
-    for (const sign of [-1, 1]) {
-      for (let k = 0; k < 4; k++) {
-        const s = (t * .2 + k / 4) % 1, d = r * (.2 + s * 3);
-        glowDot(-TILT_SIN * sign * d, TILT_COS * sign * d, r * (.09 * (1 - s) + .02), 'rgba(226,251,255,.9)', (1 - s) * .75);
-      }
+    if (energy > .05) {   // 跃迁：一圈冷光从暗核边缘炸开
+      sctx.globalAlpha = energy * .7; sctx.strokeStyle = '#e0fbff'; sctx.lineWidth = 2 + energy * 3;
+      sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 20;
+      sctx.beginPath(); sctx.arc(0, 0, r * (1 + (1 - energy) * 2.4), 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
     }
-    // 偶发等离子电弧：从核心表面打到盘上，闪 0.25 秒（桌面）。
     if (!still && !small) {
       if (now > nextArc) {
-        const a = Math.random() * 6.2832, e = .8 + Math.random() * .8, b = Math.random() * 6.2832, pts = [];
-        const [ex, ey] = onDisk(1, e, a);
-        for (let i = 0; i <= 9; i++) {
-          const k = i / 9, jit = i && i < 9 ? (Math.random() - .5) * .16 : 0;
-          const x = Math.cos(b) * .1 * (1 - k) + ex * k, y = Math.sin(b) * .1 * (1 - k) + ey * k;
-          pts.push([x - (ey - Math.sin(b) * .1) * jit, y + (ex - Math.cos(b) * .1) * jit]);
+        // 从暗核边缘沿径向打到盘上：起点取终点方向上的光子环，整条电弧都在暗核外面，不会划过时钟数字。
+        const a = Math.random() * 6.2832, e = 1.6 + Math.random() * 1.2, pts = [];
+        const [ex, ey] = onDisk(1, e, a), b = Math.atan2(ey, ex) + (Math.random() - .5) * .5, sx = Math.cos(b) * 1.03, sy = Math.sin(b) * 1.03;
+        for (let i = 0; i <= 10; i++) {
+          const k = i / 10, jit = i && i < 10 ? (Math.random() - .5) * .18 : 0;
+          const x = sx * (1 - k) + ex * k, y = sy * (1 - k) + ey * k;
+          pts.push([x - (ey - sy) * jit, y + (ex - sx) * jit]);
         }
-        arc = { start: now, pts }; nextArc = now + 2400 + Math.random() * 4200;
+        arc = { start: now, pts }; nextArc = now + 2600 + Math.random() * 4000;
       }
-      if (arc && now - arc.start < 250) {
-        sctx.globalAlpha = .5 + .5 * Math.random(); sctx.strokeStyle = '#d9f6ff'; sctx.lineWidth = 1.3;
+      if (arc && now - arc.start < 260) {
+        sctx.globalAlpha = .55 + .45 * Math.random(); sctx.strokeStyle = '#e6f9ff'; sctx.lineWidth = 1.3;
         sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 10;
         sctx.beginPath(); arc.pts.forEach(([x, y], i) => (i ? sctx.lineTo(x * r, y * r) : sctx.moveTo(x * r, y * r))); sctx.stroke();
         sctx.shadowBlur = 0;
       }
-    }
-    sctx.globalCompositeOperation = 'source-over';
-    // 遥测读数（宽屏桌面）：一根引线从准星拉到星核右上方——工具条之下、右侧组件栏之上那块空地，数值随时间轻微浮动。
-    if (!small && sw >= 1100 && sw - cx >= 200) {   // 竖长桌面屏上星核贴近右缘，右边没地方就不画
-      const tx = Math.min(r * 1.25, sw - cx - 176), ty = Math.max(96 - cy, -r * 1.12);
-      const ax = r * 1.62 * Math.cos(-.62), ay = r * 1.62 * Math.sin(-.62);
-      sctx.globalAlpha = .55; sctx.strokeStyle = '#5ee7ff'; sctx.lineWidth = 1;
-      sctx.beginPath(); sctx.moveTo(ax, ay); sctx.lineTo(tx - 10, ty + 48); sctx.lineTo(tx + 150, ty + 48); sctx.stroke();
-      sctx.fillStyle = '#9fe9ff'; sctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-      [
-        'STELLAR CORE // Σ-07',
-        'CORE TEMP  ' + (5.8 + .07 * Math.sin(t * 1.7)).toFixed(2) + 'e6 K',
-        'PLASMA FLUX ' + (97.2 + 1.9 * Math.sin(t * .9)).toFixed(1) + '%',
-        'SPIN PHASE  ' + String(Math.floor(t * 12) % 360).padStart(3, '0') + '°',
-      ].forEach((line, i) => sctx.fillText(line, tx, ty + i * 14));
     }
     sctx.restore();
   };
@@ -285,7 +330,6 @@
     const cx = sw / 2 + spx, cy = sh / 2 + spy, scale = Math.max(sw, sh) * .55;
     const light = root.getAttribute('data-theme') === 'light' && !root.classList.contains('wall-on');
     sctx.clearRect(0, 0, sw, sh); sctx.lineCap = 'round';
-    drawReactor(now);
     for (const s of field) {
       s.z -= speed * dt;
       if (s.z <= .04) { Object.assign(s, spawn(true)); continue; }
@@ -306,6 +350,8 @@
         }
       } else { sctx.fillStyle = color; sctx.beginPath(); sctx.arc(x, y, size, 0, 6.2832); sctx.fill(); }
     }
+    sctx.globalAlpha = 1;
+    drawReactor(now, energy);
     sctx.globalAlpha = 1;
     if (!light && energy > .05) {   // 跃迁峰值：中心一团冷光，封顶 .2，不做全屏闪白
       const q = Math.min(sw, sh) * .45, g = sctx.createRadialGradient(cx, cy, 0, cx, cy, q);
@@ -360,8 +406,13 @@
       if (!sceneAllowed()) { stopStars(); sctx.clearRect(0, 0, sw, sh); }
       else startStars();
     }).observe(root, { attributes: true, attributeFilter: ['class', 'data-wallpaper', 'data-theme'] });
-    if (wall) new MutationObserver(startStars).observe(wall, { attributes: true, attributeFilter: ['class'] });
     syncScene();
+  }
+
+  // 首屏入场：页面打开后 3 秒内画出来的分组 / 组件 / 预警条逐个从模糊里扫描显形；之后重画首页不再播。
+  if (sceneAllowed() && !stillScene()) {
+    root.classList.add('sf-entering');
+    setTimeout(() => root.classList.remove('sf-entering'), 3000);
   }
 
   // 开场：最多每 6 小时一次（Cookie 自带 6 小时寿命），新开标签页不会每次都放；点一下或按任意键跳过。
@@ -394,5 +445,5 @@
   // 切页时星场跃迁一下（和 View Transition 同时发生）。
   const plainChange = change;
   const scifiChange = (update, name) => { if (name !== previous) hubWarp(650); plainChange(update, name); };
-  window.HaloMotion = { nav, change: scifiChange, homeEnter, cardToModal, warp: hubWarp };
+  window.HaloMotion = { nav, change: scifiChange, homeEnter, cardToModal, warp: hubWarp, telemetry };
 })();

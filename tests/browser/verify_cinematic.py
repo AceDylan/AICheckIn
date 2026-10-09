@@ -57,7 +57,7 @@ def scifi(b):
     check('sci-fi: switch turns it off', not page.evaluate("document.documentElement.classList.contains('hub-scifi')")
           and page.locator('.hub-stars').evaluate('el => getComputedStyle(el).display') == 'none'
           and page.locator('.hub-hud').evaluate('el => getComputedStyle(el).display') == 'none'
-          and page.locator('.hub-clock-orbit').evaluate('el => getComputedStyle(el).display') == 'none'
+          and page.locator('.hub-reactor').evaluate('el => getComputedStyle(el).display') == 'none'
           and 'bh_scifi=off' in page.evaluate('document.cookie'))
     page.locator('#scifiSeg [data-scifi="on"]').click()
     check('sci-fi: and back on', page.evaluate("document.documentElement.classList.contains('hub-scifi')"))

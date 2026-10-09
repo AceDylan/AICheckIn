@@ -438,173 +438,58 @@ def flow(size, seed=97):
 
 
 def starcore(size, seed=107):
-    """星核：白热等离子核 + 多普勒增亮的吸积盘（内白热、外品红）、引力透镜光弧、日冕射线、双极喷流、
-    彩色星云、蓝色变形镜头光斑与前景行星弧光；左侧整体压暗留给书签阅读。
-    中心 / 半径 / 盘面倾角与 static/halo-motion.js 的 drawReactor 一致，运行时的粒子流正好叠在盘上。"""
+    """星核（深空版）：图里只有深空——上方正中一团紫青星云辉光、一条斜贯的星云带、两角冷光、星点与几颗四芒亮星；
+    中下部压暗留给书签阅读。星核本体（暗核、光子环、吸积盘、喷流、冲击波、刻度环）由 static/halo-motion.js 的
+    drawReactor 与 .hub-reactor 实时画在时钟周围，正好落进这团辉光里；不再和这张图逐像素对位，任何屏幕比例都不会错位。"""
     w, h = size
     portrait = h > w
-    cu, cv = (.68, .23) if portrait else (.72, .46)
-    radius = min(w, h) * (.28 if portrait else .23)
-    cx, cy = cu * w, cv * h
-    tilt = -.38
+    cu, cv = (.5, .09) if portrait else (.525, .12)
+    tilt = -.2
     ct, st = math.cos(tilt), math.sin(tilt)
-    neb_a, neb_b = _fbm_layers(seed, 3, 5), _fbm_layers(seed + 50, 5, 4)
-    disk_stops = [(0, (205, 246, 255)), (.3, (94, 190, 255)), (.62, (150, 100, 255)), (1, (255, 92, 196))]
-
-    def to_disk(dx, dy):
-        """像素偏移（以半径为单位）→ 盘面坐标 (沿盘, 垂直盘)。"""
-        return dx * ct + dy * st, -dx * st + dy * ct
-
-    def doppler(cos_phi):
-        """盘的左侧朝我们转来，更亮更蓝；右侧远去，更暗。"""
-        return max(.18, 1 - .72 * cos_phi)
+    neb_a, neb_b, neb_c = _fbm_layers(seed, 3, 5), _fbm_layers(seed + 50, 5, 4), _fbm_layers(seed + 90, 4, 4)
 
     def shader(u, v, aspect):
-        dx, dy = (u * w - cx) / radius, (v * h - cy) / radius
-        d = math.hypot(dx, dy)
-        xd, yd = to_disk(dx, dy)
-        e = math.hypot(xd, yd / .3)
-        read = .22 + .78 * _smooth((u - .04) / .62)          # 左侧阅读区压暗
-        reach = math.exp(-(d / 4.2) ** 2)
-        violet = max(0, _fbm(neb_a, u, v) - .32) * (.4 + math.exp(-(yd / 1.4) ** 2)) * reach * 1.7
-        teal = max(0, _fbm(neb_b, u * .9 + .05, v) - .42) * reach * 2.2
-        halo, bloom = math.exp(-(d / 1.5) ** 2), math.exp(-(d / .3) ** 2)
-        disk = math.exp(-((e - 1.15) / .55) ** 2) * doppler(xd / max(e, .25)) if e > .3 else 0
-        dc = _gradient(disk_stops, (e - .4) / 1.6)
-        base = 2 + 6 * (1 - v)
-        return (base + read * (78 * violet + 8 * teal + 12 * halo + .3 * disk * dc[0] + 150 * bloom),
-                base + 1 + read * (26 * violet + 60 * teal + 26 * halo + .3 * disk * dc[1] + 180 * bloom),
-                base + 8 + read * (128 * violet + 80 * teal + 80 * halo + .3 * disk * dc[2] + 215 * bloom))
+        dx, dy = (u - cu) * aspect, v - cv
+        crown = math.exp(-((dx / (.42 if portrait else .62)) ** 2 + (dy / .3) ** 2))
+        heart = math.exp(-((dx / .14) ** 2 + (dy / .1) ** 2))
+        band = math.exp(-((dy * ct - dx * st) / .13) ** 2)          # 斜贯画面的星云带，穿过上方辉光
+        cyan_corner = _blob(u, v, aspect, 0, 1.02, .7, .5)
+        violet_corner = _blob(u, v, aspect, 1.02, -.02, .6, .45)
+        fa, fb, fc = _fbm(neb_a, u * 1.3, v * 1.3), _fbm(neb_b, u * 1.1, v * 1.1), _fbm(neb_c, u * 1.7, v * 1.7)
+        silk = (1 - abs(2 * fc - 1)) ** 4                            # 丝状亮纹（ridged noise）
+        dust = _smooth((fb - .46) / .14) * band                       # 星云带里的暗尘带
+        violet = max(0, fa - .3) ** 1.3 * (crown * 2 + band * 1 + violet_corner * 1.1) * (1 - .55 * dust)
+        teal = max(0, fb - .36) ** 1.2 * (band * 1.1 + cyan_corner * 2.2 + crown * .5) * (1 - .4 * dust)
+        magenta = (max(0, fc - .42) * 1.2 + silk * .35) * crown * (1 - .3 * heart)
+        read = 1 - .5 * _smooth((v - .32) / .45)                     # 越往下越暗，书签读得清
+        base = (4 + 3 * (1 - v), 5 + 3 * (1 - v), 13 + 8 * (1 - v))
+        return (base[0] + read * (70 * violet + 6 * teal + 95 * magenta + 18 * heart + 6 * band + 20 * silk * band),
+                base[1] + read * (24 * violet + 90 * teal + 26 * magenta + 30 * heart + 9 * band + 40 * silk * band),
+                base[2] + read * (140 * violet + 104 * teal + 80 * magenta + 60 * heart + 16 * band + 60 * silk * band))
 
     img = _field(size, shader)
     rng = random.Random(seed)
-    _stars(img, rng, int(w * h / 1900), lambda x, y: .25 + .75 * x / w,
-           sizes=(.5, .7, 1, 1.2, 1.5), bright=(45, 190))
-    # 2× 超采样线稿：发光与锐利线芯分层，不需要运行时 WebGL / 后处理。
-    ink = Image.new("RGB", (w * 2, h * 2))
-    draw = ImageDraw.Draw(ink)
+    cx, cy = cu * w, cv * h
 
-    def pt(dx, dy):
-        return 2 * (cx + dx * radius), 2 * (cy + dy * radius)
-
-    def on_disk(e, a, lift=0.0):
-        x, y = math.cos(a) * e, math.sin(a) * e * .3 + lift
-        return pt(x * ct - y * st, x * st + y * ct)
-
-    def scaled(color, k):
-        return tuple(max(0, min(255, int(c * k))) for c in color)
-
-    # 吸积盘：一圈圈细环，分段按多普勒调亮度；留几道暗缝像土星环。
-    for j in range(40):
-        if j in (11, 12, 25):
-            continue
-        e = .5 + j * 1.65 / 39
-        color = _gradient(disk_stops, j / 39)
-        fade = .55 + .45 * math.sin(j * 1.7) ** 2
-        prev = on_disk(e, 0)
-        for i in range(1, 181):
-            a = i * math.tau / 180
-            cur = on_disk(e, a)
-            draw.line([prev, cur], fill=scaled(color, fade * doppler(math.cos(a)) * (.8 - .3 * j / 39)), width=2)
-            prev = cur
-    # 引力透镜：盘的远侧被弯到核的上方与下方，外加一圈细光子环。
-    for k, (rx, ry, a0, a1, color) in enumerate(((1.02, .64, math.pi * 1.05, math.pi * 1.95, (190, 170, 255)),
-                                                  (.9, .5, math.pi * .12, math.pi * .88, (120, 150, 255)))):
-        pts = []
-        for i in range(161):
-            a = a0 + (a1 - a0) * i / 160
-            x, y = math.cos(a) * rx, math.sin(a) * ry
-            pts.append(pt(x * ct - y * st, x * st + y * ct))
-        draw.line(pts, fill=color, width=3 - k, joint="curve")
-    draw.ellipse((*pt(-.4, -.4), *pt(.4, .4)), outline=(170, 236, 255), width=3)
-    # 日冕射线：长短不一，越长越淡。
-    for _ in range(300):
-        a = rng.random() * math.tau
-        length = .2 + rng.random() ** 3 * 1.7
-        color = _mix((120, 232, 255), (176, 140, 255), rng.random())
-        for s in range(4):
-            r0, r1 = .12 + length * s / 4, .12 + length * (s + 1) / 4
-            draw.line([pt(math.cos(a) * r0, math.sin(a) * r0), pt(math.cos(a) * r1, math.sin(a) * r1)],
-                      fill=scaled(color, .32 * (1 - s / 4) ** 2))
-    # 双极喷流：垂直盘面，向两头收细，带几个亮结。
-    for sign in (-1, 1):
-        ux, uy = -st * sign, ct * sign
-        for i in range(120):
-            s0, s1 = i / 120, (i + 1) / 120
-            wob = .012 * math.sin(s0 * 13 + sign)
-            r0, r1 = .15 + s0 * 3.4, .15 + s1 * 3.4
-            draw.line([pt(ux * r0 + uy * wob, uy * r0 - ux * wob), pt(ux * r1 + uy * wob, uy * r1 - ux * wob)],
-                      fill=scaled((150, 225, 255), .9 * (1 - s0) ** 1.6), width=max(2, round(18 * (1 - s0) ** 1.2)))
-        for s in (.22, .41, .66):
-            x, y = pt(ux * (.15 + s * 3.4), uy * (.15 + s * 3.4))
-            q = 7 * (1 - s)
-            draw.ellipse((x - q, y - q, x + q, y + q), fill=(220, 248, 255))
-    # 印在画面里的 HUD：刻度环、四角锁定弧。
-    for j in range(120):
-        a = j * math.tau / 120
-        r0 = 1.92 if j % 10 else 1.84
-        draw.line([pt(math.cos(a) * r0, math.sin(a) * r0), pt(math.cos(a) * 1.98, math.sin(a) * 1.98)],
-                  fill=(36, 92, 128) if j % 10 else (70, 170, 215), width=2)
-    for q in range(4):
-        a = math.pi / 4 + q * math.pi / 2
-        pts = [pt(math.cos(a + t / 30 - .35) * 2.2, math.sin(a + t / 30 - .35) * 2.2) for t in range(22)]
-        draw.line(pts, fill=(80, 196, 235), width=3, joint="curve")
-    # 盘上的碎屑与尘埃颗粒。
-    for _ in range(520):
-        e, a = rng.uniform(.6, 2.25), rng.random() * math.tau
-        x, y = on_disk(e, a, rng.gauss(0, .035))
-        b = rng.uniform(.35, 1) * doppler(math.cos(a))
-        color = scaled(_gradient(disk_stops, (e - .5) / 1.75), b)
-        q = rng.choice((1.2, 1.6, 2.2))
-        draw.ellipse((x - q, y - q, x + q, y + q), fill=color)
-    sharp = ink.resize(size, Image.LANCZOS)
-    img = ImageChops.add(img, sharp.filter(ImageFilter.GaussianBlur(radius * .045)))
-    img = ImageChops.add(img, sharp.filter(ImageFilter.GaussianBlur(radius * .01)))
-    img = ImageChops.add(img, sharp)
-    _disc(img, cx, cy, radius * .075, (255, 255, 255), glow=.6)
-    # 前景行星：挡住身后的星与喷流，朝星核的一侧亮起一道大气弧光。
-    if portrait:
-        px_, py_, pr = .22 * w, h + .55 * w, .96 * w
-    else:
-        px_, py_, pr = .86 * w, 1.9 * h, 1.15 * h
-    lx, ly = cx - px_, cy - py_
-    norm = math.hypot(lx, ly)
-    lx, ly = lx / norm, ly / norm
-    body = Image.new("L", (w * 2, h * 2), 0)
-    ImageDraw.Draw(body).ellipse(((px_ - pr) * 2, (py_ - pr) * 2, (px_ + pr) * 2, (py_ + pr) * 2), fill=255)
-    body = body.resize(size, Image.LANCZOS)
-    rim_w = max(w, h) * .0045
-    lit = ImageChops.offset(body, int(round(-lx * rim_w)), int(round(-ly * rim_w)))
-    rim = ImageChops.subtract(body, lit)
-    shade = Image.new("RGB", size, (3, 5, 12))
-    img.paste(shade, (0, 0), body)
-    glow_col = Image.new("RGB", size, (70, 150, 230))
-    img = ImageChops.add(img, Image.composite(glow_col, Image.new("RGB", size), rim.filter(ImageFilter.GaussianBlur(rim_w * 4))))
-    img = ImageChops.add(img, Image.composite(Image.new("RGB", size, (150, 220, 255)), Image.new("RGB", size), rim.filter(ImageFilter.GaussianBlur(1.2))))
-    # 镜头：贯穿画面的蓝色横向光斑、几枚六边形鬼影、亮星的四芒衍射。
+    def density(x, y):
+        dx, dy = (x - cx) / w, (y - cy) / w
+        return .3 + .7 * math.exp(-((dy * ct - dx * st) / .12) ** 2)
+    _stars(img, rng, int(w * h / 2300), density, sizes=(.5, .7, 1, 1.2, 1.5), bright=(45, 200))
+    _stars(img, rng, int(w * h / 26000), density, color=(196, 214, 255), sizes=(1.6, 2.1), bright=(120, 230))
+    # 几颗四芒亮星：避开上方正中（运行时的星核在那里）。
     flare = Image.new("RGB", size)
     fd = ImageDraw.Draw(flare)
-    reach = w * (.28 if portrait else .24)
-    for i in range(0, w, 2):
-        k = math.exp(-abs(i - cx) / reach)
-        for off, gain in ((0, 1), (1, .55), (2, .25)):
-            c = scaled((70, 140, 255), k * gain)
-            fd.line([(i, cy - off), (i + 2, cy - off)], fill=c)
-            fd.line([(i, cy + off), (i + 2, cy + off)], fill=c)
-    gx, gy = w / 2 - cx, h / 2 - cy
-    for k, rr, color in ((.55, .09, (16, 10, 30)), (1.2, .2, (6, 17, 26)), (1.55, .12, (20, 9, 24)), (2.05, .32, (5, 11, 20))):
-        x, y, q = cx + gx * k, cy + gy * k, radius * rr
-        fd.polygon([(x + q * math.cos(a * math.pi / 3 + .3), y + q * math.sin(a * math.pi / 3 + .3)) for a in range(6)], fill=color)
-    for _ in range(16):
-        x, y = rng.uniform(.4, 1) * w, rng.uniform(0, 1) * h
-        if math.hypot(x - cx, y - cy) < radius * 2.3 or (x - px_) ** 2 + (y - py_) ** 2 < pr * pr:
+    for _ in range(14):
+        x, y = rng.uniform(0, w), rng.uniform(0, h * .8)
+        if math.hypot(x - cx, (y - cy) * 1.6) < min(w, h) * .45:
             continue
-        span, c = rng.uniform(8, 26) * max(w, h) / 2560, _mix((200, 230, 255), (255, 220, 200), rng.random())
+        span = rng.uniform(8, 24) * max(w, h) / 2560
+        c = _mix((200, 230, 255), (255, 214, 240), rng.random())
         for s in range(1, int(span)):
-            col = scaled(c, (1 - s / span) ** 2)
+            col = tuple(max(0, min(255, int(k * (1 - s / span) ** 2))) for k in c)
             for ox, oy in ((s, 0), (-s, 0), (0, s), (0, -s)):
                 fd.point((x + ox, y + oy), fill=col)
-        fd.ellipse((x - 1.6, y - 1.6, x + 1.6, y + 1.6), fill=scaled(c, 1))
+        fd.ellipse((x - 1.6, y - 1.6, x + 1.6, y + 1.6), fill=tuple(int(k) for k in c))
     img = ImageChops.add(img, flare.filter(ImageFilter.GaussianBlur(1.2)))
     return _grain(img, .06, seed)
 
