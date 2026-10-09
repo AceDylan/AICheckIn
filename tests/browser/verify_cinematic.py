@@ -56,7 +56,6 @@ def scifi(b):
     page.locator('#scifiSeg [data-scifi="off"]').click()
     check('sci-fi: switch turns it off', not page.evaluate("document.documentElement.classList.contains('hub-scifi')")
           and page.locator('.hub-stars').evaluate('el => getComputedStyle(el).display') == 'none'
-          and page.locator('.hub-hud').evaluate('el => getComputedStyle(el).display') == 'none'
           and page.locator('.hub-reactor').evaluate('el => getComputedStyle(el).display') == 'none'
           and 'bh_scifi=off' in page.evaluate('document.cookie'))
     page.locator('#scifiSeg [data-scifi="on"]').click()
@@ -144,5 +143,35 @@ def card_editor(b):
     ctx.close()
 
 
+
+def omni_and_pages(b):
+    """侧栏搜索按钮（⌘K 面板）和首页搜索同一套；切分组页有转场；不再有舱窗导轨 / 扫描线。"""
+    reset()
+    ctx, page = open_page(b, 1440, 900)
+    check('no edge rail / scan line overlay', page.locator('.hub-hud').count() == 0)
+    page.evaluate("""() => { window.__vt = 0; const o = document.startViewTransition && document.startViewTransition.bind(document);
+      if (o) document.startViewTransition = (u) => { window.__vt++; return o(u); }; }""")
+    page.evaluate("() => openLibPage('monitor')"); page.wait_for_timeout(700)
+    page.evaluate("() => openLibPage('@home')"); page.wait_for_timeout(700)
+    check('switching library pages runs a page transition', page.evaluate('() => window.__vt') >= 2, page.evaluate('() => [window.__vt, LIB.page, currentViewName()]'))
+    check('library page state is still correct after the transition', page.evaluate('() => LIB.page') == '@home'
+          and page.locator('#homePage').is_visible())
+    page.locator('#omniOpen').click(); page.wait_for_selector('#omniModal.show')
+    page.locator('#omniInput').fill('GitHub'); page.wait_for_timeout(250)
+    check('palette lists bookmarks first, then web search', page.locator('#omniList .omni-row').first.get_attribute('data-omni') == '0'
+          and page.locator('#omniList .omni-action.is-web').count() == 1)
+    before = page.locator('#omniEngineName').text_content()
+    page.keyboard.press('Tab'); page.wait_for_timeout(100)
+    check('Tab in the palette switches the search engine', page.locator('#omniEngineName').text_content() != before
+          and page.evaluate('() => document.activeElement.id') == 'omniInput')
+    page.locator('#omniInput').fill('example.com/path'); page.wait_for_timeout(200)
+    check('typing a URL preselects "open"', page.locator('#omniList .omni-row.is-active').get_attribute('class').find('is-url') >= 0)
+    page.locator('#omniInput').fill('#'); page.wait_for_timeout(200)
+    check('tag-prefix filter offers no web / AI rows', page.locator('#omniList .omni-action').count() == 0)
+    page.keyboard.press('Escape')
+    check('palette closes', not page.locator('#omniModal').evaluate("el => el.classList.contains('show')"))
+    ctx.close()
+
+
 if __name__ == '__main__':
-    main((cinematic, card_editor, scifi, stellar_scene, scene_budget), os.environ.get('BH_VERIFY_RESULTS', ''))
+    main((cinematic, card_editor, scifi, stellar_scene, scene_budget, omni_and_pages), os.environ.get('BH_VERIFY_RESULTS', ''))

@@ -12,6 +12,7 @@
  * 用到哪张缓存哪张。上传的自定义壁纸在 /api/wallpaper，和其它接口一样不经过这里，
  * 由带内容哈希的地址 + HTTP 长缓存负责。
  */
+// v69：⌘K 面板（侧栏搜索按钮）和首页搜索同一套：网页搜索 / AI / 笔记 / 打开网址；切分组页有转场；去掉舱窗导轨与扫描线。
 // v68：内置壁纸地址带 ?v=<WALL_ASSET_VER>（星核重画后有设备一直拿着 HTTP 缓存里的旧图）；SW 先认壁纸再处理带查询串的请求。
 // v17：外壳新增「AI 聊天」标签页（HaloWebUI 的 iframe），响应头里多了 frame-src、frame-ancestors 回到 'none'。
 // 缓存里的旧外壳带着旧的 CSP 头，不换版本号的话，框会被旧头挡住。
@@ -44,7 +45,7 @@
 // 色差跃迁、HUD 扫描线与时钟彗星。壁纸重画了，换号让 cache-first 的旧星核失效。
 // v65：首页分组全部展开后刷新不再被同步的旧折叠列表盖回去（全部展开写 none）。
 // v66：选了星核壁纸时「AI 聊天」框给深色、「笔记」框给 neural（WebObsidian 黑金主题）。
-const CACHE_VERSION = 'bh-shell-v68';
+const CACHE_VERSION = 'bh-shell-v69';
 const SHELL = [
   '/',
   '/static/app-v3.css',

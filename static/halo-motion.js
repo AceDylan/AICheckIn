@@ -17,7 +17,9 @@
   pill.className = 'cine-nav-pill'; pill.setAttribute('aria-hidden', 'true');
   tabs?.append(pill);
   let previous = document.querySelector('.tab.active')?.dataset.view;
-  let transition = null;
+  let transition = null, updating = false;
+  // 转场的 update 回调里置 updating：期间（例如切大页面时顺带打开首页）再要转场就直接更新，不嵌套。
+  const inUpdate = (update) => () => { updating = true; try { update(); } finally { updating = false; } };
   const placePill = () => {
     const active = tabs?.querySelector('.tab.active');
     if (!active || active.hidden) { if (!pill.hidden) pill.hidden = true; return; }
@@ -39,7 +41,24 @@
     root.style.setProperty('--cine-direction', order.indexOf(name) < order.indexOf(previous) ? -1 : 1);
     transition?.skipTransition();
     root.classList.add('cine-nav-running');
-    const current = document.startViewTransition(update); transition = current;
+    const current = document.startViewTransition(inUpdate(update)); transition = current;
+    current.finished.catch(() => {}).finally(() => { if (transition === current) { transition = null; root.classList.remove('cine-nav-running'); } });
+  };
+  // 收藏库里切分组页（同一个大页面里换内容）：和切大页面同一套 View Transition（内容一跳），科幻特效开着时星场跃迁一下；
+  // direction 按侧栏里的上下顺序。在另一个转场的 update 里（切大页面时顺带打开首页）就直接更新，不嵌套；连点则跳过上一个。
+  const page = (update, changed, direction = 1) => {
+    if (!changed || updating || !enabled()) { update(); return; }
+    root.style.setProperty('--cine-direction', direction);
+    if (root.classList.contains('hub-scifi')) window.HaloMotion?.warp?.(520);
+    if (typeof document.startViewTransition !== 'function') {
+      update();
+      animate(document.querySelector('.view.active'), [{ opacity: 0, transform: `translateY(10px) scale(.985)`, filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'none' }], 320);
+      return;
+    }
+    transition?.skipTransition();   // 连点几个分组：上一个转场直接收尾，新的接着放
+    root.classList.add('cine-nav-running');
+    const current = document.startViewTransition(inUpdate(update)); transition = current;
+    current.ready.catch(() => {});   // 浏览器跳过转场（页面隐藏、又起了一个）时 ready 会 reject：不算错误
     current.finished.catch(() => {}).finally(() => { if (transition === current) { transition = null; root.classList.remove('cine-nav-running'); } });
   };
   window.addEventListener('resize', placePill, { passive: true });
@@ -137,11 +156,6 @@
   const stillScene = () => reduced.matches || Boolean(connection?.saveData);
   const sceneAllowed = () => scifiOn() && !contrast.matches;
   const wall = document.getElementById('homeWall');
-  // 舱窗：两侧一道刻度导轨 + 每 11 秒一遍扫描线。只是边框，不写字。
-  const hud = document.createElement('div');
-  hud.className = 'hub-hud'; hud.setAttribute('aria-hidden', 'true');
-  hud.innerHTML = '<i class="hub-hud__rail"></i><i class="hub-hud__rail"></i><i class="hub-hud__scan"></i>';
-  wall?.after(hud);
 
   // ===== 星核反应堆 =====
   // 以时钟为圆心：DOM 里是 .hub-reactor（刻度环 / 虚线环 / 渐变光弧 / 雷达扫描 / 轨道光点 / 三组读数，SVG + CSS，
@@ -445,5 +459,5 @@
   // 切页时星场跃迁一下（和 View Transition 同时发生）。
   const plainChange = change;
   const scifiChange = (update, name) => { if (name !== previous) hubWarp(650); plainChange(update, name); };
-  window.HaloMotion = { nav, change: scifiChange, homeEnter, cardToModal, warp: hubWarp, telemetry };
+  window.HaloMotion = { nav, change: scifiChange, page, homeEnter, cardToModal, warp: hubWarp, telemetry };
 })();

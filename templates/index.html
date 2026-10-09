@@ -663,7 +663,7 @@
       <div class="omni-head">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
         <input id="omniInput" class="omni-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="搜索网址、站点、页面或命令…（支持 #标签）" aria-label="全局搜索" aria-controls="omniList" role="combobox" aria-expanded="true">
+               placeholder="搜索收藏、网页、AI、笔记或命令…（支持 #标签）" aria-label="全局搜索" aria-controls="omniList" role="combobox" aria-expanded="true">
         <kbd class="omni-kbd">Esc</kbd>
       </div>
       <div class="omni-list" id="omniList" role="listbox" aria-label="搜索结果"></div>
@@ -671,6 +671,7 @@
         <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
         <span id="omniEnterHint"><kbd>Enter</kbd> <span id="omniEnterLabel">打开</span></span>
         <span id="omniShiftHint"><kbd>⇧</kbd>+<kbd>Enter</kbd> <span id="omniShiftLabel">跳到所在分组</span></span>
+        <span id="omniEngineHint" hidden><kbd>Tab</kbd> 换引擎 · <b id="omniEngineName">Google</b></span>
         <span class="omni-foot-meta"><span id="omniHint" class="omni-hint"></span><span id="omniCount"></span></span>
       </div>
     </div>
@@ -2722,6 +2723,7 @@
       NOTE_SEARCH.hits = [];
       NOTE_SEARCH.error = '';
       renderHomeSearch(true);
+      if (omniShown()) renderOmni();
       let data;
       try {
         const resp = await fetch(`/api/vault/search?q=${encodeURIComponent(query)}&limit=${NOTE_SEARCH_LIMIT}`,
@@ -2733,6 +2735,7 @@
       if (data && data.ok) NOTE_SEARCH.hits = (data.hits || []).slice(0, NOTE_SEARCH_LIMIT);
       else NOTE_SEARCH.error = (data && data.error) || '搜索失败';
       if ($('homeSearch').value.trim() === query) renderHomeSearch(true);
+      if (omniShown() && $('omniInput').value.trim() === query) renderOmni();
     }
 
     function renderConfigs() {
@@ -3223,10 +3226,16 @@
       });
     }
     function openLibPage(page) {
+      // 收藏库里换分组页也要有转场（halo-motion.js 的 page）：方向按侧栏里的上下顺序。
+      // 状态（LIB.page / 地址栏）同步改好，调用方紧接着读 LIB.page 不会读到旧值；只有重画放进转场里。
+      const order = ['@home', 'monitor', ...libGroups().map(g => g.id)];
+      const direction = order.indexOf(page) < order.indexOf(LIB.page) ? -1 : 1, changed = page !== LIB.page;
       LIB.page = page;
       replaceHash(libHash());
       $('bmSearch').value = '';
-      renderLibrary();
+      const motion = window.HaloMotion;
+      if (motion?.page && currentViewName() === 'bookmarks') motion.page(renderLibrary, changed, direction);
+      else renderLibrary();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     function renderLibrary() {
@@ -7771,6 +7780,8 @@
     const OMNI_LIMIT = 40;          // 最多展示多少条，避免大库时一次渲染上千个节点
     let omniResults = [];
     let omniActive = 0;
+    // 收藏以外的行（打开网址 / 网页搜索 / AI / 笔记…，同首页搜索框）：排在收藏结果后面，序号接着 omniResults 往下数。
+    let omniActions = [];
 
     function omniHaystack(parts) { return parts.filter(Boolean).join(' ').toLowerCase(); }
 
@@ -8017,28 +8028,53 @@
     // 命令是「执行」、分组是「打开分组」、签到配置是「去服务配置」；只有网址和看板站点有 ⇧+Enter 的第二个动作。
     const OMNI_ENTER_LABEL = { link: '打开', bookmark: '打开', group: '打开分组', config: '去服务配置', command: '执行' };
     const OMNI_SHIFT_LABEL = { link: '跳到所在分组', bookmark: '去站点看板' };
-    function syncOmniHints(item) {
-      $('omniEnterHint').hidden = !item;
-      $('omniEnterLabel').textContent = item ? OMNI_ENTER_LABEL[item.kind] || '打开' : '';
+    const OMNI_ACTION_LABEL = { url: '打开', add: '收藏', web: '搜索', ai: '提问', notes: '搜索笔记', note: '打开笔记' };
+    function syncOmniHints(item, action) {
+      $('omniEnterHint').hidden = !item && !action;
+      $('omniEnterLabel').textContent = item ? OMNI_ENTER_LABEL[item.kind] || '打开' : action ? OMNI_ACTION_LABEL[action.type] || '执行' : '';
       const shift = item && OMNI_SHIFT_LABEL[item.kind];
       $('omniShiftHint').hidden = !shift;
       $('omniShiftLabel').textContent = shift || '';
     }
+    // ⌘K 面板（侧栏的搜索按钮也是它）：上面是收藏 / 页面 / 命令，下面是和首页搜索框同一套的「打开网址 · 网页搜索 · AI · 笔记」。
+    function omniActionRows(text) {
+      if (!text) return [];
+      const direct = looksLikeUrl(text);
+      return (direct ? [{ type: 'url', url: direct }] : []).concat(searchExtraRows(text, omniResults));
+    }
+    function omniSelectable(i) { return i < omniResults.length || homeRowSelectable(omniActions[i - omniResults.length]); }
+    function omniActionHtml(row, i) {
+      if (row.type === 'noteState') return `<div class="omni-state">${searchActionBody(row, false)}</div>`;
+      const active = i === omniActive;
+      return `<button type="button" class="omni-row omni-action is-${escapeHtml(row.type)}${active ? ' is-active' : ''}" role="option" aria-selected="${active}" data-omni-act="${i - omniResults.length}">${searchActionBody(row, active)}</button>`;
+    }
     function renderOmni() {
-      const list = $('omniList');
-      if (!omniResults.length) {
+      const list = $('omniList'), q = $('omniInput').value.trim();
+      omniActions = omniActionRows(q);
+      const total = omniResults.length + omniActions.length;
+      if (omniActive >= total || !omniSelectable(omniActive)) {
+        omniActive = 0;
+        while (omniActive < total - 1 && !omniSelectable(omniActive)) omniActive++;
+      }
+      $('omniEngineHint').hidden = !omniActions.some(r => r.type === 'web');
+      $('omniEngineName').textContent = currentEngine().name;
+      if (!total) {
         syncOmniHints(null);
-        const q = $('omniInput').value.trim();
-        list.innerHTML = `<div class="omni-empty">${q ? '没有匹配的收藏，换个关键词试试。' : '输入关键词开始搜索，或用 #标签 按标签筛选。'}</div>`;
+        list.innerHTML = `<div class="omni-empty">${q ? '没有匹配的收藏，换个关键词试试。' : '输入关键词搜索收藏、网页、AI 与笔记，或用 #标签 按标签筛选。'}</div>`;
         $('omniHint').textContent = '';
         $('omniCount').textContent = '';
         return;
       }
-      list.innerHTML = omniResults.map(omniRowHtml).join('');
-      syncOmniHints(omniResults[omniActive]);
-      $('omniCount').textContent = `${omniResults.length}${omniResults.length >= OMNI_LIMIT ? '+' : ''} 条结果`;
+      const head = (text) => `<div class="omni-section" role="presentation">${text}</div>`;
+      const items = omniResults.map(omniRowHtml).join('');
+      const acts = omniActions.map((row, j) => omniActionHtml(row, omniResults.length + j)).join('');
+      list.innerHTML = !acts ? items
+        : omniResults.length ? head('收藏 · 页面 · 命令') + items + head('网页 · AI · 笔记') + acts
+        : head('收藏里没有匹配 · 试试网页 / AI / 笔记') + acts;
+      syncOmniHints(omniActive < omniResults.length ? omniResults[omniActive] : null, omniActions[omniActive - omniResults.length]);
+      $('omniCount').textContent = omniResults.length ? `${omniResults.length}${omniResults.length >= OMNI_LIMIT ? '+' : ''} 条结果` : '';
       // 空查询下列的是「置顶 + 最近添加」，说清楚免得被当成全部收藏。
-      $('omniHint').textContent = $('omniInput').value.trim() ? '' : '置顶与最近添加';
+      $('omniHint').textContent = q ? '' : '置顶与最近添加';
       pumpFavicons();
       const active = list.querySelector('.omni-row.is-active');
       if (active) active.scrollIntoView({ block: 'nearest' });
@@ -8046,7 +8082,8 @@
 
     function omniRefresh() {
       omniResults = omniSearch($('omniInput').value);
-      omniActive = 0;
+      // 输的是网址：默认选中「打开 xxx」（排在收藏结果之后的第一行），回车直达，和地址栏一样。
+      omniActive = looksLikeUrl($('omniInput').value) ? omniResults.length : 0;
       renderOmni();
     }
 
@@ -8054,11 +8091,14 @@
       const input = $('omniInput');
       input.value = preset || '';
       $('omniModal').classList.add('show');
+      const panel = $('omniModal').querySelector('.omni');   // 刚打开的这一下结果逐行扫出来（样式见「⌘K 面板」）
+      panel.classList.add('is-opening'); clearTimeout(openOmni.timer); openOmni.timer = setTimeout(() => panel.classList.remove('is-opening'), 500);
       omniRefresh();
       // 等弹窗显示后再聚焦，iOS Safari 对 display:none 元素的 focus 会被忽略。
       requestAnimationFrame(() => { input.focus(); input.select(); });
     }
     function closeOmni() { $('omniModal').classList.remove('show'); }
+    function omniShown() { return $('omniModal').classList.contains('show'); }
 
     // Shift+Enter：不打开网址，改为跳到它所在的分组页面，方便接着编辑 / 排序。
     function omniOpen(item, jumpToGroup) {
@@ -8085,18 +8125,30 @@
     $('omniOpen').addEventListener('click', () => openOmni());
     $('omniInput').addEventListener('input', omniRefresh);
     $('omniList').addEventListener('click', (e) => {
+      const act = e.target.closest('[data-omni-act]');
+      if (act) { runSearchRow(omniActions[Number(act.dataset.omniAct)], closeOmni); return; }
       const row = e.target.closest('[data-omni]');
       if (!row) return;
       omniOpen(omniResults[Number(row.dataset.omni)], e.shiftKey);
     });
     $('omniInput').addEventListener('keydown', (e) => {
+      const total = omniResults.length + omniActions.length;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        if (!omniResults.length) return;
-        omniActive = (omniActive + (e.key === 'ArrowDown' ? 1 : omniResults.length - 1)) % omniResults.length;
+        if (!total) return;
+        for (let n = 0; n < total; n++) {   // 跳过「正在搜索笔记…」这类纯状态行，最多绕一圈
+          omniActive = (omniActive + (e.key === 'ArrowDown' ? 1 : total - 1)) % total;
+          if (omniSelectable(omniActive)) break;
+        }
+        renderOmni();
+      } else if (e.key === 'Tab' && !e.shiftKey && omniActions.some(r => r.type === 'web')) {
+        // 和首页搜索框一样：有「网页搜索」这一行时 Tab 换搜索引擎。
+        e.preventDefault();
+        cycleEngine();
         renderOmni();
       } else if (e.key === 'Enter') {
         e.preventDefault();
+        if (omniActive >= omniResults.length) { runSearchRow(omniActions[omniActive - omniResults.length], closeOmni); return; }
         omniOpen(omniResults[omniActive], e.shiftKey);
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -8169,21 +8221,18 @@
       return STATE_LOADED && currentViewName() === 'bookmarks' && LIB.page === '@home'
         && !document.querySelector('.modal-mask.show');
     }
-    function homeSearchRows(raw) {
-      const text = String(raw || '').trim();
-      if (!text) return [];
-      const rows = [];
-      const direct = looksLikeUrl(text);
-      if (direct) rows.push({ type: 'url', url: direct });
-      for (const item of omniSearch(text).slice(0, HOME_SEARCH_LIMIT)) rows.push({ type: 'item', item });
-      // 像网址、库里又没有：顺手给个「收藏它」的入口。
-      if (direct && canEdit() && !rows.some(r => r.type === 'item' && siteOrigin(r.item.url) === siteOrigin(direct))) rows.push({ type: 'add', url: direct });
-      // #标签 是收藏库内部的筛选语法，丢给搜索引擎没有意义。
-      if (!text.startsWith('#')) rows.push({ type: 'web', query: text });
-      if (!text.startsWith('#') && chatAvailable()) rows.push({ type: 'ai', query: text });
+    // 收藏以外的那几行（收藏它 / 网页搜索 / AI 回答 / 笔记）：首页搜索框和 ⌘K 面板（侧栏的搜索按钮）共用一套。
+    // items：已经列出来的收藏结果——像网址、库里又没有时才给「收藏它」。
+    function searchExtraRows(text, items) {
+      const rows = [], direct = looksLikeUrl(text);
+      if (direct && canEdit() && !items.some(item => siteOrigin(item.url) === siteOrigin(direct))) rows.push({ type: 'add', url: direct });
+      // #标签 是收藏库内部的筛选语法，丢给搜索引擎、AI、笔记都没有意义。
+      if (text.startsWith('#')) return rows;
+      rows.push({ type: 'web', query: text });
+      if (chatAvailable()) rows.push({ type: 'ai', query: text });
       // 笔记：只有明确选中这一行才真的去搜（跨机一次约半秒）。搜完这一行换成结果，
       // 字一改结果就不再匹配，自动换回「在笔记里搜索…」。
-      if (!text.startsWith('#') && vaultAvailable()) {
+      if (vaultAvailable()) {
         if (NOTE_SEARCH.query !== text) rows.push({ type: 'notes', query: text });
         else if (NOTE_SEARCH.loading) rows.push({ type: 'noteState', text: '正在搜索笔记…' });
         else if (NOTE_SEARCH.error) rows.push({ type: 'noteState', text: NOTE_SEARCH.error });
@@ -8191,6 +8240,31 @@
         else for (const hit of NOTE_SEARCH.hits) rows.push({ type: 'note', hit });
       }
       return rows;
+    }
+    function homeSearchRows(raw) {
+      const text = String(raw || '').trim();
+      if (!text) return [];
+      const rows = [], direct = looksLikeUrl(text);
+      if (direct) rows.push({ type: 'url', url: direct });
+      const items = omniSearch(text).slice(0, HOME_SEARCH_LIMIT);
+      for (const item of items) rows.push({ type: 'item', item });
+      return rows.concat(searchExtraRows(text, items));
+    }
+    // 非收藏行的内容（图标 + 一句话 + 选中时的 ↵）：外层按钮的 class / data-* 由各自的列表决定。
+    function searchActionBody(row, active) {
+      if (row.type === 'noteState') return `${icon('note')}<span>${escapeHtml(row.text)}</span>`;
+      if (row.type === 'note') {
+        const hit = row.hit;
+        return `<span class="omni-ic">${icon('note')}</span><span class="omni-text"><span class="omni-title"><span>${escapeHtml(hit.title || hit.path)}</span></span><span class="omni-sub">${escapeHtml(hit.snippet || hit.path)}</span></span><span class="home-search-tag">笔记</span>`;
+      }
+      const glyph = row.type === 'web' ? 'search' : row.type === 'add' ? 'plus'
+        : row.type === 'ai' ? 'chat' : row.type === 'notes' ? 'note' : 'globe';
+      const text = row.type === 'web' ? `用 <b>${escapeHtml(currentEngine().name)}</b> 搜索「${escapeHtml(row.query)}」`
+        : row.type === 'ai' ? `用 <b>AI</b> 回答「${escapeHtml(row.query)}」`
+        : row.type === 'notes' ? `在<b>笔记</b>里搜索「${escapeHtml(row.query)}」`
+        : row.type === 'add' ? `收藏 <b>${escapeHtml(siteHost(row.url))}</b> 到收藏库…`
+        : `打开 <b>${escapeHtml(row.url)}</b>`;
+      return `<span class="omni-ic">${icon(glyph)}</span><span class="omni-text"><span class="omni-title"><span>${text}</span></span></span>${active ? '<kbd class="omni-kbd">↵</kbd>' : ''}`;
     }
     function homeSearchRowHtml(row, i) {
       const active = i === HOME_SEARCH.active;
@@ -8202,21 +8276,9 @@
           : siteAvatarHtml(item.title, item.url, 'link-avatar omni-avatar', item.emoji, item.customIcon);
         return `<button type="button" ${attrs}>${avatar}<span class="omni-text"><span class="omni-title"><span>${escapeHtml(item.title)}</span></span><span class="omni-sub">${escapeHtml(item.host || item.sub)}</span></span><span class="home-search-tag">${escapeHtml(item.kind === 'link' ? item.sub : OMNI_KIND_LABEL[item.kind])}</span></button>`;
       }
-      if (row.type === 'noteState') {
-        return `<div class="home-search-state">${icon('note')}<span>${escapeHtml(row.text)}</span></div>`;
-      }
-      if (row.type === 'note') {
-        const hit = row.hit;
-        return `<button type="button" class="home-search-row is-note${active ? ' is-active' : ''}" role="option" aria-selected="${active}" data-home-row="${i}"><span class="omni-ic">${icon('note')}</span><span class="omni-text"><span class="omni-title"><span>${escapeHtml(hit.title || hit.path)}</span></span><span class="omni-sub">${escapeHtml(hit.snippet || hit.path)}</span></span><span class="home-search-tag">笔记</span></button>`;
-      }
-      const glyph = row.type === 'web' ? 'search' : row.type === 'add' ? 'plus'
-        : row.type === 'ai' ? 'chat' : row.type === 'notes' ? 'note' : 'globe';
-      const text = row.type === 'web' ? `用 <b>${escapeHtml(currentEngine().name)}</b> 搜索「${escapeHtml(row.query)}」`
-        : row.type === 'ai' ? `用 <b>AI</b> 回答「${escapeHtml(row.query)}」`
-        : row.type === 'notes' ? `在<b>笔记</b>里搜索「${escapeHtml(row.query)}」`
-        : row.type === 'add' ? `收藏 <b>${escapeHtml(siteHost(row.url))}</b> 到收藏库…`
-        : `打开 <b>${escapeHtml(row.url)}</b>`;
-      return `<button type="button" ${attrs}><span class="omni-ic">${icon(glyph)}</span><span class="omni-text"><span class="omni-title"><span>${text}</span></span></span>${active ? '<kbd class="omni-kbd">↵</kbd>' : ''}</button>`;
+      if (row.type === 'noteState') return `<div class="home-search-state">${searchActionBody(row, false)}</div>`;
+      if (row.type === 'note') return `<button type="button" class="home-search-row is-note${active ? ' is-active' : ''}" role="option" aria-selected="${active}" data-home-row="${i}">${searchActionBody(row, active)}</button>`;
+      return `<button type="button" ${attrs}>${searchActionBody(row, active)}</button>`;
     }
     // 「正在搜索笔记…」这类行只是状态，不该被方向键停住，也按不动。
     function homeRowSelectable(row) { return !!row && row.type !== 'noteState'; }
@@ -8250,18 +8312,19 @@
       NOTE_SEARCH.query = '';   // 下一次搜「同样的字」还要重新去问一遍笔记
       renderHomeSearch();
     }
-    function runHomeSearchRow(row) {
-      if (!row) return;
-      if (row.type === 'noteState') return;
-      if (row.type === 'item') { clearHomeSearch(); omniOpen(row.item, false); return; }
-      if (row.type === 'ai') { const q = row.query; clearHomeSearch(); openAsk(q, 'search', '用 AI 回答'); return; }
-      if (row.type === 'notes') { runNoteSearch(row.query); return; }   // 不清空搜索框：结果要挂在这几个字下面
+    function runHomeSearchRow(row) { runSearchRow(row, clearHomeSearch); }
+    // leave：执行前收起来源（首页清空搜索框；⌘K 面板关掉自己）。「在笔记里搜索」不收：结果要挂在这几个字下面。
+    function runSearchRow(row, leave) {
+      if (!row || row.type === 'noteState') return;
+      if (row.type === 'item') { leave(); omniOpen(row.item, false); return; }
+      if (row.type === 'ai') { const q = row.query; leave(); openAsk(q, 'search', '用 AI 回答'); return; }
+      if (row.type === 'notes') { runNoteSearch(row.query); return; }
       // 搜到的笔记在「笔记」标签页里打开：不离开本站，也不用再过一遍笔记站自己的密码框。
-      if (row.type === 'note') { clearHomeSearch(); if (!openVaultNote(row.hit.path)) openUrl(row.hit.url); return; }
+      if (row.type === 'note') { leave(); if (!openVaultNote(row.hit.path)) openUrl(row.hit.url); return; }
       if (row.type === 'add') {
         const target = (libGroups()[0] || {}).id;
         if (!target) { toast('请先新建一个分组', 'err'); return; }
-        clearHomeSearch();
+        leave();
         openLinkModal(target, null, 'single');
         $('lk_url').value = row.url;
         $('lk_home').checked = true;
@@ -8270,7 +8333,7 @@
         return;
       }
       const url = row.type === 'web' ? currentEngine().url + encodeURIComponent(row.query) : row.url;
-      clearHomeSearch();
+      leave();
       openUrl(url);
     }
     $('homeSearch').addEventListener('input', () => { if (engineMenuOpen()) setEngineMenu(false); renderHomeSearch(); });

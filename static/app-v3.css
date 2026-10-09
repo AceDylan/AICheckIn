@@ -1147,6 +1147,23 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 .omni-foot-meta { display: flex; gap: 8px; margin-left: auto; }
 .omni-hint { color: var(--text-3); }
 .omni-title .check-badge { margin-left: 2px; }
+/* ⌘K 面板里和首页搜索框同一套的「网页 · AI · 笔记」行：分节小标题 + 中性图标块；AI 那一行同样套光环。 */
+.omni-section { padding: 10px 12px 4px; color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+.omni-section:first-child { padding-top: 4px; }
+.omni-action .omni-ic { color: var(--text-2); background: var(--surface-2); }
+.omni-action b { color: var(--text); font-weight: 600; }
+.omni-action .omni-title { color: var(--text-2); }
+.omni-action.is-ai .omni-ic { position: relative; isolation: isolate; color: var(--text); }
+.omni-action.is-ai .omni-ic::before {
+  content: ""; position: absolute; inset: -2.5px; z-index: -1; pointer-events: none;
+  border-radius: 13.5px; padding: 1.5px; background: conic-gradient(from var(--halo-angle), var(--halo-stops));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.omni-action.is-ai.is-active .omni-ic::before { animation: halo-spin 3.2s linear infinite; }
+.omni-state { display: flex; align-items: center; gap: 10px; padding: 9px 12px; color: var(--text-3); font-size: 13px; }
+.omni-state .ic { width: 16px; height: 16px; }
+#omniEngineHint b { color: var(--text-2); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .omni-action.is-ai.is-active .omni-ic::before { animation: none; } }
 /* 只继承字体族：`font: inherit` 会连字号、字重一起重置，把 .tag 的 10.5px 冲成卡片正文的 14px。 */
 .tag-btn { border: 0; font-family: inherit; cursor: pointer; }
 .tag-btn:hover { filter: brightness(1.18); }
@@ -2728,18 +2745,8 @@ html.wall-on .hub-stars { opacity: .55; }
 /* 开着壁纸时壁纸就是背景：不再叠全息网格，免得和星云、星场、星核挤在一起。 */
 html.hub-scifi.wall-on .main::before { display: none; }
 
-/* 舱窗边缘与反应堆只作装饰，不占版面、不截获输入。 */
-.hub-hud, .hub-reactor { display: none; pointer-events: none; }
-html.hub-scifi .hub-hud { display: block; position: fixed; inset: 20px 18px; z-index: -1; color: var(--sf-cyan); opacity: .45; }
-.hub-hud__rail { position: absolute; top: 90px; bottom: 90px; width: 3px; background: repeating-linear-gradient(to bottom, var(--sf-line) 0 2px, transparent 2px 10px); }
-.hub-hud__rail:first-child { right: 0; }
-.hub-hud__rail:nth-child(2) { left: 0; }
-.hub-hud__rail::after { content: ""; position: absolute; top: 0; width: 3px; height: 54px; background: linear-gradient(transparent, var(--sf-cyan), transparent); animation: sf-rail-travel 12s ease-in-out infinite alternate; }
-.hub-hud__rail:nth-child(2)::after { animation-delay: -6s; }
-@keyframes sf-rail-travel { to { top: calc(100% - 54px); } }
-/* 扫描线：每 11 秒从上往下扫一遍舱窗 */
-.hub-hud__scan { position: absolute; left: 0; right: 0; top: 0; height: 1px; opacity: 0; background: linear-gradient(90deg, transparent, var(--sf-cyan) 18% 82%, transparent); box-shadow: 0 0 14px 1px var(--sf-glow); animation: sf-hud-scan 11s linear infinite; }
-@keyframes sf-hud-scan { 0% { transform: translateY(0); opacity: 0; } 6% { opacity: .55; } 75% { opacity: .3; } 100% { transform: translateY(calc(100vh - 40px)); opacity: 0; } }
+/* 反应堆只作装饰，不占版面、不截获输入。（原来的舱窗导轨与扫描线已去掉：一条竖线 / 一道横线扫过全屏，太乱） */
+.hub-reactor { display: none; pointer-events: none; }
 
 /* 星核反应堆：以时钟为圆心（同 HaloWebUI 首页那一圈）。刻度环慢转、虚线环反转、三段渐变光弧快转、雷达扫描、
    两颗轨道光点；三组读数是真实数据（halo-motion.js 的 telemetry）。星核壁纸下 canvas 在同一圆心画星核本体。 */
@@ -2886,6 +2893,56 @@ html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(n + 7) { ani
 /* 只动不透明度、模糊和裁切（从上往下扫出来），不动 transform：版面量出来的位置、尺寸在动画中途也是真的。 */
 @keyframes sf-rise { from { opacity: 0; filter: blur(8px) brightness(1.8); clip-path: inset(0 0 100% 0); } 60% { clip-path: inset(0); } to { opacity: 1; filter: none; clip-path: inset(0); } }
 
+/* ⌘K 面板（侧栏的搜索按钮）：HaloWebUI 的全息面板——深空玻璃、顶上一道青→紫→品红的流光、输入行下一条渐变分隔线；
+   选中行左侧一道冷光竖条 + 由左往右淡出的青紫底；分节标题是带青色小方块的等宽小字（同 HaloWebUI 分节）；打开时从模糊里浮出。 */
+html.hub-scifi .omni-mask { background: radial-gradient(60% 50% at 50% 20%, rgb(94 231 255 / .08), transparent 70%), rgb(2 3 10 / .62); }
+html.hub-scifi .omni {
+  position: relative; width: min(100%, 700px); border-color: rgb(94 231 255 / .28); border-radius: 20px;
+  background: radial-gradient(120% 70% at 0% 0%, rgb(94 231 255 / .09), transparent 55%), radial-gradient(90% 60% at 100% 100%, rgb(167 139 250 / .1), transparent 60%), rgb(7 10 22 / .9);
+  box-shadow: 0 0 0 1px rgb(94 231 255 / .08), 0 0 70px -18px var(--sf-glow), 0 40px 90px -30px rgb(0 0 0 / .8);
+  color: #e6f6ff; animation: sf-omni-in .42s cubic-bezier(.16, 1, .3, 1) both;
+}
+html.hub-scifi[data-theme="light"]:not(.wall-on) .omni { background: radial-gradient(120% 70% at 0% 0%, rgb(8 145 178 / .08), transparent 55%), rgb(250 252 255 / .95); color: var(--text); }
+html.hub-scifi .omni::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--sf-cyan) 20%, var(--sf-violet) 55%, var(--sf-magenta) 80%, transparent);
+  background-size: 200% 100%; animation: sf-omni-flow 4s linear infinite; box-shadow: 0 0 18px var(--sf-glow);
+}
+@keyframes sf-omni-flow { to { background-position: -200% 0; } }
+@keyframes sf-omni-in { from { opacity: 0; transform: translateY(-14px) scale(.97); filter: blur(8px); } }
+html.hub-scifi .omni-head { padding: 18px 20px; border-bottom: 0; background-image: linear-gradient(90deg, rgb(94 231 255 / .45), rgb(167 139 250 / .3) 50%, transparent); background-size: 100% 1px; background-position: bottom; background-repeat: no-repeat; }
+html.hub-scifi .omni-head .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 6px var(--sf-glow)); }
+html.hub-scifi .omni-input { font-size: 17px; caret-color: var(--sf-cyan); }
+html.hub-scifi .omni-list { padding: 8px 10px 10px; }
+html.hub-scifi .omni-section {
+  display: flex; align-items: center; gap: 8px; padding: 12px 12px 6px;
+  font: 600 10px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .2em; color: var(--sf-cyan); text-transform: uppercase;
+}
+html.hub-scifi .omni-section::before { content: ""; width: 6px; height: 6px; background: var(--sf-cyan); box-shadow: 0 0 8px var(--sf-cyan); }
+html.hub-scifi .omni-section::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, var(--sf-line), transparent); }
+html.hub-scifi .omni-row { position: relative; border-radius: 12px; }
+html.hub-scifi .omni-row:hover { background: rgb(94 231 255 / .06); }
+html.hub-scifi .omni-row.is-active {
+  background: linear-gradient(90deg, rgb(94 231 255 / .14), rgb(167 139 250 / .08) 55%, transparent);
+  box-shadow: inset 0 0 0 1px rgb(94 231 255 / .22), 0 0 24px -10px var(--sf-glow);
+}
+html.hub-scifi .omni-row.is-active::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: linear-gradient(var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 10px var(--sf-cyan); }
+html.hub-scifi .omni-action .omni-ic { background: rgb(94 231 255 / .08); color: var(--sf-cyan); box-shadow: inset 0 0 0 1px var(--sf-line); }
+html.hub-scifi .omni-action.is-ai .omni-ic { color: #f0e9ff; }
+html.hub-scifi .omni-action b { color: var(--sf-cyan); }
+html.hub-scifi .omni-action.is-ai b { background: linear-gradient(90deg, var(--sf-cyan), var(--sf-violet), var(--sf-magenta)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html.hub-scifi .omni-kind { background: rgb(94 231 255 / .08); color: var(--sf-cyan); box-shadow: inset 0 0 0 1px var(--sf-line); }
+html.hub-scifi .omni-foot { background: rgb(94 231 255 / .03); border-top-color: var(--sf-line); }
+html.hub-scifi .omni-foot kbd { border-color: var(--sf-line); background: rgb(94 231 255 / .06); color: var(--sf-cyan); }
+html.hub-scifi #omniEngineHint b { color: var(--sf-cyan); }
+/* 刚打开时结果逐行扫出来（只动不透明度和裁切，不动版面）；之后打字 / 方向键重画不再播 */
+html.hub-scifi .omni.is-opening .omni-list > * { animation: sf-omni-row .32s cubic-bezier(.16, 1, .3, 1) both; }
+html.hub-scifi .omni.is-opening .omni-list > :nth-child(2) { animation-delay: 20ms; }
+html.hub-scifi .omni.is-opening .omni-list > :nth-child(3) { animation-delay: 40ms; }
+html.hub-scifi .omni.is-opening .omni-list > :nth-child(4) { animation-delay: 60ms; }
+html.hub-scifi .omni.is-opening .omni-list > :nth-child(n + 5) { animation-delay: 80ms; }
+@keyframes sf-omni-row { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0); } }
+
 /* 导航：选中胶囊带冷光 */
 html.hub-scifi .cine-nav-pill { box-shadow: inset 0 0 0 1px var(--sf-line), 0 0 18px -4px var(--sf-glow); background: linear-gradient(135deg, rgb(94 231 255 / .14), rgb(167 139 250 / .12)); }
 html.hub-scifi .tabs > .tab.active { color: var(--sf-cyan); }
@@ -2946,22 +3003,19 @@ html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: sf-j
 
 @media (max-width: 760px), (max-height: 720px) {
   html.hub-scifi .hub-reactor { display: none; }
-  html.hub-scifi .hub-hud { inset: 10px 7px 86px; opacity: .25; }
-  .hub-hud__scan { display: none; }
-  .hub-hud__rail::after { animation: none; }
 }
 @media (max-width: 1180px) { .hub-reactor__hud { display: none; } }
-html.scene-still .hub-hud__rail::after, html.scene-still .home-search-bar::after, html.scene-still .hub-hud__scan,
+html.scene-still .home-search-bar::after,
 html.scene-still :is(.hub-reactor, .hub-reactor__ticks, .hub-reactor__dash, .hub-reactor__arcs, .hub-reactor__orbit, .hub-reactor__sweep, .hub-reactor__hud) { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   html.hub-scifi .hero-clock, html.hub-scifi .home-search-bar::after { animation: none !important; }
   html.hub-scifi.cine-nav-running::view-transition-old(hub-page), html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: none !important; }
-  .hub-hud__rail::after, .hub-hud__scan, .hub-reactor, .hub-reactor *, .hub-reactor__hud.is-warn b , html.sf-entering :is(.home-section, .deck-card, .home-notice) { animation: none !important; }
+  html.hub-scifi .omni, html.hub-scifi .omni::before, html.hub-scifi .omni-list > *, .hub-reactor, .hub-reactor *, .hub-reactor__hud.is-warn b , html.sf-entering :is(.home-section, .deck-card, .home-notice) { animation: none !important; }
   .hub-boot { display: none; }
 }
 @media (prefers-contrast: more), (forced-colors: active) {
-  html.hub-scifi :is(.hub-stars, .hub-hud, .hub-reactor), .hub-boot { display: none; }
+  html.hub-scifi :is(.hub-stars, .hub-reactor), .hub-boot { display: none; }
   html.hub-scifi .hero-clock { background: none; color: var(--text); filter: none; animation: none; }
   html.hub-scifi .main::before, html.hub-scifi .home-search-bar::after { display: none; }
 }

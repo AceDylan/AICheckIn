@@ -249,5 +249,32 @@ class OmniWiringTest(unittest.TestCase):
         self.assertIn('class="modal-mask omni-mask" id="omniModal"', self.html)
 
 
+
+class OmniSharesHomeSearchTest(unittest.TestCase):
+    """侧栏搜索按钮（⌘K 面板）和首页搜索框用同一套「网页 · AI · 笔记」行，不是两份各写各的。"""
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "index.html"), encoding="utf-8") as fh:
+            cls.html = fh.read()
+
+    def test_both_surfaces_build_extra_rows_from_one_function(self):
+        self.assertEqual(self.html.count("function searchExtraRows("), 1)
+        self.assertIn("rows.concat(searchExtraRows(text, items))", self.html)          # 首页
+        self.assertIn("searchExtraRows(text, omniResults)", self.html)                 # ⌘K 面板
+
+    def test_both_surfaces_run_rows_through_one_function(self):
+        self.assertIn("function runHomeSearchRow(row) { runSearchRow(row, clearHomeSearch); }", self.html)
+        self.assertGreaterEqual(self.html.count("runSearchRow(omniActions["), 2)        # 点击 + 回车
+
+    def test_note_results_refresh_the_palette_too(self):
+        body = self.html[self.html.index("async function runNoteSearch("):self.html.index("function renderConfigs()")]
+        self.assertIn("if (omniShown()", body)
+
+    def test_library_pages_switch_with_a_transition(self):
+        body = self.html[self.html.index("function openLibPage(page) {"):self.html.index("function renderLibrary() {")]
+        self.assertIn("motion.page(renderLibrary, changed, direction)", body)
+        self.assertLess(body.index("LIB.page = page;"), body.index("motion.page("))      # 状态同步改好，只有重画进转场
+
+
 if __name__ == "__main__":
     unittest.main()
