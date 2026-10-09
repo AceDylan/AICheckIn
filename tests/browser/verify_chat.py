@@ -205,7 +205,8 @@ def admin_desktop(b, halo):
     page.wait_for_timeout(200)
     check("切回来：还是同一个框", page.evaluate("() => (document.querySelector('#chatStage iframe') || {}).__hubKeep") == "kept")
 
-    # 框上方不再有工具条：框的上沿就是聊天页的上沿
+    # 框上方不再有工具条：框的上沿就是聊天页的上沿（等切页的入场动画放完再量，动画中途量到的是缩放过的位置）
+    page.wait_for_timeout(600)
     gap = page.evaluate("() => { const v = document.getElementById('view-chat').getBoundingClientRect(); const f = document.querySelector('#chatStage iframe').getBoundingClientRect(); return f.top - v.top; }")
     check("聊天页没有工具条，框从页面最上沿开始", page.query_selector("#view-chat .chat-bar") is None and abs(gap) < 1, gap)
 

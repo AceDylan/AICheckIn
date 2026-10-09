@@ -2983,6 +2983,157 @@ html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: sf-j
 @keyframes sf-type { to { clip-path: inset(0 0 0 0); } }
 .hub-boot__skip { position: absolute; bottom: 1.5rem; font-size: 10px; letter-spacing: .3em; color: rgb(191 246 255 / .4); }
 
+/* ---------- 科幻层 II：首屏以外也是同一套 HUD（外壳 v71） ----------
+   首屏的星核 / 反应堆之外，侧栏、分组标题、图标、卡片、页头、设置面板、按钮原来还是素版「纸与墨」，一往下滚就像换了个站。
+   这里把它们接上 HaloWebUI 的科幻语言：冷光细边、渐变高光、霓虹选中、鼠标聚光、透视网格地面。
+   只动外壳（边框、阴影、背景层、伪元素），不动版面尺寸和位置；图标头像本身不加滤镜（见「图标底板」）；不用毛玻璃。 */
+:root { --sf-tint: rgb(8 145 178 / .07); --sf-tint-2: rgb(124 58 237 / .06); --sf-edge: rgb(8 145 178 / .45); --sf-spot: rgb(8 145 178 / .12); }
+:root[data-theme="dark"], html.wall-on { --sf-tint: rgb(94 231 255 / .08); --sf-tint-2: rgb(167 139 250 / .08); --sf-edge: rgb(94 231 255 / .55); --sf-spot: rgb(94 231 255 / .2); }
+
+/* 侧栏：一圈冷光细边 + 外晕；品牌标是个小反应堆（暗核 + 转动的霓虹环）；选中项左侧一道光条、图标发光 */
+@media (width > 760px) {
+  html.hub-scifi .sidebar { box-shadow: 0 0 0 1px var(--sf-line), 0 0 46px -18px var(--sf-glow), 0 24px 60px -24px rgb(0 0 0 / .6); }
+  html.hub-scifi.wall-on .sidebar { border-color: rgb(94 231 255 / .2); }
+  html.hub-scifi .cine-nav-pill::before {
+    content: ""; position: absolute; left: -1px; top: 22%; bottom: 22%; width: 2px; border-radius: 2px;
+    background: linear-gradient(var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 10px var(--sf-cyan), 0 0 2px var(--sf-cyan);
+  }
+}
+/* 手机底栏：一圈冷光细边；选中项那颗胶囊换成青→紫的霓虹底、深色图标（青色图标压在白胶囊上看不清） */
+@media (width <= 760px) {
+  html.hub-scifi .sidebar { border-color: var(--sf-line); box-shadow: 0 0 0 1px var(--sf-line), 0 0 34px -12px var(--sf-glow), 0 16px 40px -14px rgb(0 0 0 / .5); }
+  html.hub-scifi .tab.active svg.ic { background: linear-gradient(135deg, #9ff0ff, #c4b5fd); color: #05070f; filter: none; box-shadow: 0 0 16px -3px var(--sf-glow); }
+  html.hub-scifi[data-theme="light"]:not(.wall-on) .tab.active svg.ic { background: linear-gradient(135deg, #0e7490, #6d28d9); color: #fff; }
+}
+html.hub-scifi .brand-mark { position: relative; isolation: isolate; background: radial-gradient(circle at 50% 40%, #16213a, #05070f 70%); color: var(--sf-cyan); box-shadow: 0 0 18px -4px var(--sf-glow), inset 0 0 0 1px rgb(94 231 255 / .25); }
+html.hub-scifi .brand-mark::before {
+  content: ""; position: absolute; inset: -2px; z-index: -1; border-radius: inherit; padding: 1.5px;
+  background: conic-gradient(from var(--sf-angle), transparent 0 30%, var(--sf-cyan) 55%, var(--sf-violet) 72%, var(--sf-magenta) 86%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: sf-spin 6s linear infinite;
+}
+html.hub-scifi .brand-mark .ic { filter: drop-shadow(0 0 5px var(--sf-glow)); }
+@media (width > 760px) { html.hub-scifi .tab.active svg.ic { color: var(--sf-cyan); filter: drop-shadow(0 0 6px var(--sf-glow)); } }
+html.hub-scifi :is(.tab, .omni-trigger, .subnav-item):hover { background: var(--sf-tint); }
+html.hub-scifi .tab:hover svg.ic, html.hub-scifi .omni-trigger:hover .ic { color: var(--sf-cyan); }
+html.hub-scifi .subnav-item.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent), 0 0 16px -3px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent); }
+html.hub-scifi .subnav-item.active .sub-ic { box-shadow: 0 0 10px -1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 80%, transparent); }
+
+/* 分组标题：图标点亮、数量做成等宽的 HUD 读数框、右边那条渐变线上一颗光点来回跑 */
+html.hub-scifi .home-section .section-label .btn .ic, html.hub-scifi .home-section .section-name .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-glow)); }
+html.hub-scifi .home-section .section-label .count {
+  padding: 1px 6px; border-radius: 4px; color: var(--sf-cyan); background: var(--sf-tint); box-shadow: inset 0 0 0 1px var(--sf-line);
+  font: 600 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em;
+}
+html.hub-scifi .home-list .section-label::after {
+  background: linear-gradient(90deg, transparent 0, rgb(224 251 255 / .95) 3%, transparent 6%) no-repeat, linear-gradient(90deg, var(--sf-edge), rgb(167 139 250 / .25) 40%, transparent 85%);
+  background-size: 34% 100%, 100% 100%; animation: sf-line-run 5.5s cubic-bezier(.6, 0, .4, 1) infinite;
+}
+@keyframes sf-line-run { from { background-position: -40% 0, 0 0; } 70%, to { background-position: 140% 0, 0 0; } }
+
+/* 首页图标：脚下一团按网址色调的全息光座，悬停时亮起；头像上扫过一道高光（头像本身不加滤镜） */
+html.hub-scifi .tile-link { position: relative; isolation: isolate; }
+html.hub-scifi .tile-link::after {
+  content: ""; position: absolute; left: 50%; top: 56px; width: 88px; height: 24px; z-index: -1; pointer-events: none; transform: translateX(-50%);
+  background: radial-gradient(closest-side, hsl(var(--hue, 190) 95% 64% / .55), transparent); opacity: .55; transition: opacity .25s ease;
+}
+html.hub-scifi .home-tile:hover .tile-link::after, html.hub-scifi .tile-link:focus-visible::after { opacity: 1; }
+@media (hover: none), (width <= 760px) { html.hub-scifi .tile-link::after { display: none; } }   /* 手机：图标和名字挨得近，光座会垫在名字底下 */
+html.hub-scifi .tile-avatar::after {
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / .38) 46%, transparent 60%) no-repeat; background-size: 250% 100%; background-position: 140% 0;
+}
+html.hub-scifi .home-tile:hover .tile-avatar::after { animation: sf-sheen .9s cubic-bezier(.2, .6, .2, 1) both; }
+@keyframes sf-sheen { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+html.hub-scifi .home-tile:hover .tile-title { color: var(--sf-cyan); }
+
+/* 卡片 / 面板 / 页头：全息面板（顶上一道青色高光、冷光细边），鼠标在上面移动时有一团跟着走的冷光（--mx / --my 由 halo-motion.js 写） */
+html.hub-scifi :is(.panel, .bookmark-card, .deck-card, .home-widget) { --sf-panel: linear-gradient(180deg, var(--sf-tint), transparent 38%), radial-gradient(120% 80% at 100% 0%, var(--sf-tint-2), transparent 60%); }
+html.hub-scifi .panel {
+  border-color: var(--sf-line); background-image: var(--sf-panel);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .10), 0 0 0 1px rgb(94 231 255 / .03), 0 14px 36px -22px rgb(0 0 0 / .65);
+  transition: box-shadow .25s ease, border-color .25s ease;
+}
+html.hub-scifi .panel:hover { border-color: rgb(94 231 255 / .32); box-shadow: inset 0 1px 0 rgb(190 246 255 / .16), 0 0 30px -12px var(--sf-glow), 0 14px 36px -22px rgb(0 0 0 / .65); }
+@media (hover: hover) and (pointer: fine) {
+  html.hub-scifi :is(.panel, .bookmark-card, .deck-card, .home-widget):hover { background-image: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0), var(--sf-spot), transparent 70%), var(--sf-panel); }
+}
+html.hub-scifi .deck-title .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-glow)); }
+html.hub-scifi .panel-title { position: relative; padding-left: 14px; }
+html.hub-scifi .panel-title::before {
+  content: ""; position: absolute; left: 0; top: 13px; width: 6px; height: 6px; transform: rotate(45deg);   /* 对齐第一行文字：标题下面还挂着按钮时也不跑到中间 */
+  background: var(--sf-cyan); box-shadow: 0 0 8px var(--sf-cyan);
+}
+/* 页头（签到中心 / 设置 / 分组页）：小标签是带光点的等宽小字，标题是全息渐变字，进页时一道光从左扫到右 */
+html.hub-scifi .view-header { position: relative; border-bottom-color: var(--sf-line); }
+html.hub-scifi.wall-on .view-header { border-color: var(--sf-line); background-image: linear-gradient(180deg, var(--sf-tint), transparent 60%), radial-gradient(70% 120% at 100% 0%, var(--sf-tint-2), transparent 70%); box-shadow: inset 0 1px 0 rgb(190 246 255 / .12), 0 0 40px -18px var(--sf-glow); }
+html.hub-scifi .view-header::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(100deg, transparent 35%, rgb(94 231 255 / .16) 47%, rgb(224 251 255 / .28) 50%, transparent 58%) no-repeat; background-size: 260% 100%; background-position: 160% 0;
+}
+html.hub-scifi .view.active .view-header::after { animation: sf-header-scan 1.3s .12s cubic-bezier(.4, 0, .2, 1) both; }
+@keyframes sf-header-scan { from { background-position: 160% 0; } to { background-position: -60% 0; } }
+html.hub-scifi .view-header:not(.has-tone) .eyebrow {
+  gap: 8px; color: var(--sf-cyan); font: 600 10.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .24em; text-shadow: 0 0 10px var(--sf-glow);
+}
+html.hub-scifi .view-header:not(.has-tone) .eyebrow::before { content: ""; width: 6px; height: 6px; background: var(--sf-cyan); box-shadow: 0 0 8px var(--sf-cyan); }
+html.hub-scifi .view-header h1 {
+  width: fit-content; background: linear-gradient(100deg, #0e7490 0%, #1d4ed8 45%, #7c3aed 80%, #be185d 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+html.hub-scifi[data-theme="dark"] .view-header h1, html.hub-scifi.wall-on .view-header h1 {
+  background-image: linear-gradient(100deg, #f2fdff 0%, #9ff0ff 40%, #c4b5fd 75%, #f9a8d4 100%); filter: drop-shadow(0 0 16px rgb(94 231 255 / .28));
+}
+
+/* 按钮与控件：悬停时边框点亮 + 光晕（同 HaloWebUI）；选中的分段、打开的开关、聚焦的输入框都是青色冷光 */
+html.hub-scifi .btn:not(:disabled):hover { box-shadow: 0 0 0 1px var(--sf-edge), 0 0 22px -6px var(--sf-glow); }
+html.hub-scifi .btn.ghost:not(:disabled):hover { border-color: var(--sf-edge); color: var(--sf-cyan); background: var(--sf-tint); }
+html.hub-scifi .segmented { border-color: var(--sf-line); }
+html.hub-scifi .segmented button.active { color: var(--sf-cyan); background: linear-gradient(135deg, rgb(94 231 255 / .14), rgb(167 139 250 / .12)); box-shadow: inset 0 0 0 1px var(--sf-line), 0 0 16px -6px var(--sf-glow); }
+html.hub-scifi .switch input:checked + .slider { background: linear-gradient(90deg, var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 14px -2px var(--sf-glow); }
+html.hub-scifi .input:focus { border-color: var(--sf-cyan); box-shadow: 0 0 0 3px rgb(94 231 255 / .14), 0 0 22px -6px var(--sf-glow); }
+html.hub-scifi .chip.active { background: linear-gradient(135deg, #e0fbff, #c4b5fd); color: #05070f; box-shadow: 0 0 18px -4px var(--sf-glow); }
+html.hub-scifi[data-theme="light"]:not(.wall-on) .chip.active { background: linear-gradient(135deg, #0e7490, #6d28d9); color: #fff; }
+/* 签到概览的数字：等宽读数 + 冷光 */
+html.hub-scifi .ov-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 600; color: var(--sf-cyan); text-shadow: 0 0 12px var(--sf-glow); }
+html.hub-scifi .ov-item.bad .ov-num { color: var(--danger); text-shadow: 0 0 12px rgb(244 114 182 / .4); }
+/* 预警条：等宽 HUD 告警，图标闪烁、按告警色外晕 */
+html.hub-scifi .alert-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; letter-spacing: .04em; box-shadow: 0 0 22px -8px currentColor; }
+html.hub-scifi .alert-chip .ic { animation: sf-pulse 2.4s ease-in-out infinite; }
+@keyframes sf-pulse { 50% { opacity: .4; } }
+/* 弹窗：冷光细边 + 外晕，顶上一道青→紫→品红的高光（同 ⌘K 面板） */
+html.hub-scifi .modal {
+  border-color: rgb(94 231 255 / .24);
+  background-image: linear-gradient(90deg, transparent, var(--sf-cyan) 20%, var(--sf-violet) 55%, var(--sf-magenta) 80%, transparent), radial-gradient(120% 60% at 0% 0%, var(--sf-tint), transparent 55%);
+  background-size: 100% 2px, 100% 100%; background-repeat: no-repeat; background-attachment: local, local;
+  box-shadow: 0 0 0 1px rgb(94 231 255 / .06), 0 0 70px -24px var(--sf-glow), var(--shadow-pop);
+}
+
+/* 透视网格地面：收藏首页底部一片朝你跑来的光网（HaloWebUI 首页同款），只在宽屏、首页显示；动画只动 transform。 */
+.hub-floor { display: none; }
+@media (width > 760px) {
+  html.hub-scifi:has(#view-bookmarks.active #homePage:not([hidden])) .hub-floor {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; height: 40vh; z-index: -1; pointer-events: none; overflow: hidden;
+    opacity: .34; -webkit-mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .5) 35%, transparent 90%); mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .5) 35%, transparent 90%);
+  }
+  html.hub-scifi[data-theme="light"]:not(.wall-on) .hub-floor { opacity: .18; }
+}
+.hub-floor::before {
+  content: ""; position: absolute; left: -60%; right: -60%; top: -100%; bottom: 0; transform-origin: 50% 100%;
+  background-image: linear-gradient(to right, var(--sf-cyan) 1px, transparent 1px), linear-gradient(to bottom, var(--sf-cyan) 1px, transparent 1px);
+  background-size: 72px 72px; transform: perspective(420px) rotateX(64deg); animation: sf-floor-run 3.6s linear infinite;
+}
+@keyframes sf-floor-run { from { transform: perspective(420px) rotateX(64deg) translateY(0); } to { transform: perspective(420px) rotateX(64deg) translateY(72px); } }
+
+html.scene-still .brand-mark::before, html.scene-still .hub-floor::before, html.scene-still .home-list .section-label::after, html.scene-still .alert-chip .ic { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  html.hub-scifi .brand-mark::before, .hub-floor::before, html.hub-scifi .home-list .section-label::after,
+  html.hub-scifi .home-tile:hover .tile-avatar::after, html.hub-scifi .view.active .view-header::after, html.hub-scifi .alert-chip .ic { animation: none !important; }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+  .hub-floor, html.hub-scifi .tile-link::after, html.hub-scifi .view-header::after, html.hub-scifi .brand-mark::before { display: none !important; }
+  html.hub-scifi .view-header h1 { background: none; color: var(--text); filter: none; }
+}
+
 @media (max-width: 760px), (max-height: 720px) {
   html.hub-scifi .hub-reactor { display: none; }
 }

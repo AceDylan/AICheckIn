@@ -202,6 +202,10 @@
   const stars = document.createElement('canvas');
   stars.className = 'hub-stars'; stars.setAttribute('aria-hidden', 'true');
   (document.getElementById('homeWall') || document.body.firstChild)?.after(stars);
+  // 透视网格地面（只在宽屏收藏首页显示，见 app-v3.css「科幻层 II」）：纯 CSS 动画，这里只放个空节点。
+  const floor = document.createElement('div');
+  floor.className = 'hub-floor'; floor.setAttribute('aria-hidden', 'true');
+  stars.after(floor);
   const sctx = stars.getContext && stars.getContext('2d');
   const TINTS = ['#ffffff', '#bfe9ff', '#9fd8ff', '#d7c8ff', '#ffe6c4'];
   let field = [], sw = 0, sh = 0, sframe = 0, slast = 0, warpStart = 0, warpUntil = 0, spx = 0, spy = 0, stx = 0, sty = 0;
@@ -422,6 +426,22 @@
     }).observe(root, { attributes: true, attributeFilter: ['class', 'data-wallpaper', 'data-theme'] });
     syncScene();
   }
+
+  // 卡片聚光：鼠标在卡片 / 面板上移动时，把指针在卡片里的位置写进 --mx / --my，CSS 在那里画一团冷光。
+  // 只桌面鼠标、科幻特效开着、没要求减弱动态时；每帧最多写一次，只写指针下面那一张。
+  const SPOT = '.panel, .bookmark-card, .deck-card, .home-widget';
+  let spotEl = null, spotFrame = 0, spotX = 0, spotY = 0;
+  document.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || !desktop.matches || reduced.matches || !scifiOn()) return;
+    const el = e.target instanceof Element ? e.target.closest(SPOT) : null;
+    if (!el) return;
+    spotEl = el; spotX = e.clientX; spotY = e.clientY;
+    if (!spotFrame) spotFrame = requestAnimationFrame(() => {
+      spotFrame = 0;
+      const r = spotEl.getBoundingClientRect();
+      spotEl.style.setProperty('--mx', Math.round(spotX - r.left) + 'px'); spotEl.style.setProperty('--my', Math.round(spotY - r.top) + 'px');
+    });
+  }, { passive: true });
 
   // 首屏入场：页面打开后 3 秒内画出来的分组 / 组件 / 预警条逐个从模糊里扫描显形；之后重画首页不再播。
   if (sceneAllowed() && !stillScene()) {
