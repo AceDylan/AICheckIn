@@ -242,7 +242,7 @@
     let g = sctx.createRadialGradient(0, 0, r * .8, 0, 0, r * 4.4);
     g.addColorStop(0, 'rgba(167,139,250,.34)'); g.addColorStop(.35, 'rgba(94,231,255,.11)'); g.addColorStop(1, 'rgba(94,231,255,0)');
     sctx.globalAlpha = (.6 + .4 * breathe) * lift; sctx.fillStyle = g; sctx.fillRect(-r * 4.4, -r * 4.4, r * 8.8, r * 8.8);
-    const beam = Math.min(sw * .8, r * 9);
+    const beam = Math.min(sw * .5, r * 4.2);   // 只在星核两侧亮一段，不横贯整屏
     g = sctx.createLinearGradient(-beam, 0, beam, 0);
     g.addColorStop(0, 'rgba(94,231,255,0)'); g.addColorStop(.5, 'rgba(214,248,255,.95)'); g.addColorStop(1, 'rgba(94,231,255,0)');
     sctx.fillStyle = g; sctx.globalAlpha = (.4 + .25 * breathe) * lift; sctx.fillRect(-beam, -.8, beam * 2, 1.6);

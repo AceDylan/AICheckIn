@@ -1294,6 +1294,9 @@
     // 默认不开壁纸：内置壁纸都是深色，一开整页就固定成深色场景，和默认的「纸与墨」浅 / 深主题不是一回事。
     // 想要壁纸的人在「壁纸 / 遮罩 / 导航…」里手动打开，选择记在 Cookie 里。
     const WALL_DEFAULT = 'off';
+    // 内置壁纸的版本号：重画了壁纸就 +1。地址变了，浏览器的 24 小时 HTTP 缓存和 SW 里的旧图都不会再被用上
+    // （同名文件只改 CACHE_VERSION 不够：SW 回源时仍会拿到 HTTP 缓存里那张旧图）。
+    const WALL_ASSET_VER = '2';
     const WALL_BUILTIN = 'aurora';   // 选了「自定义」但服务器上没有时，回落到这张内置壁纸
     const WALL_IDS = ['off'].concat(WALLPAPERS.map(w => w.id), ['custom']);
     const WALL_DIMS = { soft: 0.25, medium: 0.4, strong: 0.58 };
@@ -1323,7 +1326,7 @@
       }
       const w = WALLPAPERS.find(x => x.id === id) || WALLPAPERS.find(x => x.id === WALL_BUILTIN);
       const phone = !!(window.matchMedia && window.matchMedia('(max-width: 760px) and (orientation: portrait)').matches);
-      return Object.assign({ url: '/static/wallpapers/' + w.id + (phone ? '-m' : '') + '.webp' }, w);
+      return Object.assign({ url: '/static/wallpapers/' + w.id + (phone ? '-m' : '') + '.webp?v=' + WALL_ASSET_VER }, w);
     }
     // 壁纸上的字固定用白色。白字要 4.5:1，背景相对亮度不能超过 0.183；遮罩按 sRGB 值线性压暗，
     // 亮度约按 2.2 次方下降，由此反推遮罩至少要多浓。目标定在 0.16 而不是 0.183：遮罩本身不是纯黑
@@ -8431,7 +8434,7 @@
     function wallThumbStyle(o, custom) {
       if (o.id === 'off') return '';
       if (o.id === 'custom') return `background-color:#10151f;background-image:url('/api/wallpaper?v=${custom.v}')`;
-      return `background-color:${o.color};background-image:url('/static/wallpapers/${o.id}-thumb.webp')`;
+      return `background-color:${o.color};background-image:url('/static/wallpapers/${o.id}-thumb.webp?v=${WALL_ASSET_VER}')`;
     }
     function setSegmented(selector, attr, value, disabled) {
       document.querySelectorAll(selector).forEach(b => {

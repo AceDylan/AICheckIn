@@ -76,6 +76,7 @@ def stellar_scene(b):
         page.wait_for_selector('#homeWall.is-ready')
         image = page.locator('#homeWall').evaluate('el => getComputedStyle(el,"::before").backgroundImage')
         check(label + ': correct starcore composition loaded', ('starcore-m.webp' if mobile else 'starcore.webp') in image)
+        check(label + ': wallpaper url carries the asset version', '.webp?v=' in image)
         scene = page.locator('.hub-stars')
         # Observe the rendered surface, without depending on drawing-call structure.
         sample = lambda: scene.evaluate('el => el.toDataURL()')
@@ -90,7 +91,7 @@ def stellar_scene(b):
         page.evaluate("openHomeLook()"); page.wait_for_selector('#scifiSeg')
         page.locator('#scifiSeg [data-scifi="off"]').click()
         check(label + ': switching effects off preserves the wallpaper', page.locator('#homeWall').is_visible()
-              and page.locator('#homeWall').evaluate('el => getComputedStyle(el,"::before").backgroundImage').endswith('webp")'))
+              and '/static/wallpapers/starcore' in page.locator('#homeWall').evaluate('el => getComputedStyle(el,"::before").backgroundImage'))
         check(label + ': switching effects off clears the canvas', scene.evaluate("el => !el.getContext('2d').getImageData(0,0,el.width,el.height).data.some((v,i) => i%4===3 && v>0)"))
         page.locator('#scifiSeg [data-scifi="on"]').click()
         page.emulate_media(forced_colors='active'); page.wait_for_timeout(200)

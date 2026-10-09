@@ -2724,7 +2724,9 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 
 .hub-stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; display: none; }
 html.hub-scifi .hub-stars { display: block; }
-html.wall-on .hub-stars { opacity: .7; }
+html.wall-on .hub-stars { opacity: .55; }
+/* 开着壁纸时壁纸就是背景：不再叠全息网格，免得和星云、星场、星核挤在一起。 */
+html.hub-scifi.wall-on .main::before { display: none; }
 
 /* 舱窗边缘与反应堆只作装饰，不占版面、不截获输入。 */
 .hub-hud, .hub-reactor { display: none; pointer-events: none; }

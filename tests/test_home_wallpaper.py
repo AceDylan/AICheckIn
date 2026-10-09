@@ -355,6 +355,14 @@ class WallpaperPageGuardsTest(unittest.TestCase):
         self.assertLess(self.sw.index("if (url.pathname.startsWith('/api/')) return;"),
                         self.sw.index("if (isWallpaperRequest(url))"))
 
+    def test_builtin_wallpaper_urls_are_versioned_and_cached_by_the_sw(self):
+        # 同名文件重画后，浏览器 24 小时 HTTP 缓存里的旧图会一直被用上：地址必须带版本号。
+        self.assertRegex(self.html, r"const WALL_ASSET_VER = '\d+';")
+        self.assertIn(".webp?v=' + WALL_ASSET_VER", self.html)
+        self.assertIn("-thumb.webp?v=${WALL_ASSET_VER}", self.html)
+        # 带 ?v= 的壁纸要先进 cache-first 分支，不能被「带查询串只走网络」截走。
+        self.assertLess(self.sw.index("if (isWallpaperRequest(url))"), self.sw.index("if (url.search)"))
+
 
 if __name__ == "__main__":
     unittest.main()
