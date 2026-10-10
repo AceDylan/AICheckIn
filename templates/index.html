@@ -564,6 +564,8 @@
 
       <div id="bm_error" class="error" style="display:none;margin-top:12px"></div>
       <div class="modal-actions" style="margin-top:14px">
+        <button class="btn danger sm" id="bmDelete" hidden>删除站点</button>
+        <span class="spacer"></span>
         <button class="btn ghost sm" id="bmCancel">取消</button>
         <button class="btn sm" id="bmSave">保存</button>
       </div>
@@ -621,6 +623,8 @@
       </div>
       <div id="lk_error" class="error" style="display:none"></div>
       <div class="modal-actions">
+        <button class="btn danger sm" id="linkDelete" hidden>删除网址</button>
+        <span class="spacer"></span>
         <button class="btn ghost sm" id="linkCancel">取消</button>
         <button class="btn sm" id="linkSave">保存</button>
       </div>
@@ -2919,6 +2923,13 @@
     // 分组多到侧栏放不下时，只有分组这一段滚动（「签到中心 / 系统设置」始终留在原位）。滚动条藏起来了，
     // 上下还有内容就在那一端淡出作提示；换页后把当前分组带进视野。
     function syncSubnavScroll(reveal) {
+      // 手机上那排横向的分组标签：切到靠右的分组后把它滚进视野。只改横向 scrollLeft，不用 scrollIntoView（会带着页面纵向跳）。
+      const chips = $('libChips'), chip = reveal === true && chips.clientWidth && chips.querySelector('.chip.active');
+      if (chip) {
+        const left = chip.getBoundingClientRect().left - chips.getBoundingClientRect().left + chips.scrollLeft, right = left + chip.offsetWidth;
+        if (left < chips.scrollLeft) chips.scrollLeft = left - 12;
+        else if (right > chips.scrollLeft + chips.clientWidth) chips.scrollLeft = right - chips.clientWidth + 12;
+      }
       const nav = $('libSubnav');
       if (!nav.clientHeight) return;
       const active = reveal === true && nav.querySelector('.subnav-item.active');
@@ -3290,13 +3301,13 @@
     }
     // 编辑首页时，图标不再是链接（没有 href：点了不跳转，长按也不会弹出浏览器的链接菜单），
     // 整块可拖、可聚焦，角上多一个「移除」；平时的「···」菜单收起。arrangeId：分组里是网址 id，看板里是站点下标。
-    const ARRANGE = { on: false, tile: null, grid: null, pointerId: null, touch: false, x: 0, y: 0, lastX: 0, lastY: 0, grabX: 0, grabY: 0, active: false, timer: 0, raf: 0, queue: Promise.resolve() };
+    const ARRANGE = { on: false, tile: null, grid: null, pointerId: null, touch: false, x: 0, y: 0, lastX: 0, lastY: 0, grabX: 0, grabY: 0, active: false, timer: 0, raf: 0, dropAt: 0, queue: Promise.resolve() };
     function tileHrefAttrs(o) {
       const safe = safeUrl(o.url);
       return ARRANGE.on ? '' : `href="${escapeHtml(safe || '#')}" ${safe ? linkTargetAttrs() : ''} title="${escapeHtml(o.name)} · ${escapeHtml(o.url)}"`;
     }
     function tileArrangeAttrs(o) {
-      return ARRANGE.on ? ` data-arrange-id="${escapeHtml(o.arrangeId)}" tabindex="0" role="group" aria-roledescription="可排序的图标" aria-label="${escapeHtml(o.name)}：方向键调整顺序，Delete 从首页移除"` : '';
+      return ARRANGE.on ? ` data-arrange-id="${escapeHtml(o.arrangeId)}" tabindex="0" role="group" aria-roledescription="可排序的图标" aria-label="${escapeHtml(o.name)}：方向键调整顺序，Enter 打开菜单，Delete 从首页移除"` : '';
     }
     function tileExtrasHtml(o) {
       return ARRANGE.on
@@ -3305,6 +3316,17 @@
           <summary class="menu-trigger sm" title="更多操作" aria-label="${escapeHtml(o.name)} 的更多操作">···</summary>
           <div class="menu-popover">${o.menu}</div>
         </details>`;
+    }
+    // 编辑首页时轻点图标弹出的菜单（见「编辑首页」小节）：内容和平时的「···」同一份，只是没有触发钮。
+    function arrangeMenuElement(group, id) {
+      let html = '';
+      if (group === '@sites') { const b = (STATE.bookmarks || [])[Number(id)]; if (b) html = homeSiteMenuHtml(b, Number(id)); }
+      else { const g = findGroup(group), l = g && (g.links || []).find(x => x.id === id); if (l) html = homeLinkMenuHtml(l, g); }
+      if (!html) return null;
+      const d = document.createElement('details');
+      d.className = 'action-menu tile-menu arrange-menu';
+      d.innerHTML = `<summary hidden></summary><div class="menu-popover">${html}</div>`;
+      return d;
     }
     // 图标：不带卡片底板，只有大图标和名字；域名放进 title，不占版面。
     function homeTileHtml(o) {
@@ -3318,14 +3340,16 @@
         ${tileExtrasHtml(o)}
       </div>`;
     }
-    function homeLinkTileHtml(l, g) {
+    function homeLinkMenuHtml(l, g) {
       const gid = escapeHtml(g.id), lid = escapeHtml(l.id);
-      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: linkIconSrc(l), tone: g.color, arrangeId: l.id, menu:
-        `<button onclick="editLink('${gid}','${lid}')">编辑</button>
+      return `<button onclick="editLink('${gid}','${lid}')">编辑</button>
          <button onclick="copyLinkUrl('${gid}','${lid}')">复制网址</button>
          <button onclick="openLibPage('${gid}')">前往「${escapeHtml(g.name)}」</button>
          <div class="sep"></div>
-         <button onclick="toggleHomeLink('${gid}','${lid}')">从首页移除</button>` });
+         <button onclick="toggleHomeLink('${gid}','${lid}')">从首页移除</button>`;
+    }
+    function homeLinkTileHtml(l, g) {
+      return homeTileHtml({ name: l.name, url: l.url, emoji: l.icon, customIcon: linkIconSrc(l), tone: g.color, arrangeId: l.id, menu: homeLinkMenuHtml(l, g) });
     }
     function homeSiteMenuHtml(b, i) {
       const resetting = canEdit() && enabledFields(b).find(f => (f.type || 'amount') === 'time' && ['soon', 'expired'].includes(fieldAlert(f)) && RESET_LABEL_RE.test(String(f.label || '')));
@@ -5531,7 +5555,7 @@
       $('homeArrangeBar').hidden = !ARRANGE.on;
       $('homeEditBtn').setAttribute('aria-pressed', String(ARRANGE.on));
       const coarse = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
-      $('homeArrangeTip').textContent = (coarse ? '按住图标约半秒再拖动' : '拖动图标') + '调整顺序（同一分组内），点图标角上的「−」从首页移除。';
+      $('homeArrangeTip').textContent = (coarse ? '按住图标一下再拖动' : '拖动图标') + '调整顺序（同一分组内），轻点图标可编辑 / 复制网址，点角上的「−」从首页移除。';
       // 拖起来之后要拦住页面滚动：touchmove 必须是非 passive 的监听，只在编辑期间挂着。
       const list = $('homeList');
       if (ARRANGE.on) list.addEventListener('touchmove', onArrangeTouchMove, { passive: false });
@@ -5695,6 +5719,7 @@
       if (ARRANGE.raf) cancelAnimationFrame(ARRANGE.raf);
       Object.assign(ARRANGE, { tile: null, grid: null, pointerId: null, active: false, raf: 0, timer: 0 });
       if (!tile || !active) return;
+      ARRANGE.dropAt = Date.now();   // 拖完松手紧跟着的那次 click 不算「轻点」
       try { $('homeList').releasePointerCapture(pointerId); } catch (_) {}
       $('homeList').classList.remove('is-sorting');
       const group = grid.dataset.arrangeGroup, id = tile.dataset.arrangeId, ids = arrangeTiles(grid).map(t => t.dataset.arrangeId);
@@ -5706,7 +5731,7 @@
     function onArrangeUp(e) { if (e.pointerId === ARRANGE.pointerId) endArrangeDrag(true); }
     function onArrangeCancel(e) { if (e.pointerId === ARRANGE.pointerId) endArrangeDrag(false); }
     $('homeList').addEventListener('pointerdown', (e) => {
-      if (!ARRANGE.on || e.button !== 0 || ARRANGE.tile || e.target.closest('[data-arrange-remove]')) return;
+      if (!ARRANGE.on || e.button !== 0 || ARRANGE.tile || e.target.closest('[data-arrange-remove], .arrange-menu')) return;
       const tile = e.target.closest('[data-arrange-id]'), grid = tile && tile.closest('[data-arrange-group]');
       if (!grid || arrangeTiles(grid).length < 2) return;
       const touch = e.pointerType === 'touch';
@@ -5726,12 +5751,38 @@
       const done = group === '@sites' ? toggleHomeSite(Number(id)) : toggleHomeLink(group, id);
       Promise.resolve(done).then(() => { if (ARRANGE.on && focus) renderArrangeKeepingFocus(focus); });
     }
+    // 编辑首页时轻点（或聚焦后按 Enter）图标：弹出和平时「···」同一份菜单。触屏上平时没有「···」，
+    // 这是在首页直接改名 / 复制网址 / 移除的入口。菜单按需挂进图标里，关上就摘掉，不进渲染出来的 HTML。
+    function closeArrangeMenu(refocus) {
+      const d = document.querySelector('#homeList .arrange-menu');
+      if (!d) return;
+      const tile = d.closest('[data-arrange-id]');
+      d.remove();
+      if (tile) { tile.classList.remove('menu-open'); if (refocus) tile.focus(); }
+    }
+    function toggleArrangeMenu(tile, viaKey) {
+      const was = tile.querySelector('.arrange-menu');
+      closeArrangeMenu(false);
+      const d = !was && arrangeMenuElement(tile.closest('[data-arrange-group]').dataset.arrangeGroup, tile.dataset.arrangeId);
+      if (!d) return;
+      d.addEventListener('toggle', () => { if (!d.open && d.isConnected) closeArrangeMenu(false); });
+      tile.appendChild(d);
+      d.open = true;
+      if (viaKey) { const first = d.querySelector('.menu-popover button'); if (first) first.focus(); }
+    }
     $('homeList').addEventListener('click', (e) => {
       if (!ARRANGE.on) return;
       const btn = e.target.closest('[data-arrange-remove]');
-      if (btn) removeArrangeTile(btn.closest('[data-arrange-id]'));
+      if (btn) { removeArrangeTile(btn.closest('[data-arrange-id]')); return; }
+      // 菜单项照常执行（按钮自带 onclick），执行完收起菜单。
+      if (e.target.closest('.arrange-menu')) { if (e.target.closest('.menu-popover button')) closeArrangeMenu(false); return; }
+      const tile = e.target.closest('[data-arrange-id]');
+      if (tile && Date.now() - (ARRANGE.dropAt || 0) > 400) toggleArrangeMenu(tile, e.detail === 0);
     });
     $('homeList').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && e.target.closest && e.target.closest('.arrange-menu')) {
+        e.preventDefault(); e.stopPropagation(); closeArrangeMenu(true); return;
+      }
       if (!ARRANGE.on || e.ctrlKey || e.metaKey || e.altKey) return;
       const tile = e.target.closest('[data-arrange-id]');
       if (!tile || e.target !== tile) return;
@@ -5746,7 +5797,8 @@
         const group = grid.dataset.arrangeGroup, id = tile.dataset.arrangeId;
         renderArrangeKeepingFocus(persistArrange(group, arrangeTiles(grid).map(t => t.dataset.arrangeId), id) || { group, id });
       } else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeArrangeTile(tile); }
-      else if (e.key === 'Escape') { e.preventDefault(); setArrange(false); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleArrangeMenu(tile, true); }
+      else if (e.key === 'Escape') { e.preventDefault(); if (tile.querySelector('.arrange-menu')) closeArrangeMenu(true); else setArrange(false); }
     });
 
     // ----- 自定义首页弹窗：筛选 / 只看已选 / 每组一键全选 -----
@@ -5874,7 +5926,11 @@
       // ⌘K / Ctrl+K：全局搜索。输入框里也生效，方便从页内搜索直接升级为全局搜索。
       if ((event.metaKey || event.ctrlKey) && (event.key === 'k' || event.key === 'K')) {
         event.preventDefault();
-        openOmni(document.activeElement === $('bmSearch') ? $('bmSearch').value : '');
+        // 从首页搜索框按过来：带上已经打的字，并收起首页下拉（不然面板底下还挂着一份同样的结果）。
+        const from = document.activeElement;
+        const preset = from === $('bmSearch') || from === $('homeSearch') ? from.value : '';
+        if (from === $('homeSearch')) clearHomeSearch();
+        openOmni(preset);
         return;
       }
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(tag || '');
@@ -5905,7 +5961,10 @@
     });
     // 点击卡片外部时收起已展开的「···」菜单。
     document.addEventListener('click', (e) => {
-      document.querySelectorAll('details.action-menu[open]').forEach(d => { if (!d.contains(e.target)) d.removeAttribute('open'); });
+      document.querySelectorAll('details.action-menu[open]').forEach(d => {
+        if (d.contains(e.target) || (d.classList.contains('arrange-menu') && d.parentNode.contains(e.target))) return;
+        d.removeAttribute('open');
+      });
     });
     // 「···」菜单定位：按实际可用空间决定向上（默认）还是向下展开，限制高度，
     // 并在触发按钮被移动端固定底栏压住时整体上移，保证末项可点。
@@ -6645,6 +6704,7 @@
       bmEditKey = isEdit ? STATE.bookmarks[idx].key : null;
       $('bm_error').style.display = 'none';
       $('bmModalTitle').textContent = isEdit ? '编辑站点' : '添加站点';
+      $('bmDelete').hidden = !isEdit;
       $('bm_name').value = b.name || '';
       $('bm_url').value = b.url || '';
       bmDraftFields = (b.fields || []).map(draftFromField);
@@ -6697,6 +6757,12 @@
     }
     $('addBm').addEventListener('click', () => { if (guardAdmin()) openBmModal(-1); });
     $('bmCancel').addEventListener('click', () => $('bmModal').classList.remove('show'));
+    // 弹窗里原地删除：先关弹窗再删（焦点不会还给被删掉的卡片），撤销走 undoableDelete，不再二次确认。
+    $('bmDelete').addEventListener('click', () => {
+      const at = (STATE.bookmarks || []).findIndex(b => b.key === bmEditKey);
+      $('bmModal').classList.remove('show');
+      if (at >= 0) deleteBm(at);
+    });
     $('bmAddField').addEventListener('click', () => {
       if (bmDraftFields.length >= 20) { showBmError('每个收藏最多 20 个字段'); return; }
       bmDraftFields.forEach(d => { d._open = false; });
@@ -7220,6 +7286,7 @@
       $('linkModalTitle').textContent = l ? '编辑网址' : '添加网址';
       $('linkModalSub').textContent = l ? `所在分组：${g.name}` : `添加到「${g.name}」`;
       $('linkModeToggle').hidden = !!l;
+      $('linkDelete').hidden = !l;
       $('lk_url').value = l ? l.url : '';
       $('lk_name').value = l ? l.name : '';
       delete $('lk_name').dataset.auto;
@@ -7250,6 +7317,11 @@
       $(b.dataset.libMore).click();
     });
     $('linkCancel').addEventListener('click', () => $('linkModal').classList.remove('show'));
+    $('linkDelete').addEventListener('click', () => {
+      const { gid, lid } = linkEdit;
+      $('linkModal').classList.remove('show');
+      if (lid) deleteLink(gid, lid);
+    });
     $('linkModeToggle').addEventListener('click', (e) => { const b = e.target.closest('button[data-mode]'); if (b) setLinkMode(b.dataset.mode); });
     // 批量预览：逐行标出「可导入 / 无效 / 已存在」，并在行内点明重复落在哪个分组。
     function bulkRows() {
@@ -7710,6 +7782,7 @@
       { keys: ['⌘/Ctrl', 'K'], desc: '全局搜索与命令：找网址、看板站点、签到配置；输页面名或「深色」「运行全部签到」这类命令，回车直接执行' },
       { keys: ['/'], desc: '聚焦当前页面的搜索框；在收藏首页直接打字也会开始搜索' },
       { keys: ['Tab'], desc: '首页搜索框有内容时，切换网页搜索引擎' },
+      { keys: ['⌘/Ctrl', 'K'], desc: '在首页搜索框里按：带着已输入的字打开全局搜索，看到全部结果' },
       { keys: ['#'], desc: '在全局搜索里输入 # 开头按标签筛选' },
       { keys: ['↑', '↓'], desc: '在全局搜索结果中上下选择' },
       { keys: ['Enter'], desc: '打开选中的网址' },
@@ -7718,7 +7791,7 @@
       { keys: ['Alt', '←/→'], desc: '焦点在分组导航上时，调整分组顺序' },
       { keys: ['Alt', '↑/↓'], desc: '焦点在首页某条待办上时，调整它的顺序；修改待办时 Enter 保存、Esc 取消' },
       { keys: ['↑/↓'], desc: '焦点在待办行首的排序把手上时：直接上下挪；Home / End 移到最前 / 最后，Enter 打开排序菜单' },
-      { keys: ['←/→'], desc: '「编辑首页」时焦点在图标上：在分组内前后挪动；Delete 从首页移除，Esc 退出编辑' },
+      { keys: ['←/→'], desc: '「编辑首页」时焦点在图标上：在分组内前后挪动；Enter 打开图标菜单，Delete 从首页移除，Esc 退出编辑' },
       { keys: ['←/→', '↑/↓'], desc: '焦点在首页月历里：按天 / 按周走；Home / End 到周一 / 周日，PageUp / PageDown 翻月' },
       { keys: ['↑/↓'], desc: '「首页组件」弹窗里焦点在排序把手上时：调整组件的先后' },
       { keys: ['Esc'], desc: '关闭弹窗；或清空当前搜索框' },
@@ -8129,7 +8202,7 @@
       { id: 'baidu', name: '百度', url: 'https://www.baidu.com/s?wd=' },
       { id: 'ddg', name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
     ];
-    const HOME_SEARCH_LIMIT = 6;   // 下拉里最多列几条收藏，再多就该用 ⌘K 了
+    const HOME_SEARCH_LIMIT = 6;   // 下拉里最多列几条收藏，再多给一行「查看全部」接到 ⌘K 面板
     const HOME_SEARCH = { rows: [], active: 0 };
     function currentEngine() {
       const id = readPref('bh_engine', SEARCH_ENGINES.map(e => e.id), 'google');
@@ -8182,7 +8255,8 @@
       return '';
     }
     function homeSearchReady() {
-      return STATE_LOADED && currentViewName() === 'bookmarks' && LIB.page === '@home'
+      // 编辑首页时焦点停在图标上整理顺序，误按一个字母不该把焦点抢去搜索框。
+      return STATE_LOADED && currentViewName() === 'bookmarks' && LIB.page === '@home' && !ARRANGE.on
         && !document.querySelector('.modal-mask.show');
     }
     // 收藏以外的那几行（收藏它 / 网页搜索 / AI 回答 / 笔记）：首页搜索框和 ⌘K 面板（侧栏的搜索按钮）共用一套。
@@ -8210,8 +8284,10 @@
       if (!text) return [];
       const rows = [], direct = looksLikeUrl(text);
       if (direct) rows.push({ type: 'url', url: direct });
-      const items = omniSearch(text).slice(0, HOME_SEARCH_LIMIT);
+      const hits = omniSearch(text), items = hits.slice(0, HOME_SEARCH_LIMIT);
       for (const item of items) rows.push({ type: 'item', item });
+      // 超出的部分不丢：手机上没有 ⌘K 入口，这一行是看到第 7 条以后的唯一路径。
+      if (hits.length > items.length) rows.push({ type: 'more', query: text, count: hits.length });
       return rows.concat(searchExtraRows(text, items));
     }
     // 非收藏行的内容（图标 + 一句话 + 选中时的 ↵）：外层按钮的 class / data-* 由各自的列表决定。
@@ -8221,9 +8297,10 @@
         const hit = row.hit;
         return `<span class="omni-ic">${icon('note')}</span><span class="omni-text"><span class="omni-title"><span>${escapeHtml(hit.title || hit.path)}</span></span><span class="omni-sub">${escapeHtml(hit.snippet || hit.path)}</span></span><span class="home-search-tag">笔记</span>`;
       }
-      const glyph = row.type === 'web' ? 'search' : row.type === 'add' ? 'plus'
+      const glyph = row.type === 'web' || row.type === 'more' ? 'search' : row.type === 'add' ? 'plus'
         : row.type === 'ai' ? 'chat' : row.type === 'notes' ? 'note' : 'globe';
-      const text = row.type === 'web' ? `用 <b>${escapeHtml(currentEngine().name)}</b> 搜索「${escapeHtml(row.query)}」`
+      const text = row.type === 'more' ? `查看全部 <b>${row.count}</b> 条结果`
+        : row.type === 'web' ? `用 <b>${escapeHtml(currentEngine().name)}</b> 搜索「${escapeHtml(row.query)}」`
         : row.type === 'ai' ? `用 <b>AI</b> 回答「${escapeHtml(row.query)}」`
         : row.type === 'notes' ? `在<b>笔记</b>里搜索「${escapeHtml(row.query)}」`
         : row.type === 'add' ? `收藏 <b>${escapeHtml(siteHost(row.url))}</b> 到收藏库…`
@@ -8283,6 +8360,7 @@
       if (row.type === 'item') { leave(); omniOpen(row.item, false); return; }
       if (row.type === 'ai') { const q = row.query; leave(); openAsk(q, 'search', '用 AI 回答'); return; }
       if (row.type === 'notes') { runNoteSearch(row.query); return; }
+      if (row.type === 'more') { const q = row.query; leave(); openOmni(q); return; }
       // 搜到的笔记在「笔记」标签页里打开：不离开本站，也不用再过一遍笔记站自己的密码框。
       if (row.type === 'note') { leave(); if (!openVaultNote(row.hit.path)) openUrl(row.hit.url); return; }
       if (row.type === 'add') {
@@ -8687,7 +8765,24 @@
       const target = menu ? menu.querySelector('summary') : opener;
       if (target && target.focus) target.focus({ preventScroll: true });
     }
+    // 手机上弹窗是贴底的抽屉，「取消」在最下面、遮罩只露出顶上一条：头部右上角补一个 ✕（只在窄屏显示，样式里控制）。
+    // 行为等于点这个弹窗自己的「取消 / 完成」——各弹窗收尾的逻辑都挂在那颗按钮上；没有的才直接关。
+    function addModalCloseButton(m) {
+      const head = m.querySelector('.modal-head');
+      if (!head || m.classList.contains('omni-mask')) return;
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'modal-x';
+      x.setAttribute('aria-label', '关闭');
+      x.innerHTML = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      x.addEventListener('click', () => {
+        const own = m.querySelector('.modal-actions [id$="Cancel"], .modal-actions [id$="Close"]');
+        if (own) own.click(); else m.classList.remove('show');
+      });
+      head.appendChild(x);
+    }
     document.querySelectorAll('.modal-mask').forEach(m => {
+      addModalCloseButton(m);
       const markDirty = (e) => { if (e.target.matches && e.target.matches('input, textarea, select')) m.dataset.dirty = '1'; };
       m.addEventListener('input', markDirty);
       m.addEventListener('change', markDirty);
