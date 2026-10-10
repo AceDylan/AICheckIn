@@ -3029,17 +3029,20 @@ html.hub-scifi .tab:hover svg.ic, html.hub-scifi .omni-trigger:hover .ic { color
 html.hub-scifi .subnav-item.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent), 0 0 16px -3px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent); }
 html.hub-scifi .subnav-item.active .sub-ic { box-shadow: 0 0 10px -1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 80%, transparent); }
 
-/* 分组标题：图标点亮、数量做成等宽的 HUD 读数框、右边那条渐变线上一颗光点来回跑 */
+/* 分组标题：图标点亮、数量做成等宽的 HUD 读数框、右边那条渐变线上柔光缓行 */
 html.hub-scifi .home-section .section-label .btn .ic, html.hub-scifi .home-section .section-name .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-glow)); }
 html.hub-scifi .home-section .section-label .count {
   padding: 1px 6px; border-radius: 4px; color: var(--sf-cyan); background: var(--sf-tint); box-shadow: inset 0 0 0 1px var(--sf-line);
   font: 600 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em;
 }
 html.hub-scifi .home-list .section-label::after {
-  background: linear-gradient(90deg, transparent 0, rgb(224 251 255 / .95) 3%, transparent 6%) no-repeat, linear-gradient(90deg, var(--sf-edge), rgb(167 139 250 / .25) 40%, transparent 85%);
-  background-size: 34% 100%, 100% 100%; animation: sf-line-run 5.5s cubic-bezier(.6, 0, .4, 1) infinite;
+  background: linear-gradient(90deg, transparent, rgb(190 246 255 / .55) 50%, transparent) no-repeat, linear-gradient(90deg, var(--sf-edge), rgb(167 139 250 / .25) 40%, transparent 85%);
+  background-size: 28% 100%, 100% 100%;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 45%, transparent 85%); mask-image: linear-gradient(90deg, #000 0, #000 45%, transparent 85%);
+  animation: sf-line-run 12s ease-in-out infinite;
 }
-@keyframes sf-line-run { from { background-position: -40% 0, 0 0; } 70%, to { background-position: 140% 0, 0 0; } }
+html.hub-scifi .home-list .home-section:nth-child(even) .section-label::after { animation-delay: -6s; }
+@keyframes sf-line-run { from { background-position: -50% 0, 0 0; } to { background-position: 150% 0, 0 0; } }
 
 /* 首页图标：脚下一团按网址色调的全息光座，悬停时亮起；头像上扫过一道高光（头像本身不加滤镜） */
 html.hub-scifi .tile-link { position: relative; isolation: isolate; }
@@ -3118,19 +3121,19 @@ html.hub-scifi .modal {
   box-shadow: 0 0 0 1px rgb(94 231 255 / .06), 0 0 70px -24px var(--sf-glow), var(--shadow-pop);
 }
 
-/* 透视网格地面：收藏首页底部一片朝你跑来的光网（HaloWebUI 首页同款），只在宽屏、首页显示；动画只动 transform。 */
+/* 透视网格地面：收藏首页底部一片缓缓推进的远景光网，只在宽屏、首页显示；遮罩在透视地平线以下完全淡出，避免顶边跳动。 */
 .hub-floor { display: none; }
 @media (width > 760px) {
   html.hub-scifi:has(#view-bookmarks.active #homePage:not([hidden])) .hub-floor {
-    display: block; position: fixed; left: 0; right: 0; bottom: 0; height: 40vh; z-index: -1; pointer-events: none; overflow: hidden;
-    opacity: .34; -webkit-mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .5) 35%, transparent 90%); mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .5) 35%, transparent 90%);
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; height: min(30vh, 210px); z-index: -1; pointer-events: none; overflow: hidden;
+    opacity: .22; -webkit-mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .45) 30%, transparent 72%); mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .45) 30%, transparent 72%);
   }
-  html.hub-scifi[data-theme="light"]:not(.wall-on) .hub-floor { opacity: .18; }
+  html.hub-scifi[data-theme="light"]:not(.wall-on) .hub-floor { opacity: .12; }
 }
 .hub-floor::before {
-  content: ""; position: absolute; left: -60%; right: -60%; top: -100%; bottom: 0; transform-origin: 50% 100%;
+  content: ""; position: absolute; left: -60%; right: -60%; top: -900%; bottom: 0; transform-origin: 50% 100%;
   background-image: linear-gradient(to right, var(--sf-cyan) 1px, transparent 1px), linear-gradient(to bottom, var(--sf-cyan) 1px, transparent 1px);
-  background-size: 72px 72px; transform: perspective(420px) rotateX(64deg); animation: sf-floor-run 3.6s linear infinite;
+  background-size: 72px 72px; background-position: 50% 100%; transform: perspective(420px) rotateX(64deg); animation: sf-floor-run 16s linear infinite;
 }
 @keyframes sf-floor-run { from { transform: perspective(420px) rotateX(64deg) translateY(0); } to { transform: perspective(420px) rotateX(64deg) translateY(72px); } }
 
