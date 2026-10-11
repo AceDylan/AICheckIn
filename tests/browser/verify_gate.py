@@ -129,6 +129,14 @@ WATCH = """async ([stageId, loadingId, limit]) => {
 }"""
 
 
+# 星门一出现就数一下离子中枢的部件。
+CORE_PROBE = """() => { window.__core = null; new MutationObserver(() => {
+  const g = document.querySelector('#chatStage .hub-gate');
+  if (g && !window.__core) window.__core = { orbits: g.querySelectorAll('.e.orbit').length, photons: g.querySelectorAll('.o').length,
+    tri: g.querySelectorAll('.e.tri').length, hex: g.querySelectorAll('.e.hex').length, sweep: g.querySelectorAll('.sw').length };
+}).observe(document.body, { childList: true, subtree: true }); }"""
+
+
 def click_and_watch(page, view, limit=9000):
     stage, loading = ("chatStage", "chatLoading") if view == "chat" else ("vaultStage", "vaultLoading")
     page.evaluate("(v) => { window.__flightSeen = false; window.__holdSeen = false; window.__coreSeen = false;"
@@ -155,9 +163,13 @@ def peer_frame(page, origin):
 def desktop(b, halo, vault):
     MODE.update(halo="ready", halo_delay=1500)
     ctx, page, errors = open_hub(b, 1440, 900)
+    page.evaluate(CORE_PROBE)
     w = click_and_watch(page, "chat")
     ok, detail = covered_until_ready(w)
     check("电脑·冷进入：HaloWebUI 说 ready 之前框一直被盖着（不再露出登录页）", ok, detail)
+    core = page.evaluate("() => window.__core")
+    check("电脑：HaloWebUI 的签名线稿是离子中枢（六边形 + 六芒星 + 三条轨道各一颗光子 + 雷达扫描）",
+          core == {"orbits": 3, "photons": 3, "tri": 2, "hex": 1, "sweep": 1}, core)
     check("电脑·冷进入：星门是电脑档、播了点火和开门", {"hub-gate", "is-chat", "is-desk", "is-ignite", "is-open"} <= set(w["classes"]) and "is-warm" not in w["classes"], w["classes"])
     check("电脑·冷进入：离港光点从星核出发、遮幅合上停住", page.evaluate("() => window.__flightSeen && window.__coreSeen && window.__holdSeen"),
           page.evaluate("() => [window.__flightSeen, window.__coreSeen, window.__holdSeen]"))
@@ -199,9 +211,9 @@ def skip_and_sidebar(b, halo, vault):
     page.wait_for_timeout(600)
     check("旧版 HaloWebUI（不说话）：门在等", page.locator("#chatStage .hub-gate").count() == 1 and not page.evaluate("() => document.getElementById('chatLoading').hidden"))
     page.keyboard.press("Escape")
-    page.wait_for_timeout(700)
+    page.wait_for_timeout(1000)   # 开门 560ms + 收尾；无头软件渲染要留余量
     check("Esc 直接开门（门收掉，加载层接着盖着框）", page.locator(".hub-gate").count() == 0 and not page.evaluate("() => document.getElementById('chatLoading').hidden"))
-    page.wait_for_timeout(2900)
+    page.wait_for_timeout(2600)
     check("旧版 HaloWebUI：load 后 3 秒按兜底撤掉加载层", page.evaluate("() => document.getElementById('chatLoading').hidden"))
     frame = peer_frame(page, halo)
     check("Esc 开门时也把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") >= 1)
@@ -254,10 +266,11 @@ def touch_and_fold(b, halo, vault):
     info = page.evaluate("""() => { const g = document.querySelector('.hub-gate'); if (!g) return null;
         const lines = [...g.querySelectorAll('.hub-gate__lines p')].filter(p => getComputedStyle(p).display !== 'none').length;
         const bar = document.querySelector('.hub-cut.is-hold .hub-cut__bar'), side = document.querySelector('.sidebar').getBoundingClientRect();
-        return { narrow: g.classList.contains('is-narrow'), lines, nodes: g.querySelectorAll('.hub-gate__glyph .n').length,
+        return { narrow: g.classList.contains('is-narrow'), lines, orbits: g.querySelectorAll('.hub-gate__glyph .e.orbit').length,
+                 tri: g.querySelectorAll('.hub-gate__glyph .e.tri').length,
                  bar: bar ? bar.getBoundingClientRect().height / innerHeight : 0, bottom: g.getBoundingClientRect().bottom, barTop: side.top,
                  svg: g.querySelector('.hub-gate__svg').getBoundingClientRect().width }; }""")
-    check("外屏：窄屏档，读数最多两行、星座节点减到 14 个", info and info["narrow"] and info["lines"] <= 2 and info["nodes"] == 14, info)
+    check("外屏：窄屏档，读数最多两行、离子中枢减配（两条轨道、没有六芒星）", info and info["narrow"] and info["lines"] <= 2 and info["orbits"] == 2 and info["tri"] == 0, info)
     check("外屏：遮幅变细（约 7vh）", info and 0.05 < info["bar"] < 0.09, info)
     check("外屏：星门不压到底部标签栏、线稿不超过屏宽", info and info["bottom"] <= info["barTop"] + 1 and info["svg"] <= 400 * 0.72 + 1, info)
     check("外屏：没有横向溢出", page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1"))

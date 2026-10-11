@@ -3231,7 +3231,7 @@ html.scene-still .hub-film::after { animation: none; }
 @media (prefers-reduced-motion: reduce) { html.hub-scifi .hub-film::after { animation: none; } }
 @media (prefers-contrast: more), (forced-colors: active) { html.hub-scifi :is(.hub-film, .hub-cut) { display: none !important; } }
 
-/* ---------- 科幻层 IV：星门（外壳 v79） ----------
+/* ---------- 科幻层 IV：星门（外壳 v79；v80 HaloWebUI 改成离子中枢） ----------
    进「AI 聊天」「笔记」时盖在框上的过渡（halo-motion.js 的 gate）：离港 → 线稿成形 → 点火 → 光圈开门。
    电脑：完整（光晕、网格地面、光圈遮罩）；触屏（折叠屏内屏 / 平板）：不用 filter、不画网格、开门只淡出；
    窄屏（外屏 / 手机）：线稿减半、读数只留两行、遮幅变细。整层只在播的时候存在，播完即删。 */
@@ -3312,6 +3312,32 @@ html.scene-still .hub-film::after { animation: none; }
   animation: gate-pulse 1.1s calc(var(--gate-launch) + var(--gate-draw) * .7 + var(--i) * 170ms) linear infinite;
 }
 @keyframes gate-pulse { from { stroke-dashoffset: 1; opacity: 0; } 15%, 85% { opacity: 1; } to { stroke-dashoffset: -.07; opacity: 0; } }
+/* HaloWebUI 的离子中枢：转的部件都绕中枢圆心转（三角形的外框中心不在圆心上，按 fill-box 转会晃） */
+.hub-gate__glyph :is(.tri, .orbit, .arc, .o, .sw, .cr) { transform-box: view-box; transform-origin: 0 0; }
+.hub-gate__glyph .e.hex { stroke-width: 1.8; stroke-opacity: .95; }
+.hub-gate__glyph .e.tri {
+  stroke: var(--gate-b); stroke-width: 1.1;
+  animation: sf-draw calc(var(--gate-draw) * .45) calc(var(--gate-launch) + var(--i) * var(--gate-step)) cubic-bezier(.3, 0, .2, 1) forwards, sf-rot 22s linear infinite;
+}
+.hub-gate__glyph .e.tri + .e.tri { animation-direction: normal, reverse; }
+.hub-gate__glyph .e.spoke { stroke: var(--gate-a); stroke-width: .9; stroke-opacity: .55; }
+.hub-gate__glyph .e.orbit {
+  stroke: url(#hubGateArc); stroke-width: 1.5; stroke-opacity: .9;
+  animation: sf-draw calc(var(--gate-draw) * .5) calc(var(--gate-launch) + var(--i) * var(--gate-step)) cubic-bezier(.3, 0, .2, 1) forwards, sf-rot 18s linear infinite;
+}
+.hub-gate__glyph .e.arc {
+  stroke: var(--gate-a); stroke-width: 3.2; stroke-opacity: .85; stroke-linecap: butt;
+  animation: sf-draw calc(var(--gate-draw) * .4) calc(var(--gate-launch) + var(--i) * var(--gate-step)) cubic-bezier(.3, 0, .2, 1) forwards, sf-rot 30s linear infinite reverse;
+}
+/* 轨道上的光子：一小段亮线绕整条轨道跑，和轨道一起转 */
+.hub-gate__glyph .o {
+  stroke: #fff; stroke-width: 3.8; stroke-dasharray: .035 .965; stroke-dashoffset: 1;
+  animation: gate-in 300ms calc(var(--gate-launch) + var(--gate-draw) * .5) both, gate-orbit calc(1.5s + var(--i) * .4s) linear infinite, sf-rot 18s linear infinite;
+}
+@keyframes gate-orbit { to { stroke-dashoffset: 0; } }
+/* 雷达扇面 + 核心外一圈反转的虚线环 */
+.hub-gate__glyph .sw { fill: url(#hubGateSweep); stroke: none; animation: gate-in 400ms calc(var(--gate-launch) + var(--gate-draw) * .3) both, sf-rot 2.8s linear infinite; }
+.hub-gate__glyph .cr { fill: none; stroke: var(--gate-a); stroke-width: 1.2; stroke-dasharray: 4 6; animation: gate-in 300ms var(--gate-launch) both, sf-rot 5s linear infinite reverse; }
 .hub-gate__core {
   fill: #f0fdff;
   animation: gate-pop 360ms calc(var(--gate-launch) * .9) cubic-bezier(.3, 1.6, .5, 1) both, sf-core 1.6s calc(var(--gate-launch) + 400ms) ease-in-out infinite;
@@ -3343,7 +3369,9 @@ html.scene-still .hub-film::after { animation: none; }
 .hub-gate__skip { position: absolute; bottom: 1.1rem; font-size: 10px; letter-spacing: .3em; color: rgb(191 246 255 / .35); animation: gate-in .4s .8s both; }
 
 /* 点火：线稿换成主色、光核涨开、冲击波、一团冷光 */
-.hub-gate.is-ignite .hub-gate__glyph .e { stroke: var(--gate-a); stroke-opacity: 1; stroke-width: 1.8; }
+.hub-gate.is-ignite .hub-gate__glyph .e:not(.orbit, .arc) { stroke: var(--gate-a); stroke-opacity: 1; stroke-width: 1.8; }
+.hub-gate.is-ignite .hub-gate__glyph :is(.e.orbit, .e.arc) { stroke-opacity: 1; }
+.hub-gate.is-ignite .hub-gate__glyph .e.orbit { stroke-width: 2.4; }
 .hub-gate.is-ignite .hub-gate__glyph .n { fill: #fff; }
 .hub-gate.is-ignite .hub-gate__core { fill: #fff; animation: gate-ignite var(--gate-ignite) cubic-bezier(.2, .8, .2, 1) both; }
 @keyframes gate-ignite { 45% { transform: scale(3.2); } to { transform: scale(2.2); } }
@@ -3403,6 +3431,6 @@ html.scene-still .hub-film::after { animation: none; }
 .hub-gate.is-still * { animation: none !important; }
 .hub-gate.is-still :is(.hub-gate__ring, .hub-gate__glyph .e) { stroke-dashoffset: 0; }
 .hub-gate.is-still .hub-gate__lines p { clip-path: none; }
-.hub-gate.is-still :is(.hub-gate__glyph .p, .hub-gate__scan, .hub-gate__skip, .hub-gate__grid) { display: none; }
+.hub-gate.is-still :is(.hub-gate__glyph .p, .hub-gate__glyph .o, .hub-gate__glyph .sw, .hub-gate__scan, .hub-gate__skip, .hub-gate__grid) { display: none; }
 .hub-gate.is-still.is-open { animation: gate-fade-out var(--gate-open) linear both; -webkit-mask-image: none; mask-image: none; }
 @media (prefers-contrast: more), (forced-colors: active) { .hub-gate, .hub-gate-flight { display: none !important; } }

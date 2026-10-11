@@ -528,8 +528,9 @@
   // ===== 星门：进「AI 聊天」/「笔记」=====
   // 照着「启动动画」的分镜：① 离港——星核（电脑、星核壁纸、从首页出发时）先涨一下再坍缩成一个光点，
   // 不在首页 / 触屏时由侧栏图标亮起发射，光点拖着尾迹飞到内容区中央，遮幅合上停住，星场跃迁；
-  // ② 成形——光点处画出星核同款刻度环，再一笔笔画出目的地的签名线稿：HaloWebUI 是它登录页上那组
-  // 黄金角星座（HaloConstellation.svelte 同一套几何），笔记是一颗神经晶体；读数只写真实发生的事
+  // ② 成形——光点处画出星核同款刻度环，再一笔笔画出目的地的签名线稿：HaloWebUI 是一座离子中枢
+  // （六边形核心 + 六芒星 + 能量辐条 + 三条倾斜轨道组成的陀螺仪、轨道上跑着光子 + 分段弧环 + 雷达扫描），
+  // 笔记是一颗神经晶体；读数只写真实发生的事
   // （签票、框加载、框里的应用说「好了」，带实测耗时）；没好就一直在这里转着等；
   // ③ 点火——就绪后线稿上色、中心光核点亮、冲击波；④ 开门——刻度环放大成光圈冲出去，从中心露出下面的框，
   // 开到一小半时才告诉框「有人进来了」，框里接着播自己的入场。
@@ -544,17 +545,34 @@
   const GATE_CAP = 10000;   // 十秒还没就绪：先开门，框上的加载层自己接着等
   const GATE_GLYPHS = '01<>/\\|=+*#%ΣΔΛΞΨΩ░▒▓';   // WebObsidian 片头解码标题用的同一组字符
   const f1 = n => Math.round(n * 10) / 10;
-  const haloGlyph = (n) => {
-    const pts = Array.from({ length: n }, (_, i) => {
-      const a = i * 2.39996, r = (.1 + Math.sqrt((i + 1) / n) * .32) * 330;
-      return [f1(Math.cos(a) * r), f1(Math.sin(a) * r)];
+  const polar = (r, deg) => [f1(Math.cos(deg * Math.PI / 180) * r), f1(Math.sin(deg * Math.PI / 180) * r)];
+  const poly = pts => 'M' + pts.map(p => p.join(' ')).join('L') + 'Z';
+  // HaloWebUI 的离子中枢：从里往外画——六边形核心、六芒星（两个反向慢转的三角）、六根辐条（光脉冲顺着流向核心）、
+  // 三条倾斜的椭圆轨道（整组慢转成陀螺仪，各有一颗光子在跑）、分段弧环；雷达扇面扫过整座中枢。窄屏去掉六芒星、只留两条轨道。
+  const haloGlyph = (narrow) => {
+    const edges = [], nodes = [], spokes = [], orbits = [];
+    const hex = [0, 1, 2, 3, 4, 5].map(k => polar(60, -90 + k * 60));
+    edges.push([poly(hex), 'hex']);
+    if (!narrow) [-90, 90].forEach(a0 => edges.push([poly([0, 1, 2].map(k => polar(42, a0 + k * 120))), 'tri']));
+    hex.forEach((p, k) => {
+      const q = polar(116, -90 + k * 60);
+      spokes.push(edges.length);
+      edges.push([`M${q.join(' ')}L${p.join(' ')}`, 'spoke']);
+      nodes.push([...q, 2.6, 'a']);
     });
-    const edges = [];
-    for (let i = 1; i < n; i++) {
-      const [ax, ay] = pts[i], [bx, by] = pts[(i - 1) >> 1], my = f1((ay + by) / 2);
-      edges.push(`M${ax} ${ay}C${ax} ${my} ${bx} ${my} ${bx} ${by}`);
+    (narrow ? [-25, 25] : [0, 60, 120]).forEach(rot => {
+      const [x1, y1] = polar(132, rot), [x2, y2] = polar(132, rot + 180);
+      orbits.push(edges.length);
+      edges.push([`M${x1} ${y1}A132 42 ${rot} 1 1 ${x2} ${y2}A132 42 ${rot} 1 1 ${x1} ${y1}`, 'orbit']);
+    });
+    for (let k = 0; k < 6; k++) {
+      const [x1, y1] = polar(146, -82 + k * 60), [x2, y2] = polar(146, -38 + k * 60);
+      edges.push([`M${x1} ${y1}A146 146 0 0 1 ${x2} ${y2}`, 'arc']);
     }
-    return { edges, nodes: pts.map(([x, y], i) => [x, y, i % 5 ? 2.8 : 4.6, i % 5 ? 'a' : 'b']), core: [0, 0], pulses: [n - 2, n - 4, n - 7, n - 10] };
+    hex.forEach((p, k) => nodes.push([...p, 3.8, k % 2 ? 'a' : 'b']));
+    const [sx, sy] = polar(150, -42);
+    const extra = `<path class="sw" d="M0 0L150 0A150 150 0 0 0 ${sx} ${sy}Z"/><circle class="cr" r="24"/>`;
+    return { edges, nodes, core: [0, 0], pulses: spokes.slice(0, narrow ? 3 : 6), orbits, extra };
   };
   const CRYSTAL = { T: [0, -138], L: [-92, -22], ML: [-36, -44], MR: [38, -40], R: [94, -18], LL: [-58, 52], LR: [60, 56], C: [2, 4], B: [0, 140] };
   const CRYSTAL_EDGES = ['T-ML', 'T-MR', 'T-L', 'T-R', 'L-ML', 'ML-MR', 'MR-R', 'ML-C', 'MR-C', 'L-LL', 'R-LR', 'C-LL', 'C-LR', 'LL-B', 'LR-B', 'C-B'];
@@ -564,15 +582,19 @@
     const edges = CRYSTAL_EDGES.map(k => line(...k.split('-').map(v => CRYSTAL[v])));
     const nodes = Object.entries(CRYSTAL).filter(([k]) => k !== 'C').map(([k, [x, y]]) => [x, y, k === 'T' || k === 'B' ? 4.6 : 3.4, k === 'T' || k === 'B' ? 'b' : 'a']);
     if (!narrow) CRYSTAL_SYNAPSES.forEach(([x, y, to]) => { edges.push(line([x, y], CRYSTAL[to])); nodes.push([x, y, 2.4, 'a']); });
-    return { edges, nodes, core: CRYSTAL.C, pulses: [0, 3, 9, 15] };
+    return { edges, nodes, core: CRYSTAL.C, pulses: [0, 3, 9, 15], orbits: [], extra: '' };
   };
+  // 连线可以带个类名（[d, 'orbit']）；pulses 是沿连线流动的光脉冲，orbits 是绕整条轨道跑的光子。
   const gateSvg = (glyph) => {
-    const [cx, cy] = glyph.core;
-    return '<svg class="hub-gate__svg" viewBox="-200 -200 400 400">'
+    const [cx, cy] = glyph.core, edge = e => (Array.isArray(e) ? e : [e, '']);
+    return '<svg class="hub-gate__svg" viewBox="-200 -200 400 400"><defs>'
+      + '<linearGradient id="hubGateArc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ee7ff"/><stop offset=".55" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472d0"/></linearGradient>'
+      + '<linearGradient id="hubGateSweep" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#5ee7ff" stop-opacity=".45"/><stop offset="1" stop-color="#5ee7ff" stop-opacity="0"/></linearGradient></defs>'
       + '<circle class="hub-gate__ticks" r="184" pathLength="360"/><circle class="hub-gate__ring" r="170" pathLength="100"/>'
-      + '<circle class="hub-gate__ring is-inner" r="156" pathLength="100"/><g class="hub-gate__glyph">'
-      + glyph.edges.map((d, i) => `<path class="e" d="${d}" pathLength="1" style="--i:${i}"/>`).join('')
-      + glyph.pulses.map((k, i) => `<path class="p" d="${glyph.edges[k]}" pathLength="1" style="--i:${i}"/>`).join('')
+      + '<circle class="hub-gate__ring is-inner" r="156" pathLength="100"/><g class="hub-gate__glyph">' + glyph.extra
+      + glyph.edges.map((e, i) => { const [d, c] = edge(e); return `<path class="e${c ? ' ' + c : ''}" d="${d}" pathLength="1" style="--i:${i}"/>`; }).join('')
+      + glyph.pulses.map((k, i) => `<path class="p" d="${edge(glyph.edges[k])[0]}" pathLength="1" style="--i:${i}"/>`).join('')
+      + glyph.orbits.map((k, i) => `<path class="o" d="${edge(glyph.edges[k])[0]}" pathLength="1" style="--i:${i}"/>`).join('')
       + glyph.nodes.map(([x, y, r, c], i) => `<circle class="n ${c}" cx="${x}" cy="${y}" r="${r}" style="--i:${i}"/>`).join('')
       + `</g><circle class="hub-gate__shock" cx="${cx}" cy="${cy}" r="24"/><circle class="hub-gate__core" cx="${cx}" cy="${cy}" r="10"/></svg>`;
   };
@@ -665,7 +687,7 @@
     gateDrop();
     const still = stillScene(), tier = gateTier(), warm = Boolean(opts.ready);
     const [launch, draw, ignite, open] = GATE_T[still ? 'still' : tier === 'desk' ? 'desk' : 'touch'][warm ? 'warm' : 'cold'];
-    const glyph = name === 'chat' ? haloGlyph(tier === 'narrow' ? 14 : 22) : vaultGlyph(tier === 'narrow');
+    const glyph = name === 'chat' ? haloGlyph(tier === 'narrow') : vaultGlyph(tier === 'narrow');
     const title = name === 'chat' ? 'HALO · WEBUI' : 'NEURAL · VAULT';
     const el = document.createElement('div');
     el.className = `hub-gate is-${name} is-${tier}` + (warm ? ' is-warm' : '') + (still ? ' is-still' : '');
