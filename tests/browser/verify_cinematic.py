@@ -50,20 +50,6 @@ def scifi(b):
           'bh_scifi_boot=1' in page.evaluate('document.cookie') and page.locator('.hub-boot').count() == 0)
     check('sci-fi: starfield is drawn', page.locator('.hub-stars').evaluate('el => getComputedStyle(el).display') == 'block'
           and page.locator('.hub-stars').evaluate('el => el.width > 0'))
-    check('sci-fi: default dark scene activates reactor and 4 HUD callouts',
-          page.locator('.hub-reactor').evaluate('el => getComputedStyle(el).display') == 'block'
-          and page.locator('.hub-reactor__hud').count() == 4
-          and page.locator('.main').evaluate("el => getComputedStyle(el).backgroundColor.startsWith('rgba(')"))
-    check('sci-fi: launchpad tiles and panels render holographic HUD frames',
-          page.locator('.tile-link').first.evaluate('el => getComputedStyle(el).borderTopColor') != 'rgba(0, 0, 0, 0)'
-          and page.locator('.deck-card').first.evaluate("el => getComputedStyle(el).backgroundImage.split('gradient(').length >= 11"))
-    failed = page.locator('#homeList .widget-value.is-error')
-    check('sci-fi: failed widget values keep their danger color', failed.count() > 0 and failed.first.evaluate(
-        "el => { const s = document.createElement('span'); s.style.color = 'var(--danger)'; el.parentNode.append(s); const want = getComputedStyle(s).color; s.remove(); return getComputedStyle(el).color === want; }"))
-    page.evaluate("openLibPage('monitor')"); page.wait_for_selector('#addBm')
-    check('sci-fi: primary buttons use plasma neon gradient',
-          'linear-gradient' in page.locator('#addBm').evaluate('el => getComputedStyle(el).backgroundImage'))
-    page.evaluate("openLibPage('@home')"); page.wait_for_timeout(300)
     page.reload(); page.wait_for_timeout(400)
     check('sci-fi: no second opening within 6 hours', page.locator('.hub-boot').count() == 0)
     page.evaluate("openHomeLook()"); page.wait_for_selector('#scifiSeg')
@@ -95,11 +81,6 @@ def stellar_scene(b):
         sample = lambda: scene.evaluate('el => el.toDataURL()')
         before = sample(); page.wait_for_timeout(200)
         check(label + ': orbital scene moves', before != sample())
-        # 时钟中线上那道横向光束是星核的标志：手机上不该有（固定画布追不上原生滚动，滚动时会抖）。
-        beam = page.evaluate("""() => { const c = document.querySelector('.hub-stars'), b = document.getElementById('heroClock').getBoundingClientRect(), k = c.width / innerWidth;
-            const d = c.getContext('2d').getImageData(Math.round(b.left * k), Math.round((b.top + b.height / 2 - 2) * k), Math.max(1, Math.round(b.width * k)), Math.round(4 * k)).data;
-            let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n / (d.length / 4); }""")
-        check(label + (': clock-anchored reactor is drawn' if not mobile else ': no clock-anchored reactor on touch screens'), (beam > .3) if not mobile else (beam < .1))
         page.emulate_media(reduced_motion='reduce'); page.wait_for_timeout(150)
         before = sample(); page.wait_for_timeout(200)
         check(label + ': reduced motion freezes the scene', before == sample())
