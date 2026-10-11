@@ -45,7 +45,9 @@
 // 色差跃迁、HUD 扫描线与时钟彗星。壁纸重画了，换号让 cache-first 的旧星核失效。
 // v65：首页分组全部展开后刷新不再被同步的旧折叠列表盖回去（全部展开写 none）。
 // v66：选了星核壁纸时「AI 聊天」框给深色、「笔记」框给 neural（WebObsidian 黑金主题）。
-const CACHE_VERSION = 'bh-shell-v73';
+// v76：科幻层 III「电影镜头」——胶片暗角与颗粒、切页 / 开场 / 回到页面的遮幅切镜与镜头光束、滚动推镜与图标浮现、电脑搜索聚焦遮幅。
+// （v74 / v75 已回退，换号跳过它们，客户端里残留的旧缓存一并作废。）
+const CACHE_VERSION = 'bh-shell-v76';
 const SHELL = [
   '/',
   '/static/app-v3.css',

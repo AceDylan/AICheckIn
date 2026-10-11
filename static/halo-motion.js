@@ -206,6 +206,24 @@
   const floor = document.createElement('div');
   floor.className = 'hub-floor'; floor.setAttribute('aria-hidden', 'true');
   stars.after(floor);
+  // 电影镜头（见 app-v3.css「科幻层 III」）：胶片层（暗角 + 颗粒）纯 CSS；切镜层的遮幅黑边与镜头光束由 playCut 用 WAAPI 播。
+  const film = document.createElement('div');
+  film.className = 'hub-film'; film.setAttribute('aria-hidden', 'true');
+  const cut = document.createElement('div');
+  cut.className = 'hub-cut'; cut.setAttribute('aria-hidden', 'true');
+  cut.innerHTML = '<i class="hub-cut__bar is-top"></i><i class="hub-cut__bar is-bottom"></i><i class="hub-cut__flare"></i>';
+  document.body.append(film, cut);
+  // 切镜：上下遮幅一合一开（中间那段停一下），同时一道横向光束从中间拉开再散掉。只是一层不接收指针的装饰，不挡操作。
+  const playCut = (ms) => {
+    if (typeof cut.animate !== 'function') return;
+    const duration = Math.max(560, Math.min(ms, 900)), easing = 'cubic-bezier(.65, 0, .35, 1)';
+    const [top, bottom, flare] = cut.children;
+    [[top, '-101%'], [bottom, '101%']].forEach(([el, away]) => el.animate([
+      { transform: `translateY(${away})` }, { transform: 'none', offset: .3 }, { transform: 'none', offset: .55 }, { transform: `translateY(${away})` },
+    ], { duration, easing }));
+    flare.animate([{ opacity: 0, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: .4 }, { opacity: 0, transform: 'scaleX(1.15)' }],
+      { duration, easing: 'ease-out' });
+  };
   const sctx = stars.getContext && stars.getContext('2d');
   const TINTS = ['#ffffff', '#bfe9ff', '#9fd8ff', '#d7c8ff', '#ffe6c4'];
   let field = [], sw = 0, sh = 0, sframe = 0, slast = 0, warpStart = 0, warpUntil = 0, spx = 0, spy = 0, stx = 0, sty = 0;
@@ -407,11 +425,20 @@
     slast = 0; sframe = requestAnimationFrame(starLoop);
   };
   const stopStars = () => { if (sframe) cancelAnimationFrame(sframe); sframe = 0; };
-  const hubWarp = (ms = 900) => { if (stillScene() || !sceneAllowed() || document.hidden) return; warpStart = performance.now(); warpUntil = warpStart + ms; startStars(); };
+  const hubWarp = (ms = 900) => {
+    if (stillScene() || !sceneAllowed() || document.hidden) return;
+    warpStart = performance.now(); warpUntil = warpStart + ms; startStars(); playCut(ms);
+  };
   if (sctx) {
     sizeStars();
     window.addEventListener('resize', () => { sizeStars(); startStars(); }, { passive: true });
-    document.addEventListener('visibilitychange', () => (document.hidden ? stopStars() : startStars()));
+    // 从别的标签页（多半是刚点开的网址）回来：离开超过 1.5 秒就补一个回场镜头。
+    let hiddenAt = 0;
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { hiddenAt = performance.now(); stopStars(); return; }
+      startStars();
+      if (hiddenAt && performance.now() - hiddenAt > 1500) hubWarp(700);
+    });
     document.addEventListener('pointermove', e => {
       if (!desktop.matches || e.pointerType !== 'mouse') return;
       stx = (e.clientX / innerWidth - .5) * -24; sty = (e.clientY / innerHeight - .5) * -24;

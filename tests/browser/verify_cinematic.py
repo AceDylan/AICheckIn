@@ -28,6 +28,7 @@ def cinematic(b):
                 check(label + ': search remains usable', page.locator('#homeSearchList').is_visible())
                 if reduced:
                     check(label + ': reduced motion has no surrounding transform', page.locator('.home-hero').evaluate('el=>getComputedStyle(el).transform') == 'none')
+                    check(label + ': reduced motion keeps scroll cinema off', page.evaluate("() => getComputedStyle(document.querySelector('.home-hero')).animationName === 'none' && getComputedStyle(document.querySelector('.hub-film'), '::after').animationName === 'none'"))
                 if mobile:
                     check(label + ': phone wallpaper has no parallax', page.locator('#homeWall').evaluate('el=>getComputedStyle(el,"::before").transform') == 'none')
                 check(label + ': no horizontal overflow', page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'))
@@ -50,6 +51,12 @@ def scifi(b):
           'bh_scifi_boot=1' in page.evaluate('document.cookie') and page.locator('.hub-boot').count() == 0)
     check('sci-fi: starfield is drawn', page.locator('.hub-stars').evaluate('el => getComputedStyle(el).display') == 'block'
           and page.locator('.hub-stars').evaluate('el => el.width > 0'))
+    check('cinema: film grain and cut layers never take the pointer',
+          page.evaluate("() => ['.hub-film', '.hub-cut'].every(sel => { const el = document.querySelector(sel); return el && getComputedStyle(el).pointerEvents === 'none'; })"))
+    page.evaluate("HaloMotion.warp(700)")
+    check('cinema: a warp plays the letterbox cut', page.evaluate("() => document.querySelector('.hub-cut__bar.is-top').getAnimations().length > 0"))
+    check('cinema: groups materialize on scroll and the hero dollies back',
+          page.evaluate("() => !CSS.supports('animation-timeline: view()') || (getComputedStyle(document.querySelector('#homeList .home-section:not(:first-child)')).animationName === 'sf-materialize' && getComputedStyle(document.querySelector('.home-hero')).animationName === 'sf-dolly')"))
     page.reload(); page.wait_for_timeout(400)
     check('sci-fi: no second opening within 6 hours', page.locator('.hub-boot').count() == 0)
     page.evaluate("openHomeLook()"); page.wait_for_selector('#scifiSeg')

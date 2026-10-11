@@ -3165,3 +3165,62 @@ html.scene-still :is(.hub-reactor, .hub-reactor__ticks, .hub-reactor__dash, .hub
   html.hub-scifi .hero-clock { background: none; color: var(--text); filter: none; animation: none; }
   html.hub-scifi .main::before, html.hub-scifi .home-search-bar::after { display: none; }
 }
+
+/* ---------- 科幻层 III：电影镜头（外壳 v76） ----------
+   前两层是「静态的 HUD 外观」，这一层补的是电影的「镜头语言」——胶片质感、切镜、推镜、镜头光：
+   · 胶片：四角暗角 + 跳帧的胶片颗粒（深色 / 壁纸场景）；
+   · 切镜：切页、开场结束、回到页面时，上下遮幅黑边一合一开，中间横扫一道变形宽银幕光束（halo-motion.js 用 WAAPI 播）；
+   · 推镜：往下滚时首屏（时钟 / 反应堆）慢半拍后退缩小；分组、卡片滚进视口时从下面浮现（滚动时间轴，跑在合成线程）；
+   · 流光：时钟数字的全息渐变缓缓流动。
+   （没做「搜索聚焦收遮幅」：电脑首页打开时搜索框自动聚焦，遮幅会常驻、白占屏幕。）
+   全部只动 transform / opacity，不在固定画布上追滚动内容（v74 手机抖动的教训）；减弱动态效果、省流量、高对比时整层让路。 */
+.hub-film, .hub-cut { display: none; }
+html.hub-scifi:is([data-theme="dark"], .wall-on) .hub-film {
+  display: block; position: fixed; inset: 0; z-index: 45; pointer-events: none; overflow: hidden;
+  background: radial-gradient(ellipse 120% 95% at 50% 45%, transparent 58%, rgb(0 0 0 / .38) 100%);
+}
+html.hub-scifi .hub-film::after {   /* 胶片颗粒：一张噪点小图铺满，每 1/12 秒跳一个位置 */
+  content: ""; position: absolute; inset: -24px; opacity: .07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.6 -.55'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  animation: sf-grain .5s steps(1) infinite;
+}
+@keyframes sf-grain {
+  0% { transform: translate(0, 0); } 17% { transform: translate(-13px, 9px); } 33% { transform: translate(11px, -16px); }
+  50% { transform: translate(-7px, 19px); } 67% { transform: translate(17px, 5px); } 83% { transform: translate(-19px, -11px); }
+}
+html.hub-scifi .hub-cut { display: block; position: fixed; inset: 0; z-index: 46; pointer-events: none; overflow: hidden; }
+.hub-cut__bar {
+  position: absolute; left: 0; right: 0; height: 11vh; background: #000; transform: translateY(-101%);
+}
+.hub-cut__bar.is-top { top: 0; box-shadow: inset 0 -1px 0 rgb(94 231 255 / .35), 0 1px 18px rgb(94 231 255 / .18); }
+.hub-cut__bar.is-bottom { bottom: 0; transform: translateY(101%); box-shadow: inset 0 1px 0 rgb(167 139 250 / .35), 0 -1px 18px rgb(167 139 250 / .18); }
+.hub-cut__flare {
+  position: absolute; left: -10%; right: -10%; top: 50%; height: 2px; margin-top: -1px; opacity: 0; transform: scaleX(0);
+  background: linear-gradient(90deg, transparent, rgb(94 231 255 / .7) 30%, #f0fdff 50%, rgb(167 139 250 / .7) 70%, transparent);
+  box-shadow: 0 0 14px 2px rgb(94 231 255 / .55), 0 0 60px 10px rgb(167 139 250 / .25);
+}
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    /* 推镜：首屏随滚动后退（独立的 translate / scale，不碰搜索镜头用的 transform） */
+    html.hub-scifi:not(.scene-still) .home-hero {
+      animation: sf-dolly linear both; animation-timeline: scroll(root block); animation-range: 0 60vh;
+    }
+    @keyframes sf-dolly { to { translate: 0 36px; scale: .9; } }
+    /* 浮现：滚进视口的那一段从下方升起、由暗到亮；进来以后就是原样。按分组挂（首页约十个），不按图标挂——
+       每个图标一条滚动时间轴会让 renderHome 慢约 15%。:where 压低优先级：首屏 3 秒的 sf-entering 入场照常优先；整理模式不加，免得拖拽时量到位移。 */
+    html.hub-scifi:where(:not(.scene-still)) :where(#homePage:not(.is-arranging)) .home-section,
+    html.hub-scifi:where(:not(.scene-still)) :is(.bookmark-card, .link-card) {
+      animation: sf-materialize linear both; animation-timeline: view(); animation-range: entry 0% entry 240px;
+    }
+    @keyframes sf-materialize { from { opacity: 0; translate: 0 28px; scale: .94; } 55% { opacity: .85; } }
+  }
+  /* 时钟数字：全息渐变缓缓流动（渐变铺两倍宽，来回平移） */
+  html.hub-scifi:not(.scene-still) .hero-clock {
+    background-size: 220% 100%;
+    animation: sf-holo-reveal 850ms 100ms cubic-bezier(.16, 1, .3, 1) both, sf-clock-flow 7s 1s ease-in-out infinite alternate;
+  }
+  @keyframes sf-clock-flow { from { background-position: 0% 0; } to { background-position: 100% 0; } }
+}
+html.scene-still .hub-film::after { animation: none; }
+@media (prefers-reduced-motion: reduce) { html.hub-scifi .hub-film::after { animation: none; } }
+@media (prefers-contrast: more), (forced-colors: active) { html.hub-scifi :is(.hub-film, .hub-cut) { display: none !important; } }
