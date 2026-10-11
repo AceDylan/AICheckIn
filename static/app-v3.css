@@ -1484,8 +1484,8 @@ html.wall-on .home-arrange-bar { background: #15171d; }
      .nav-rail  导航选了图标栏（仅桌面宽度）
    毛玻璃（backdrop-filter）只给搜索框、导航、页头这几块大面；卡片、图标、小组件一律用半透明实底，手机上不掉帧。
    ========================================================================== */
-.home-wall {
-  position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0; visibility: hidden;
+.home-wall {   /* 高度锁 100lvh：手机地址栏伸缩时壁纸不跟着变高变矮、不被 cover 重新缩放（滚动时整张图会一跳一跳） */
+  position: fixed; inset: 0 0 auto; height: 100%; height: 100lvh; z-index: -1; pointer-events: none; opacity: 0; visibility: hidden;
   background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, .10), transparent 60%), var(--wall-color, #10151f);
   transition: opacity .35s ease, visibility 0s linear .35s;
 }
@@ -2731,7 +2731,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 :root { --sf-cyan: #0891b2; --sf-violet: #7c3aed; --sf-magenta: #db2777; --sf-line: rgb(8 145 178 / .16); --sf-glow: rgb(8 145 178 / .22); }
 :root[data-theme="dark"], html.wall-on { --sf-cyan: #5ee7ff; --sf-violet: #a78bfa; --sf-magenta: #f472d0; --sf-line: rgb(94 231 255 / .16); --sf-glow: rgb(94 231 255 / .35); }
 
-.hub-stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; display: none; }
+.hub-stars { position: fixed; inset: 0 0 auto; width: 100%; height: 100%; height: 100lvh; z-index: -1; pointer-events: none; display: none; }
 html.hub-scifi .hub-stars { display: block; }
 html.wall-on .hub-stars { opacity: .55; }
 /* 开着壁纸时壁纸就是背景：不再叠全息网格，免得和星云、星场、星核挤在一起。 */
@@ -3170,13 +3170,13 @@ html.scene-still :is(.hub-reactor, .hub-reactor__ticks, .hub-reactor__dash, .hub
    前两层是「静态的 HUD 外观」，这一层补的是电影的「镜头语言」——胶片质感、切镜、推镜、镜头光：
    · 胶片：四角暗角 + 跳帧的胶片颗粒（深色 / 壁纸场景）；
    · 切镜：切页、开场结束、回到页面时，上下遮幅黑边一合一开，中间横扫一道变形宽银幕光束（halo-motion.js 用 WAAPI 播）；
-   · 推镜：往下滚时首屏（时钟 / 反应堆）慢半拍后退缩小；分组、卡片滚进视口时从下面浮现（滚动时间轴，跑在合成线程）；
+   · 推镜（只在电脑上）：往下滚时首屏（时钟 / 反应堆）慢半拍后退缩小；分组、卡片滚进视口时从下面浮现（滚动时间轴，跑在合成线程）；
    · 流光：时钟数字的全息渐变缓缓流动。
    （没做「搜索聚焦收遮幅」：电脑首页打开时搜索框自动聚焦，遮幅会常驻、白占屏幕。）
-   全部只动 transform / opacity，不在固定画布上追滚动内容（v74 手机抖动的教训）；减弱动态效果、省流量、高对比时整层让路。 */
+   全部只动 transform / opacity，不在固定画布上追滚动内容；手机上不做任何随滚动位移的效果（v74 / v76 手机抖动的教训）；减弱动态效果、省流量、高对比时整层让路。 */
 .hub-film, .hub-cut { display: none; }
 html.hub-scifi:is([data-theme="dark"], .wall-on) .hub-film {
-  display: block; position: fixed; inset: 0; z-index: 45; pointer-events: none; overflow: hidden;
+  display: block; position: fixed; inset: 0 0 auto; height: 100%; height: 100lvh; z-index: 45; pointer-events: none; overflow: hidden;
   background: radial-gradient(ellipse 120% 95% at 50% 45%, transparent 58%, rgb(0 0 0 / .38) 100%);
 }
 html.hub-scifi .hub-film::after {   /* 胶片颗粒：一张噪点小图铺满，每 1/12 秒跳一个位置 */
@@ -3200,7 +3200,7 @@ html.hub-scifi .hub-cut { display: block; position: fixed; inset: 0; z-index: 46
   box-shadow: 0 0 14px 2px rgb(94 231 255 / .55), 0 0 60px 10px rgb(167 139 250 / .25);
 }
 @media (prefers-reduced-motion: no-preference) {
-  @supports (animation-timeline: view()) {
+  @supports (animation-timeline: view()) { @media (width > 760px) {   /* 只在电脑上：手机上随滚动位移的内容读起来就是「抖」 */
     /* 推镜：首屏随滚动后退（独立的 translate / scale，不碰搜索镜头用的 transform） */
     html.hub-scifi:not(.scene-still) .home-hero {
       animation: sf-dolly linear both; animation-timeline: scroll(root block); animation-range: 0 60vh;
@@ -3213,7 +3213,7 @@ html.hub-scifi .hub-cut { display: block; position: fixed; inset: 0; z-index: 46
       animation: sf-materialize linear both; animation-timeline: view(); animation-range: entry 0% entry 240px;
     }
     @keyframes sf-materialize { from { opacity: 0; translate: 0 28px; scale: .94; } 55% { opacity: .85; } }
-  }
+  } }
   /* 时钟数字：全息渐变缓缓流动（渐变铺两倍宽，来回平移） */
   html.hub-scifi:not(.scene-still) .hero-clock {
     background-size: 220% 100%;

@@ -230,9 +230,13 @@
   let meteor = null, nextMeteor = performance.now() + 5000;
   const phone = () => !desktop.matches;
   const spawn = (far) => ({ x: (Math.random() - .5) * sw / (Math.max(sw, sh) * .55), y: (Math.random() - .5) * sh / (Math.max(sw, sh) * .55), z: far ? 1 : .15 + Math.random() * .85, tint: TINTS[(Math.random() * TINTS.length) | 0], ph: Math.random() * 6.28 });
+  // 画布高度按 CSS 的 100lvh（地址栏收起时的最大视口）：手机上滚动时地址栏伸缩、弹出键盘都会触发 resize，
+  // 尺寸没变就不重建画布——重建会清空画面、星场中心跟着跳，滚动时看着一闪一抖。
   const sizeStars = () => {
     if (!sctx) return;
-    sw = innerWidth; sh = innerHeight;
+    const w = innerWidth, h = stars.clientHeight || innerHeight;
+    if (w === sw && h === sh) return;
+    sw = w; sh = h;
     const ratio = Math.min(devicePixelRatio || 1, phone() ? 1.25 : 1.5);
     stars.width = sw * ratio; stars.height = sh * ratio;
     sctx.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -243,6 +247,8 @@
   // 星核本体（星核壁纸下）：外圈辉光、横向镜头光束、吸积盘粒子流（内圈转得快、朝我们转来的左侧更亮）、
   // 日冕射线、被引力透镜弯到核上方的盘影、暗核 + 光子环、冲击波、偶发电弧。暗核正好托在时钟数字后面，
   // 字永远读得清；盘的近半边从数字下方掠过，正对文字那一段淡掉。跃迁（切页 / 开场）时整体增亮、加速。
+  // 只在电脑上画：星核跟着时钟走、却画在固定的画布上，触屏的原生滚动在合成线程里跑，画布每帧都慢半拍，
+  // 手机上滚动时整团光拖在时钟后面一顿一顿地抖。
   const clockEl = document.getElementById('heroClock');
   const DISK_TINTS = ['#e6fbff', '#7fe3ff', '#a78bfa', '#f472d0'];
   const flow = Array.from({ length: 220 }, () => {
@@ -251,25 +257,24 @@
   });
   const RAYS = Array.from({ length: 72 }, (_, i) => ({ a: i / 72 * 6.2832 + Math.random() * .05, len: .2 + Math.random() ** 2 * 1.2, ph: Math.random() * 6.28 }));
   const DISK_TILT = -.08, TC = Math.cos(DISK_TILT), TS = Math.sin(DISK_TILT);
-  let DISK_FLAT = .3;
+  const DISK_FLAT = .3;
   let reactorLast = 0, arc = null, nextArc = 0;
   const onDisk = (r, e, a, lift = 0) => {
     const x = Math.cos(a) * e * r, y = (Math.sin(a) * e * DISK_FLAT + lift) * r;
     return [x * TC - y * TS, x * TS + y * TC];
   };
   const reactorAnchor = () => {
-    if (root.dataset.wallpaper !== 'starcore' || !clockEl) return null;
+    if (root.dataset.wallpaper !== 'starcore' || !clockEl || phone()) return null;
     const b = clockEl.getBoundingClientRect();
     if (!b.width || b.bottom < -b.height * 3 || b.top > sh) return null;
-    // 桌面：暗核要装得下整排数字和下面那行问候；手机：时钟只有 32px，画扁平版（没有暗核和光环，见 drawReactor）。
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: phone() ? Math.max(30, b.height) : Math.max(b.height * 1.3, b.width * .64) };
+    // 暗核要装得下整排数字和下面那行问候。
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(b.height * 1.3, b.width * .64) };
   };
   const drawReactor = (now, energy) => {
     const at = reactorAnchor();
     if (!at) return;
     const r = at.r, t = now / 1000, dt = reactorLast && t > reactorLast ? Math.min(.1, t - reactorLast) : 0;
-    const still = stillScene(), small = phone();
-    DISK_FLAT = small ? .16 : .3;
+    const still = stillScene();
     const boost = 1 + energy * 1.6 + (root.classList.contains('cine-search') ? .35 : 0), lift = Math.min(1.5, boost);
     const breathe = .5 + .5 * Math.sin(t * .9);
     reactorLast = t;
@@ -284,9 +289,8 @@
     sctx.fillStyle = g; sctx.globalAlpha = (.4 + .25 * breathe) * lift; sctx.fillRect(-beam, -.8, beam * 2, 1.6);
     sctx.globalAlpha *= .3; sctx.fillRect(-beam * .75, -6, beam * 1.5, 12);
     const disk = (front) => {
-      sctx.lineWidth = small ? 1.1 : 1.6;
-      for (let i = 0, n = small ? 100 : flow.length; i < n; i++) {
-        const p = flow[i];
+      sctx.lineWidth = 1.6;
+      for (const p of flow) {
         if (!front) p.a += dt * (.5 + energy * 2.4) / p.e ** 1.5;
         if ((Math.sin(p.a) > 0) !== front) continue;
         const [x0, y0] = onDisk(r, p.e, p.a - p.len / p.e, p.lift), [x1, y1] = onDisk(r, p.e, p.a, p.lift);
@@ -297,33 +301,29 @@
       }
     };
     disk(false);
-    if (!small) {   // 手机上到此为止只剩辉光、光束与扁平盘：暗核、光环、透镜弧都不画
-      sctx.lineWidth = 1; sctx.strokeStyle = '#9fe9ff';
-      for (const ray of RAYS) {
-        const a = ray.a + t * .025, len = ray.len * (.65 + .35 * Math.sin(t * 1.3 + ray.ph));
-        sctx.globalAlpha = .08 * lift;
-        sctx.beginPath(); sctx.moveTo(Math.cos(a) * r * 1.06, Math.sin(a) * r * 1.06);
-        sctx.lineTo(Math.cos(a) * r * (1.06 + len), Math.sin(a) * r * (1.06 + len)); sctx.stroke();
-      }
+    sctx.lineWidth = 1; sctx.strokeStyle = '#9fe9ff';
+    for (const ray of RAYS) {
+      const a = ray.a + t * .025, len = ray.len * (.65 + .35 * Math.sin(t * 1.3 + ray.ph));
+      sctx.globalAlpha = .08 * lift;
+      sctx.beginPath(); sctx.moveTo(Math.cos(a) * r * 1.06, Math.sin(a) * r * 1.06);
+      sctx.lineTo(Math.cos(a) * r * (1.06 + len), Math.sin(a) * r * (1.06 + len)); sctx.stroke();
     }
-    if (!small) {
-      g = sctx.createLinearGradient(-r * 1.2, 0, r * 1.2, 0);
-      g.addColorStop(0, '#5ee7ff'); g.addColorStop(.45, '#f2fbff'); g.addColorStop(1, '#f472d0');
-      sctx.strokeStyle = g; sctx.shadowColor = '#a78bfa'; sctx.shadowBlur = small ? 6 : 16;
-      sctx.lineWidth = small ? 1.6 : 2.4; sctx.globalAlpha = (.55 + .3 * breathe) * Math.min(1.4, boost);
-      sctx.beginPath(); sctx.ellipse(0, -r * .04, r * 1.17, r * 1.1, 0, Math.PI * 1.04, Math.PI * 1.96); sctx.stroke();
-      sctx.lineWidth = 1.2; sctx.globalAlpha *= .5;
-      sctx.beginPath(); sctx.ellipse(0, r * .02, r * 1.08, r * 1.04, 0, Math.PI * .1, Math.PI * .9); sctx.stroke();
-      sctx.shadowBlur = 0;
-      sctx.globalCompositeOperation = 'source-over';
-      g = sctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.03);
-      g.addColorStop(0, 'rgba(2,3,10,.95)'); g.addColorStop(.85, 'rgba(3,4,14,.92)'); g.addColorStop(1, 'rgba(3,4,14,0)');
-      sctx.globalAlpha = 1; sctx.fillStyle = g; sctx.beginPath(); sctx.arc(0, 0, r * 1.03, 0, 6.2832); sctx.fill();
-      sctx.globalCompositeOperation = 'lighter';
-      sctx.lineWidth = 1.4; sctx.strokeStyle = '#dff8ff'; sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = small ? 4 : 12;
-      sctx.globalAlpha = (.5 + .35 * breathe) * Math.min(1.4, boost);
-      sctx.beginPath(); sctx.arc(0, 0, r, 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
-    }
+    g = sctx.createLinearGradient(-r * 1.2, 0, r * 1.2, 0);
+    g.addColorStop(0, '#5ee7ff'); g.addColorStop(.45, '#f2fbff'); g.addColorStop(1, '#f472d0');
+    sctx.strokeStyle = g; sctx.shadowColor = '#a78bfa'; sctx.shadowBlur = 16;
+    sctx.lineWidth = 2.4; sctx.globalAlpha = (.55 + .3 * breathe) * Math.min(1.4, boost);
+    sctx.beginPath(); sctx.ellipse(0, -r * .04, r * 1.17, r * 1.1, 0, Math.PI * 1.04, Math.PI * 1.96); sctx.stroke();
+    sctx.lineWidth = 1.2; sctx.globalAlpha *= .5;
+    sctx.beginPath(); sctx.ellipse(0, r * .02, r * 1.08, r * 1.04, 0, Math.PI * .1, Math.PI * .9); sctx.stroke();
+    sctx.shadowBlur = 0;
+    sctx.globalCompositeOperation = 'source-over';
+    g = sctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.03);
+    g.addColorStop(0, 'rgba(2,3,10,.95)'); g.addColorStop(.85, 'rgba(3,4,14,.92)'); g.addColorStop(1, 'rgba(3,4,14,0)');
+    sctx.globalAlpha = 1; sctx.fillStyle = g; sctx.beginPath(); sctx.arc(0, 0, r * 1.03, 0, 6.2832); sctx.fill();
+    sctx.globalCompositeOperation = 'lighter';
+    sctx.lineWidth = 1.4; sctx.strokeStyle = '#dff8ff'; sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 12;
+    sctx.globalAlpha = (.5 + .35 * breathe) * Math.min(1.4, boost);
+    sctx.beginPath(); sctx.arc(0, 0, r, 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
     disk(true);
     const wave = (t % 7) / 1.8;
     if (!still && wave < 1) {
@@ -338,7 +338,7 @@
       sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 20;
       sctx.beginPath(); sctx.arc(0, 0, r * (1 + (1 - energy) * 2.4), 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
     }
-    if (!still && !small) {
+    if (!still) {
       if (now > nextArc) {
         // 从暗核边缘沿径向打到盘上：起点取终点方向上的光子环，整条电弧都在暗核外面，不会划过时钟数字。
         const a = Math.random() * 6.2832, e = 1.6 + Math.random() * 1.2, pts = [];
@@ -449,7 +449,7 @@
     // 外观里开关一拨，<html> 的 class 变了：星场跟着起停。
     new MutationObserver(() => {
       if (!sceneAllowed()) { stopStars(); sctx.clearRect(0, 0, sw, sh); }
-      else startStars();
+      else { sizeStars(); startStars(); }   // 刚打开科幻特效时画布才有 CSS 尺寸
     }).observe(root, { attributes: true, attributeFilter: ['class', 'data-wallpaper', 'data-theme'] });
     syncScene();
   }

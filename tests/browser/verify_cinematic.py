@@ -88,6 +88,14 @@ def stellar_scene(b):
         sample = lambda: scene.evaluate('el => el.toDataURL()')
         before = sample(); page.wait_for_timeout(200)
         check(label + ': orbital scene moves', before != sample())
+        # 时钟中线上那道横向光束是星核的标志：手机上不该有（固定画布追不上原生滚动，滚动时会抖）。
+        beam = page.evaluate("""() => { const c = document.querySelector('.hub-stars'), b = document.getElementById('heroClock').getBoundingClientRect(), k = c.width / innerWidth;
+            const d = c.getContext('2d').getImageData(Math.round(b.left * k), Math.round((b.top + b.height / 2 - 2) * k), Math.max(1, Math.round(b.width * k)), Math.round(4 * k)).data;
+            let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n / (d.length / 4); }""")
+        check(label + (': clock-anchored reactor is drawn' if not mobile else ': no clock-anchored reactor on touch screens'), (beam > .3) if not mobile else (beam < .1))
+        if mobile:
+            check(label + ': nothing moves with the scroll on phones (no dolly / materialize)', page.evaluate(
+                "() => getComputedStyle(document.querySelector('.home-hero')).animationName !== 'sf-dolly' && ![...document.querySelectorAll('#homeList .home-section')].some(el => getComputedStyle(el).animationName === 'sf-materialize')"))
         page.emulate_media(reduced_motion='reduce'); page.wait_for_timeout(150)
         before = sample(); page.wait_for_timeout(200)
         check(label + ': reduced motion freezes the scene', before == sample())
