@@ -226,6 +226,22 @@
     flare.animate([{ opacity: 0, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: .4 }, { opacity: 0, transform: 'scaleX(1.15)' }],
       { duration, easing: 'ease-out' }).finished.then(() => { if (!cut.getAnimations({ subtree: true }).length) cut.classList.remove('is-on'); }, () => {});
   };
+  // 星门用：遮幅合上后停住（等框里的应用说「好了」），开门时再拉开，拉开那一下带镜头光束。
+  let cutHeld = false;
+  const cutHold = (on) => {
+    if (typeof cut.animate !== 'function' || on === cutHeld) return;
+    cutHeld = on;
+    const [top, bottom, flare] = cut.children, easing = 'cubic-bezier(.65, 0, .35, 1)';
+    cut.getAnimations({ subtree: true }).forEach(a => a.cancel());
+    cut.classList.add('is-on');
+    cut.classList.toggle('is-hold', on);
+    const bars = [[top, '-101%'], [bottom, '101%']].map(([el, away]) => el.animate(
+      on ? [{ transform: `translateY(${away})` }, { transform: 'none' }] : [{ transform: 'none' }, { transform: `translateY(${away})` }],
+      { duration: on ? 300 : 460, easing, fill: on ? 'forwards' : 'none' }));
+    if (on) return;
+    flare.animate([{ opacity: 0, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: .35 }, { opacity: 0, transform: 'scaleX(1.15)' }], { duration: 520, easing: 'ease-out' });
+    Promise.all(bars.map(a => a.finished)).then(() => { if (!cutHeld && !cut.getAnimations({ subtree: true }).length) cut.classList.remove('is-on'); }, () => {});
+  };
   const sctx = stars.getContext && stars.getContext('2d');
   const TINTS = ['#ffffff', '#bfe9ff', '#9fd8ff', '#d7c8ff', '#ffe6c4'];
   let field = [], sw = 0, sh = 0, sframe = 0, slast = 0, warpStart = 0, warpUntil = 0, spx = 0, spy = 0, stx = 0, sty = 0;
@@ -260,7 +276,7 @@
   const RAYS = Array.from({ length: 72 }, (_, i) => ({ a: i / 72 * 6.2832 + Math.random() * .05, len: .2 + Math.random() ** 2 * 1.2, ph: Math.random() * 6.28 }));
   const DISK_TILT = -.08, TC = Math.cos(DISK_TILT), TS = Math.sin(DISK_TILT);
   const DISK_FLAT = .3;
-  let reactorLast = 0, arc = null, nextArc = 0;
+  let reactorLast = 0, arc = null, nextArc = 0, reactorSeen = null;
   const onDisk = (r, e, a, lift = 0) => {
     const x = Math.cos(a) * e * r, y = (Math.sin(a) * e * DISK_FLAT + lift) * r;
     return [x * TC - y * TS, x * TS + y * TC];
@@ -275,6 +291,7 @@
   const drawReactor = (now, energy) => {
     const at = reactorAnchor();
     if (!at) return;
+    reactorSeen = { ...at, t: performance.now() };   // 星门从这里起飞：切页那一刻时钟已经藏起来了，用最后画过的那一帧
     const r = at.r, t = now / 1000, dt = reactorLast && t > reactorLast ? Math.min(.1, t - reactorLast) : 0;
     const still = stillScene();
     const boost = 1 + energy * 1.6 + (root.classList.contains('cine-search') ? .35 : 0), lift = Math.min(1.5, boost);
@@ -427,10 +444,13 @@
     slast = 0; sframe = requestAnimationFrame(starLoop);
   };
   const stopStars = () => { if (sframe) cancelAnimationFrame(sframe); sframe = 0; };
-  const hubWarp = (ms = 900) => {
-    if (stillScene() || !sceneAllowed() || document.hidden) return;
-    warpStart = performance.now(); warpUntil = warpStart + ms; startStars(); playCut(ms);
+  // 只拉星场（星星拉成线、星核增亮），不切镜：星门自己管遮幅。
+  const warpStars = (ms) => {
+    if (stillScene() || !sceneAllowed() || document.hidden) return false;
+    warpStart = performance.now(); warpUntil = warpStart + ms; startStars();
+    return true;
   };
+  const hubWarp = (ms = 900) => { if (warpStars(ms)) playCut(ms); };
   if (sctx) {
     sizeStars();
     window.addEventListener('resize', () => { sizeStars(); startStars(); }, { passive: true });
@@ -505,8 +525,222 @@
     setTimeout(leave, 1800);
   }
 
-  // 切页时星场跃迁一下（和 View Transition 同时发生）。
+  // ===== 星门：进「AI 聊天」/「笔记」=====
+  // 照着「启动动画」的分镜：① 离港——星核（电脑、星核壁纸、从首页出发时）先涨一下再坍缩成一个光点，
+  // 不在首页 / 触屏时由侧栏图标亮起发射，光点拖着尾迹飞到内容区中央，遮幅合上停住，星场跃迁；
+  // ② 成形——光点处画出星核同款刻度环，再一笔笔画出目的地的签名线稿：HaloWebUI 是它登录页上那组
+  // 黄金角星座（HaloConstellation.svelte 同一套几何），笔记是一颗神经晶体；读数只写真实发生的事
+  // （签票、框加载、框里的应用说「好了」，带实测耗时）；没好就一直在这里转着等；
+  // ③ 点火——就绪后线稿上色、中心光核点亮、冲击波；④ 开门——刻度环放大成光圈冲出去，从中心露出下面的框，
+  // 开到一小半时才告诉框「有人进来了」，框里接着播自己的入场。
+  // 每次都播：框还没开过（冷）时等真实就绪，开过的（热）压到一秒以内。点一下 / Esc 直接开门；
+  // 折叠屏开合（宽度档位变了）、切去别的页面：立即收尾。只盖在框所在的那块舞台上，侧栏照常能点。
+  // 科幻特效关、高对比时不播（加载层照样等就绪再撤，见 index.html）；减弱动态效果 / 省流量时只显示静止的一帧。
+  const GATE_T = {   // [离港, 成形（至少）, 点火, 开门]，毫秒
+    desk: { cold: [320, 900, 340, 560], warm: [170, 300, 170, 400] },
+    touch: { cold: [280, 800, 300, 420], warm: [140, 240, 140, 320] },
+    still: { cold: [0, 300, 0, 200], warm: [0, 350, 0, 200] },
+  };
+  const GATE_CAP = 10000;   // 十秒还没就绪：先开门，框上的加载层自己接着等
+  const GATE_GLYPHS = '01<>/\\|=+*#%ΣΔΛΞΨΩ░▒▓';   // WebObsidian 片头解码标题用的同一组字符
+  const f1 = n => Math.round(n * 10) / 10;
+  const haloGlyph = (n) => {
+    const pts = Array.from({ length: n }, (_, i) => {
+      const a = i * 2.39996, r = (.1 + Math.sqrt((i + 1) / n) * .32) * 330;
+      return [f1(Math.cos(a) * r), f1(Math.sin(a) * r)];
+    });
+    const edges = [];
+    for (let i = 1; i < n; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[(i - 1) >> 1], my = f1((ay + by) / 2);
+      edges.push(`M${ax} ${ay}C${ax} ${my} ${bx} ${my} ${bx} ${by}`);
+    }
+    return { edges, nodes: pts.map(([x, y], i) => [x, y, i % 5 ? 2.8 : 4.6, i % 5 ? 'a' : 'b']), core: [0, 0], pulses: [n - 2, n - 4, n - 7, n - 10] };
+  };
+  const CRYSTAL = { T: [0, -138], L: [-92, -22], ML: [-36, -44], MR: [38, -40], R: [94, -18], LL: [-58, 52], LR: [60, 56], C: [2, 4], B: [0, 140] };
+  const CRYSTAL_EDGES = ['T-ML', 'T-MR', 'T-L', 'T-R', 'L-ML', 'ML-MR', 'MR-R', 'ML-C', 'MR-C', 'L-LL', 'R-LR', 'C-LL', 'C-LR', 'LL-B', 'LR-B', 'C-B'];
+  const CRYSTAL_SYNAPSES = [[-158, -84, 'L'], [156, -74, 'R'], [-146, 98, 'LL'], [150, 102, 'LR'], [-34, -176, 'T'], [44, 178, 'B']];
+  const vaultGlyph = (narrow) => {
+    const line = ([ax, ay], [bx, by]) => `M${ax} ${ay}L${bx} ${by}`;
+    const edges = CRYSTAL_EDGES.map(k => line(...k.split('-').map(v => CRYSTAL[v])));
+    const nodes = Object.entries(CRYSTAL).filter(([k]) => k !== 'C').map(([k, [x, y]]) => [x, y, k === 'T' || k === 'B' ? 4.6 : 3.4, k === 'T' || k === 'B' ? 'b' : 'a']);
+    if (!narrow) CRYSTAL_SYNAPSES.forEach(([x, y, to]) => { edges.push(line([x, y], CRYSTAL[to])); nodes.push([x, y, 2.4, 'a']); });
+    return { edges, nodes, core: CRYSTAL.C, pulses: [0, 3, 9, 15] };
+  };
+  const gateSvg = (glyph) => {
+    const [cx, cy] = glyph.core;
+    return '<svg class="hub-gate__svg" viewBox="-200 -200 400 400">'
+      + '<circle class="hub-gate__ticks" r="184" pathLength="360"/><circle class="hub-gate__ring" r="170" pathLength="100"/>'
+      + '<circle class="hub-gate__ring is-inner" r="156" pathLength="100"/><g class="hub-gate__glyph">'
+      + glyph.edges.map((d, i) => `<path class="e" d="${d}" pathLength="1" style="--i:${i}"/>`).join('')
+      + glyph.pulses.map((k, i) => `<path class="p" d="${glyph.edges[k]}" pathLength="1" style="--i:${i}"/>`).join('')
+      + glyph.nodes.map(([x, y, r, c], i) => `<circle class="n ${c}" cx="${x}" cy="${y}" r="${r}" style="--i:${i}"/>`).join('')
+      + `</g><circle class="hub-gate__shock" cx="${cx}" cy="${cy}" r="24"/><circle class="hub-gate__core" cx="${cx}" cy="${cy}" r="10"/></svg>`;
+  };
+  const gateTier = () => desktop.matches ? 'desk' : innerWidth <= 760 ? 'narrow' : 'touch';
+  const elapsed = (ms) => ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(2) + 's';
+  let gateCur = null;
+  const gateLine = (g, text, state = 'OK', timed = false) => {
+    const p = document.createElement('p');
+    if (state === 'WARN' || state === 'WAIT') p.className = 'is-warn';
+    const parts = [['span', '> ' + text], ['i', ''], ['b', state], ['em', timed ? elapsed(performance.now() - g.start) : '']];
+    parts.forEach(([tag, value]) => { const el = document.createElement(tag); el.textContent = value; p.append(el); });
+    g.lines.append(p);
+  };
+  // 笔记：标题和 WebObsidian 片头一样，从乱码里一位位解出来。
+  const gateDecode = (g, text, ms) => {
+    const span = g.el.querySelector('.hub-gate__title span'), t0 = performance.now();
+    const tick = () => {
+      if (gateCur !== g || !span) return;
+      const p = Math.min(1, (performance.now() - t0) / ms), done = Math.floor(p * text.length);
+      span.textContent = text.slice(0, done) + [...text.slice(done)].map(c => c === ' ' ? ' ' : GATE_GLYPHS[(Math.random() * GATE_GLYPHS.length) | 0]).join('');
+      if (p < 1) g.timers.push(setTimeout(tick, 45));
+    };
+    tick();
+  };
+  // 离港：起点是星核（刚画过的那一帧）或侧栏图标，光点飞到舞台中央。一层固定的装饰，播完即删。
+  const gateLaunch = (g, tab) => {
+    const to = g.stage.getBoundingClientRect();
+    const tx = to.left + to.width / 2, ty = to.top + to.height / 2;
+    const seen = reactorSeen && performance.now() - reactorSeen.t < 400 ? reactorSeen : null;
+    const ib = tab && tab.getBoundingClientRect ? tab.getBoundingClientRect() : null;
+    const from = seen ? { x: seen.x, y: seen.y, r: seen.r * 1.1, core: true }
+      : ib && ib.width ? { x: ib.left + ib.width / 2, y: ib.top + ib.height / 2, r: Math.max(ib.width, ib.height) * .5 } : null;
+    if (!from || !to.width) return;
+    gateFlight(from, { x: tx, y: ty }, g.t.launch, from.core);
+  };
+  const gateFlight = (from, to, d, core, landing) => {
+    const fly = document.createElement('div');
+    fly.className = 'hub-gate-flight' + (core ? ' is-core' : ''); fly.setAttribute('aria-hidden', 'true');
+    fly.innerHTML = '<i class="hub-gate-flight__core"></i><i class="hub-gate-flight__spark"></i>';
+    document.body.append(fly);
+    const [orb, spark] = fly.children, node = landing ? to : from;
+    Object.assign(orb.style, { left: node.x - node.r + 'px', top: node.y - node.r + 'px', width: node.r * 2 + 'px', height: node.r * 2 + 'px' });
+    orb.animate(landing
+      ? [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(0)', opacity: 0, offset: .7 }, { transform: 'scale(1.25)', opacity: 1, offset: .85 }, { transform: 'scale(1)', opacity: 0 }]
+      : [{ transform: 'scale(1)', opacity: .9 }, { transform: 'scale(1.22)', opacity: 1, offset: .3 }, { transform: 'scale(.04)', opacity: 1, offset: .8 }, { transform: 'scale(0)', opacity: 0 }],
+    { duration: d * (landing ? 1.4 : 1.1), easing: 'cubic-bezier(.5, 0, .2, 1)', fill: 'forwards' });
+    const ang = Math.atan2(to.y - from.y, to.x - from.x);
+    const at = (x, y, s) => `translate(${x}px,${y}px) rotate(${ang}rad) scaleX(${s})`;
+    spark.animate([
+      { transform: at(from.x, from.y, .05), opacity: 0 }, { transform: at(from.x, from.y, .2), opacity: 1, offset: landing ? .08 : .45 },
+      { transform: at(to.x, to.y, 1.4), opacity: 1, offset: landing ? .72 : .92 }, { transform: at(to.x, to.y, .1), opacity: 0 },
+    ], { duration: d * 1.35, easing: 'cubic-bezier(.6, 0, .3, 1)', fill: 'forwards' });
+    setTimeout(() => fly.remove(), d * 1.45 + 120);
+  };
+  const gateDrop = (g = gateCur) => {
+    if (!g) return;
+    g.timers.forEach(clearTimeout);
+    window.removeEventListener('keydown', g.key);
+    g.el.remove();
+    if (gateCur === g) { gateCur = null; cutHold(false); }
+  };
+  const gateOpen = (g) => {
+    if (gateCur !== g || g.phase === 'open') return;
+    g.phase = 'open';
+    const svg = g.el.querySelector('.hub-gate__svg').getBoundingClientRect(), box = g.el.getBoundingClientRect();
+    g.el.style.setProperty('--gate-cx', Math.round(svg.left + svg.width / 2 - box.left) + 'px');
+    g.el.style.setProperty('--gate-cy', Math.round(svg.top + svg.height / 2 - box.top) + 'px');
+    g.el.classList.add('is-open');
+    cutHold(false);
+    window.removeEventListener('keydown', g.key);
+    g.timers.push(setTimeout(() => { const fn = g.onOpen; g.onOpen = null; if (fn) fn(); }, g.t.open * .35));
+    g.timers.push(setTimeout(() => gateDrop(g), g.t.open + 80));
+  };
+  const gateIgnite = (g) => {
+    if (gateCur !== g || g.phase !== 'draw') return;
+    g.phase = 'ignite';
+    g.el.classList.add('is-ignite');
+    g.el.classList.toggle('is-fail', Boolean(g.fail));
+    if (!g.still) warpStars(g.t.ignite + 420);
+    g.timers.push(setTimeout(() => gateOpen(g), g.t.ignite));
+  };
+  const gateReady = (g, fail = '') => {
+    if (g.ready) return;
+    g.ready = true; g.fail = fail;
+    g.timers.push(setTimeout(() => gateIgnite(g), Math.max(0, g.start + g.t.launch + g.t.draw - performance.now())));
+  };
+  const gateEnter = (name, opts = {}) => {
+    const stage = document.getElementById(name === 'chat' ? 'chatStage' : 'vaultStage');
+    if (!stage || !sceneAllowed() || document.hidden) return false;
+    gateDrop();
+    const still = stillScene(), tier = gateTier(), warm = Boolean(opts.ready);
+    const [launch, draw, ignite, open] = GATE_T[still ? 'still' : tier === 'desk' ? 'desk' : 'touch'][warm ? 'warm' : 'cold'];
+    const glyph = name === 'chat' ? haloGlyph(tier === 'narrow' ? 14 : 22) : vaultGlyph(tier === 'narrow');
+    const title = name === 'chat' ? 'HALO · WEBUI' : 'NEURAL · VAULT';
+    const el = document.createElement('div');
+    el.className = `hub-gate is-${name} is-${tier}` + (warm ? ' is-warm' : '') + (still ? ' is-still' : '');
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<div class="hub-gate__rays"></div><div class="hub-gate__grid"></div><div class="hub-gate__scan"></div><div class="hub-gate__flash"></div>'
+      + gateSvg(glyph) + `<div class="hub-gate__title" data-text="${title}"><span>${title}</span></div><div class="hub-gate__lines"></div>`
+      + `<div class="hub-gate__skip">${tier === 'desk' ? 'CLICK TO SKIP' : 'TAP TO SKIP'}</div>`;
+    [['--gate-launch', launch], ['--gate-draw', draw], ['--gate-ignite', ignite], ['--gate-open', open], ['--gate-step', Math.round(draw * .55 / glyph.edges.length)]]
+      .forEach(([k, v]) => el.style.setProperty(k, v + 'ms'));
+    stage.append(el);
+    const g = { name, el, stage, tier, still, start: performance.now(), t: { launch, draw, ignite, open }, ready: false, fail: '', phase: 'draw', timers: [], onOpen: opts.onOpen, lines: el.querySelector('.hub-gate__lines') };
+    gateCur = g;
+    (opts.lines || []).forEach(([text, state]) => gateLine(g, text, state));
+    g.key = (e) => { if (e.key === 'Escape') gateOpen(g); };
+    el.addEventListener('click', () => gateOpen(g));
+    window.addEventListener('keydown', g.key);
+    if (!still) {
+      gateLaunch(g, opts.tab);
+      cutHold(true);
+      warpStars(launch + 560);
+      if (name === 'vault') gateDecode(g, title, launch + draw * .6);
+    }
+    g.timers.push(setTimeout(() => { if (!g.ready) { gateLine(g, '链路较慢，先打开', 'WAIT', true); gateReady(g); } }, GATE_CAP));
+    if (warm) gateReady(g);
+    return true;
+  };
+  // 回程：光点从内容区中央飞回时钟（星核）或侧栏图标，落点处星核重新点火。
+  // 等这一轮页面更新做完（切页的 update 里接着会打开收藏首页）再量位置；不用 requestAnimationFrame——
+  // View Transition 进行中它会被拖到转场结束以后，光点就晚了半秒。
+  const gateBack = (tab) => {
+    gateDrop();
+    if (!sceneAllowed() || stillScene() || document.hidden) return;
+    queueMicrotask(() => {
+      const main = document.querySelector('.main'), m = main ? main.getBoundingClientRect() : null;
+      const c = clockEl ? clockEl.getBoundingClientRect() : null, ib = tab && tab.getBoundingClientRect ? tab.getBoundingClientRect() : null;
+      const clock = c && c.width && c.bottom > 0 && c.top < innerHeight;
+      const to = clock ? { x: c.left + c.width / 2, y: c.top + c.height / 2, r: Math.max(c.height * 1.3, c.width * .64) }
+        : ib && ib.width ? { x: ib.left + ib.width / 2, y: ib.top + ib.height / 2, r: Math.max(ib.width, ib.height) * .5 } : null;
+      if (!m || !m.width || !to) return;
+      const d = desktop.matches ? 380 : 320;
+      gateFlight({ x: m.left + m.width / 2, y: m.top + m.height / 2 }, to, d, clock && root.dataset.wallpaper === 'starcore', true);
+      setTimeout(() => hubWarp(700), d * .95);
+    });
+  };
+  window.addEventListener('resize', () => { if (gateCur && gateCur.tier !== gateTier()) gateOpen(gateCur); }, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && gateCur) gateOpen(gateCur); });
+  const gate = {
+    enter: gateEnter,
+    // 框里的应用说「好了」（fail：没能免登录，开门露出登录页）。返回 false = 没有门在等它，调用方自己告诉框。
+    ready: (name, fail = '') => {
+      const g = gateCur;
+      if (!g || g.name !== name) return false;
+      if (fail) gateLine(g, fail, 'WARN', true);
+      gateReady(g, fail);
+      return true;
+    },
+    step: (name, text, state = 'OK') => { if (gateCur && gateCur.name === name && gateCur.phase === 'draw') gateLine(gateCur, text, state, true); },
+    leave: () => gateDrop(),
+    back: gateBack,
+  };
+
+  // 切页时星场跃迁一下（和 View Transition 同时发生）。进聊天 / 笔记由星门接手（不再叠 View Transition 和切镜）；
+  // 从这两页回收藏库：旧画面收成一个光圈（gate-back，见 app-v3.css），回程镜头由 switchView 调 gate.back。
   const plainChange = change;
-  const scifiChange = (update, name) => { if (name !== previous) hubWarp(650); plainChange(update, name); };
-  window.HaloMotion = { nav, change: scifiChange, page, homeEnter, cardToModal, warp: hubWarp, telemetry };
+  const FRAME_VIEWS = ['chat', 'vault'];
+  const scifiChange = (update, name) => {
+    if (name === previous || !sceneAllowed()) { if (name !== previous) hubWarp(650); plainChange(update, name); return; }
+    if (FRAME_VIEWS.includes(name)) { transition?.skipTransition(); update(); return; }
+    if (name === 'bookmarks' && FRAME_VIEWS.includes(previous)) {
+      root.classList.add('gate-back');
+      setTimeout(() => root.classList.remove('gate-back'), 900);
+      plainChange(update, name);
+      return;
+    }
+    hubWarp(650); plainChange(update, name);
+  };
+  window.HaloMotion = { nav, change: scifiChange, page, homeEnter, cardToModal, warp: hubWarp, telemetry, gate };
 })();

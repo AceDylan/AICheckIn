@@ -1153,6 +1153,28 @@
       const origin = name === 'chat' ? chatOrigin() : vaultOrigin();
       try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type: 'enter' }, origin); } catch (_) {}
     }
+    // 星门（halo-motion.js 的 gate）：进聊天 / 笔记时盖在框上播一段过渡，框里的应用说「好了」才开门；
+    // 门开到一小半时才告诉框「有人进来了」（框里接着播自己的入场）。没有星门（科幻特效关、高对比）就照旧直接说。
+    // 从这两页回收藏库：回程镜头；去别处：正在播的门直接收掉。
+    function frameViewMotion(name, from, tab) {
+      const gate = window.HaloMotion && window.HaloMotion.gate;
+      if (name !== 'chat' && name !== 'vault') {
+        if (gate) { gate.leave(); if (name === 'bookmarks' && (from === 'chat' || from === 'vault')) gate.back(tab); }
+        return;
+      }
+      const lines = frameShown(name) ? frameGateLines(name)
+        : [[name === 'chat' ? '建立链路 HUB ⇄ HALO' : '建立链路 HUB ⇄ VAULT', 'SYNC']];
+      if (!gate || !gate.enter(name, { ready: frameShown(name), tab, lines, onOpen: () => tellFrameEnter(name) })) tellFrameEnter(name);
+    }
+    // 框已经开着、里面的应用也说过「好了」（热进入）。
+    function frameShown(name) { return name === 'chat' ? !!chatFrame() && CHAT.ready : !!vaultFrame() && VAULT_EMBED.shown; }
+    // 热进入时门上的读数：只写此刻真实的状态（回复在跑 / 有没看的回复，见 CHAT_ACTIVITY）。
+    function frameGateLines(name) {
+      if (name === 'vault') return [['笔记库在线', 'ONLINE'], ['图谱就绪', 'OK']];
+      const now = CHAT_ACTIVITY.state === 'running' ? ['回复生成中', 'LIVE'] : CHAT_ACTIVITY.unseen ? ['有新回复', 'NEW'] : ['待命', 'IDLE'];
+      return [['链路保持', 'ONLINE'], now];
+    }
+    function gateStep(name, text, state) { window.HaloMotion?.gate?.step(name, text, state); }
     function tellFramesTheme() {
       // 目标源写死成配置的那个：框要是还停在本站的跳板页上（或别处），浏览器直接丢掉这条消息。
       [['chat', chatFrame(), chatOrigin()], ['vault', vaultFrame(), vaultOrigin()]].forEach(([name, frame, origin]) => {
@@ -1636,6 +1658,7 @@
       const tab = document.querySelector(`.tab[data-view="${mainName}"]`);
       const view = $('view-' + mainName);
       if (!tab || !view) return;
+      const fromMain = (document.querySelector('.view.active') || { id: '' }).id.replace('view-', '');
       document.querySelectorAll('.tab').forEach(t => {
         const active = t === tab;
         t.classList.toggle('active', active);
@@ -1675,7 +1698,8 @@
       if (STATE_LOADED && ARRANGE.on && mainName !== 'bookmarks') leaveArrange();   // 先判 STATE_LOADED：脚本顶部的首次调用发生在 ARRANGE 声明之前
       applyLook();
       window.HaloMotion?.nav(tab, view);
-      if (STATE_LOADED && (mainName === 'chat' || mainName === 'vault')) tellFrameEnter(mainName);
+      if (STATE_LOADED && fromMain !== mainName) frameViewMotion(mainName, fromMain, tab);
+      else if (STATE_LOADED && (mainName === 'chat' || mainName === 'vault')) tellFrameEnter(mainName);
       window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
     // 标签页标题跟着当前页走：多开几个标签、翻浏览器历史时能认出哪个是哪个（「服务配置 · 签到中心 · Bookmark Hub」）。
@@ -2243,7 +2267,10 @@
     // 第一次点开才加载，之后切到别的标签页也不卸载——聊到一半去翻个收藏再回来，对话还在。
     // back：下一次开框登录后落到哪个对话（见 reenterChat）；sso：当前这张框是不是本站替它登录的；
     // reenteredAt：上一次应框里的请求重新登录的时间。
-    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0 };
+    // ready：框里的 HaloWebUI 说过「好了」（或等不到、按兜底算好了），加载层已撤；spoke：这张框说过话（新版 HaloWebUI），
+    // 说过话就耐心等它的 ready，没说过话的旧版按 load 后 CHAT_SILENT_MS 兜底。
+    const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0, ready: false, spoke: false, fallback: 0 };
+    const CHAT_SILENT_MS = 3000, CHAT_WAIT_MS = 12000;
     function chatPlace(path) { return typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : ''; }
     const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
     function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
@@ -2258,6 +2285,8 @@
       const frame = chatFrame();
       if (frame) frame.remove();
       CHAT.src = '';
+      CHAT.ready = false;
+      clearTimeout(CHAT.fallback);
       // 框没了，它报过的状态也就作废（锁定 / 会话过期 / 重新登录）。
       if (CHAT_ACTIVITY.state !== 'idle' || CHAT_ACTIVITY.unseen) {
         CHAT_ACTIVITY.state = 'idle';
@@ -2275,6 +2304,9 @@
       CHAT.back = '';
       const base = STATE.chat.url;
       CHAT.busy = true;
+      CHAT.ready = false;   // 新框：加载层等它说「好了」再撤（见 showChatFrame）
+      // 已经在聊天页时换新框（「发送到 AI 聊天」、重新登录）：同样过一道星门。从别处进来的由 switchView 负责。
+      if (force && currentViewName() === 'chat') frameViewMotion('chat', '', document.querySelector('.tab[data-view="chat"]'));
       try {
         $('chatLoading').hidden = false;
         let target = base + '/', note = ['', ''], sso = false;
@@ -2294,6 +2326,7 @@
           if (data.ok && data.framed_ok === false) note = ['framed', 'HaloWebUI 还没有允许本站嵌入它（它的 HUB_URL 要写成本站的地址）。下面若是空白，请先在新标签页里直接打开它。'];
           else if (data.ok && !data.sso && data.hint) note = [data.reason, data.hint];
         } catch (_) { /* 拿不到票据不耽误打开：框里自己登录就是了 */ }
+        if (sso) gateStep('chat', '签发通行票据'); else gateStep('chat', '免登录未接通', 'WARN');
         if (!chatAvailable()) return;   // 等票据的工夫被锁定了
         target = withFrameTheme(target);
         showChatNote(note[0], note[1]);
@@ -2305,7 +2338,10 @@
         // 自己的站，但仍不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
         frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
         frame.setAttribute('allow', 'clipboard-read; clipboard-write; microphone; camera; display-capture; fullscreen; autoplay');
-        frame.addEventListener('load', () => { $('chatLoading').hidden = true; tellFrameEnter('chat'); });
+        frame.addEventListener('load', () => chatFrameLoaded(frame));
+        CHAT.ready = false;
+        CHAT.spoke = false;
+        clearTimeout(CHAT.fallback);
         frame.src = target;
         $('chatStage').appendChild(frame);
         CHAT.src = base;
@@ -2322,6 +2358,24 @@
       CHAT.reenteredAt = now;
       CHAT.back = chatPlace(path);
       openChat(true);
+    }
+    // 框 load 时 HaloWebUI 多半还停在 /auth 登录页（验票、拉应用代码都在这之后，进应用是页内跳转、不再 load），
+    // 所以不在这里撤加载层：等它自己说 ready / auth（见下方消息）。旧版 HaloWebUI 不说话：load 后 3 秒照旧打开。
+    function chatFrameLoaded(frame) {
+      if (chatFrame() !== frame || CHAT.ready) return;
+      gateStep('chat', '接入 HaloWebUI');
+      clearTimeout(CHAT.fallback);
+      if (!CHAT.spoke) CHAT.fallback = setTimeout(() => { if (chatFrame() === frame) showChatFrame(); }, CHAT_SILENT_MS);
+    }
+    // 撤加载层；星门在等就让它点火开门（fail：没能免登录，开门露出登录页），没有门就直接告诉框「有人进来了」。
+    function showChatFrame(fail) {
+      if (CHAT.ready || !chatFrame()) return;
+      CHAT.ready = true;
+      clearTimeout(CHAT.fallback);
+      $('chatLoading').hidden = true;
+      if (!fail) gateStep('chat', '会话就绪');
+      const gate = window.HaloMotion && window.HaloMotion.gate;
+      if (!(gate && gate.ready('chat', fail || '')) && currentViewName() === 'chat') tellFrameEnter('chat');
     }
 
     // ===== AI 聊天的回复状态 =====
@@ -2370,6 +2424,16 @@
       // 只是换个标签页、打开自己库里的一篇，最坏也就是开错一篇；路径照样过 cleanNotePath。
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
       if (data.type === 'reauth') { reenterChat(data.path); return; }
+      // 换框的那一下（等票据时）旧框说的不算。
+      if (data.type === 'ready') { if (!CHAT.busy) showChatFrame(); return; }
+      if (data.type === 'auth') {
+        if (CHAT.busy || CHAT.ready) return;
+        CHAT.spoke = true;
+        clearTimeout(CHAT.fallback);
+        if (data.state === 'form') showChatFrame('需要登录');
+        else { gateStep('chat', '验证通行票据'); CHAT.fallback = setTimeout(showChatFrame, CHAT_WAIT_MS); }
+        return;
+      }
       if (data.type !== 'activity' || !CHAT_ACTIVITY_STATES.includes(data.state)) return;
       onChatActivity(data.state);
     });
@@ -2390,7 +2454,9 @@
     // hop：替笔记框登录的那张看不见的小框（见 openVault）；seq：给每张笔记框起不重样的名字。
     // ready：哪张笔记框里的 WebObsidian 说过「可以直接交给我开笔记」；ask：正等它回话的那一篇（见 openVaultNote）。
     // covered：上次告诉笔记框「键盘盖住了你底部多少像素」（见 tellVaultKeyboard）。
-    const VAULT_EMBED = { url: '', to: '', hop: null, seq: 0, ready: null, ask: null, asks: 0, covered: 0 };
+    // shown：加载层已撤（框里的 WebObsidian 说过 ready，或按兜底算好了），与 AI 聊天的 CHAT.ready 同义。
+    const VAULT_EMBED = { url: '', to: '', hop: null, seq: 0, ready: null, ask: null, asks: 0, covered: 0, shown: false, fallback: 0 };
+    const VAULT_SILENT_MS = 2500;
     const VAULT_ASK_MS = 2500;   // 等对面回「打开了」的上限；读一篇笔记一般几十毫秒，手机慢网也够
     function vaultEmbedAvailable() { return !!(STATE.vault_embed && STATE.vault_embed.url) && canEdit(); }
     function vaultFrame() { return $('vaultStage') ? $('vaultStage').querySelector('iframe') : null; }
@@ -2416,6 +2482,8 @@
       dropVaultHop();
       dropVaultAsk();
       VAULT_EMBED.ready = null;
+      VAULT_EMBED.shown = false;
+      clearTimeout(VAULT_EMBED.fallback);
       const url = VAULT_EMBED.url || (signOut && STATE.vault_embed && STATE.vault_embed.url) || '';
       VAULT_EMBED.url = '';
       if (signOut) signOutVault(url);
@@ -2426,7 +2494,9 @@
       if (!vaultEmbedAvailable() || (VAULT_EMBED.url && !force && !to)) return;
       const base = STATE.vault_embed.url;
       $('vaultLoading').hidden = false;
-      closeVault();   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
+      closeVault();
+      // 已经在笔记页时换新框（打开另一篇、重新登录）：同样过一道星门。从别处进来的由 switchView 负责。
+      if (force && currentViewName() === 'vault') frameViewMotion('vault', '', document.querySelector('.tab[data-view="vault"]'));   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
       // 本站自己的一页；没解锁、密码不合格时它只回一段说明。theme：本站此刻的深浅色（星核场景下是 neural），它转给 WebObsidian（见 frameTheme）
       const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme('vault');
       const name = 'hub-vault-' + (++VAULT_EMBED.seq);
@@ -2441,9 +2511,9 @@
       frame.addEventListener('load', () => {
         if (frameIsBlank(frame)) return;   // 刚插进来的空框自己也报一次 load
         if (VAULT_EMBED.ready === frame) VAULT_EMBED.ready = null;   // 框里换了一页（会话过期重登……），等新页面自己再说
-        $('vaultLoading').hidden = true;
         dropVaultHop();
         focusVaultFrame();
+        vaultFrameLoaded(frame);
       });
       $('vaultStage').appendChild(frame);
       // 登录那一跳放在旁边一张看不见的小框里：/vault/open 的表单带 target=<这张框的名字>，把票据 POST 进
@@ -2458,11 +2528,33 @@
         let form = null;
         try { form = hop.contentDocument && hop.contentDocument.querySelector('form'); } catch (_) { /* 读不到就当没有 */ }
         if (!form && vaultFrame() === frame && frameIsBlank(frame)) { frame.src = open; dropVaultHop(); }
+        else if (form) gateStep('vault', '签发通行证');
       });
       hop.src = open + '&target=' + name;
       document.body.appendChild(hop);
       VAULT_EMBED.hop = hop;
       VAULT_EMBED.url = base;
+    }
+    // 加载层等 WebObsidian 自己说 ready 再撤（它 load 时还在拉笔记树）；框里是本站自己的说明页（没解锁、密码不合格……）
+    // 就直接开门把说明露出来；旧版 / 没说话：load 后 VAULT_SILENT_MS 照旧打开。
+    function vaultFrameLoaded(frame) {
+      if (vaultFrame() !== frame || VAULT_EMBED.shown) return;
+      if (frameSameOrigin(frame)) { showVaultFrame('未能免登录'); return; }
+      gateStep('vault', '解锁笔记库');
+      clearTimeout(VAULT_EMBED.fallback);
+      VAULT_EMBED.fallback = setTimeout(() => { if (vaultFrame() === frame) showVaultFrame(); }, VAULT_SILENT_MS);
+    }
+    function showVaultFrame(fail) {
+      if (VAULT_EMBED.shown || !vaultFrame()) return;
+      VAULT_EMBED.shown = true;
+      clearTimeout(VAULT_EMBED.fallback);
+      $('vaultLoading').hidden = true;
+      if (!fail) gateStep('vault', '图谱同步');
+      const gate = window.HaloMotion && window.HaloMotion.gate;
+      if (!(gate && gate.ready('vault', fail || '')) && currentViewName() === 'vault') tellFrameEnter('vault');
+    }
+    function frameSameOrigin(frame) {
+      try { const href = frame.contentWindow.location.href; return !!href && href !== 'about:blank'; } catch (_) { return false; }
     }
     function frameIsBlank(frame) {
       try { return frame.contentWindow.location.href === 'about:blank'; } catch (_) { return false; }   // 跨源了＝已经不是空框
@@ -2549,7 +2641,11 @@
       if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== vaultOrigin()) return;
       const data = e.data;
       if (!data || typeof data !== 'object' || data.source !== 'webobsidian') return;
-      if (data.type === 'ready') { VAULT_EMBED.ready = frame; VAULT_EMBED.covered = 0; tellVaultKeyboard(); tellFrameEnter('vault'); return; }
+      if (data.type === 'ready') {
+        VAULT_EMBED.ready = frame; VAULT_EMBED.covered = 0; tellVaultKeyboard();
+        if (VAULT_EMBED.shown) tellFrameEnter('vault'); else showVaultFrame();
+        return;
+      }
       const ask = VAULT_EMBED.ask;
       if (data.type !== 'open-note' || !ask || data.id !== ask.id) return;
       if (data.ok !== true) { reopenVaultAt(ask.to); return; }
