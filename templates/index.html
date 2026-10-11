@@ -3655,7 +3655,7 @@
         b.setAttribute('aria-pressed', String(on));
       });
       renderHomeNotice();
-      window.HaloMotion?.telemetry({ links: STATE_LOADED ? total : null, monitors: STATE_LOADED ? allSites.length : null, locked: STATE_LOADED && libraryLocked() });
+      window.HaloMotion?.telemetry({ links: STATE_LOADED ? total : null, monitors: STATE_LOADED ? allSites.length : null, groups: STATE_LOADED ? (STATE.link_groups || []).length : null, locked: STATE_LOADED && libraryLocked() });
       // 没有编辑权限的访客用不上「添加 / 编辑」：收起来，工具条只剩密度和外观。
       $('homeAddLink').hidden = $('homeEditBtn').hidden = !canEdit();
       // 先定版面再出图标：右侧有没有组件那一列、是哪种密度，都会改变主区放得下几列。

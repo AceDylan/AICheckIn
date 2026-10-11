@@ -2728,105 +2728,129 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
    深色：深空 + 霓虹；浅色：全息实验室（白底、青色网格、紫光）；开着壁纸时只叠星场与霓虹，壁纸不动。
    星场 / 开场 / 跃迁在 halo-motion.js。读的东西（卡片里的数字、文字）不动，只动外壳与转场。
    ========================================================================== */
-:root { --sf-cyan: #0891b2; --sf-violet: #7c3aed; --sf-magenta: #db2777; --sf-line: rgb(8 145 178 / .16); --sf-glow: rgb(8 145 178 / .22); }
-:root[data-theme="dark"], html.wall-on { --sf-cyan: #5ee7ff; --sf-violet: #a78bfa; --sf-magenta: #f472d0; --sf-line: rgb(94 231 255 / .16); --sf-glow: rgb(94 231 255 / .35); }
+:root { --sf-cyan: #0891b2; --sf-violet: #7c3aed; --sf-magenta: #db2777; --sf-line: rgb(8 145 178 / .18); --sf-glow: rgb(8 145 178 / .24); }
+:root[data-theme="dark"], html.wall-on { --sf-cyan: #5ee7ff; --sf-violet: #a78bfa; --sf-magenta: #f472d0; --sf-line: rgb(94 231 255 / .2); --sf-glow: rgb(94 231 255 / .4); }
 
 .hub-stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; display: none; }
 html.hub-scifi .hub-stars { display: block; }
-html.wall-on .hub-stars { opacity: .55; }
+html.wall-on .hub-stars { opacity: .62; }
 /* 开着壁纸时壁纸就是背景：不再叠全息网格，免得和星云、星场、星核挤在一起。 */
 html.hub-scifi.wall-on .main::before { display: none; }
 
 /* 反应堆只作装饰，不占版面、不截获输入。（原来的舱窗导轨与扫描线已去掉：一条竖线 / 一道横线扫过全屏，太乱） */
 .hub-reactor { display: none; pointer-events: none; }
 
-/* 星核反应堆：以时钟为圆心（同 HaloWebUI 首页那一圈）。刻度环慢转、虚线环反转、三段渐变光弧快转、雷达扫描、
-   两颗轨道光点；三组读数是真实数据（halo-motion.js 的 telemetry）。星核壁纸下 canvas 在同一圆心画星核本体。 */
+/* 星核反应堆：以时钟为圆心（同 HaloWebUI 首页那一圈）。刻度环慢转、科技分段环反转、虚线环、三段渐变光弧快转、内层约束环、
+   雷达扫描、双轨卫星光点；四组读数是真实数据（halo-motion.js 的 telemetry）。深色舞台与星核壁纸下 canvas 在同一圆心画星核本体。 */
 .home-hero { --clock-size: clamp(52px, 6.4vw, 80px); }
 @media (width > 760px) and (height > 720px) { html.hub-scifi .home-hero { --hero-pad: calc(var(--clock-size) * 1.45); padding-top: var(--hero-pad); } }
 html.hub-scifi .hub-reactor {
   display: block; position: absolute; left: 50%; top: calc(var(--hero-pad) + var(--clock-size) / 2);
-  width: calc(var(--clock-size) * 5.6); aspect-ratio: 1; transform: translate(-50%, -50%); z-index: -1;
+  width: calc(var(--clock-size) * 5.8); aspect-ratio: 1; transform: translate(-50%, -50%); z-index: -1;
   animation: sf-reactor-in 1.2s cubic-bezier(.16, 1, .3, 1) both;
 }
 @keyframes sf-reactor-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.55) rotate(-40deg); filter: blur(8px); } }
 .hub-reactor__svg, .hub-reactor__sweep {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 2%, #000 16%, #000 52%, transparent 88%);
-  mask-image: linear-gradient(to bottom, transparent 2%, #000 16%, #000 52%, transparent 88%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 68%, transparent 95%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 68%, transparent 95%);
 }
 .hub-reactor__svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; fill: none; }
 .hub-reactor__svg * { transform-box: view-box; transform-origin: 0 0; }
-.hub-reactor__ticks { stroke: var(--sf-cyan); stroke-width: 1; opacity: .4; animation: sf-rot 80s linear infinite; }
-.hub-reactor__ticks .major { stroke-width: 1.8; opacity: 1; }
-.hub-reactor__dash { stroke: var(--sf-violet); stroke-width: 1; stroke-dasharray: 2 7; opacity: .6; animation: sf-rot 46s linear infinite reverse; }
-.hub-reactor__arcs { stroke: url(#hubReactorArc); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 6px var(--sf-glow)); animation: sf-rot 14s linear infinite; }
-.hub-reactor__orbit { fill: var(--sf-cyan); filter: drop-shadow(0 0 4px var(--sf-cyan)); animation: sf-rot 9s linear infinite; }
-.hub-reactor__orbit.is-slow { fill: var(--sf-magenta); filter: drop-shadow(0 0 4px var(--sf-magenta)); animation-duration: 24s; animation-direction: reverse; }
+.hub-reactor__ticks { stroke: var(--sf-cyan); stroke-width: 1; opacity: .48; animation: sf-rot 80s linear infinite; }
+.hub-reactor__ticks .major { stroke-width: 1.8; opacity: .95; }
+.hub-reactor__ticks .cardinal { stroke-width: 2.3; stroke: #e0fbff; opacity: 1; }
+.hub-reactor__reticle { fill: var(--sf-cyan); opacity: .78; filter: drop-shadow(0 0 6px var(--sf-cyan)); animation: sf-rot 80s linear infinite; }
+.hub-reactor__tech { stroke: var(--sf-cyan); stroke-width: 1.2; opacity: .45; animation: sf-rot 62s linear infinite reverse; }
+.hub-reactor__dash { stroke: var(--sf-violet); stroke-width: 1.1; stroke-dasharray: 2 7; opacity: .68; animation: sf-rot 44s linear infinite reverse; }
+.hub-reactor__arcs { stroke: url(#hubReactorArc); stroke-width: 3.2; stroke-linecap: round; filter: drop-shadow(0 0 8px var(--sf-glow)); animation: sf-rot 13s linear infinite; }
+.hub-reactor__inner { stroke: var(--sf-magenta); stroke-width: 1.1; opacity: .46; animation: sf-rot 26s linear infinite reverse; }
+.hub-reactor__orbit { fill: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-cyan)); animation: sf-rot 9s linear infinite; }
+.hub-reactor__orbit.is-slow { fill: var(--sf-magenta); filter: drop-shadow(0 0 5px var(--sf-magenta)); animation-duration: 22s; animation-direction: reverse; }
 .hub-reactor__sweep {
-  position: absolute; inset: 8%; border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 80%, rgb(94 231 255 / .24) 98%, transparent 100%);
-  -webkit-mask-image: radial-gradient(circle, transparent 30%, #000 31%, #000 70%, transparent 71%); mask-image: radial-gradient(circle, transparent 30%, #000 31%, #000 70%, transparent 71%);
-  animation: sf-rot 4.8s linear infinite;
+  position: absolute; inset: 7%; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 76%, rgb(167 139 250 / .10) 88%, rgb(94 231 255 / .28) 98%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle, transparent 28%, #000 30%, #000 72%, transparent 74%); mask-image: radial-gradient(circle, transparent 28%, #000 30%, #000 72%, transparent 74%);
+  animation: sf-rot 4.6s linear infinite;
 }
-html[data-theme="light"]:not(.wall-on) .hub-reactor__sweep { background: conic-gradient(from 0deg, transparent 0 84%, rgb(8 145 178 / .12) 98%, transparent 100%); }
+html.hub-scifi.cine-search .hub-reactor__arcs { animation-duration: 6.5s; filter: drop-shadow(0 0 12px var(--sf-cyan)); }
+html.hub-scifi.cine-search .hub-reactor__sweep { animation-duration: 2.4s; }
+html[data-theme="light"]:not(.wall-on) .hub-reactor__sweep { background: conic-gradient(from 0deg, transparent 0 84%, rgb(8 145 178 / .14) 98%, transparent 100%); }
 .hub-reactor__hud {
-  position: absolute; font: 9.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .16em; color: var(--sf-cyan);
-  opacity: .8; white-space: nowrap; text-shadow: 0 0 8px var(--sf-glow); animation: sf-hud-in 900ms 600ms steps(6) both;
+  position: absolute; padding: 4px 10px; border-radius: 6px;
+  background: linear-gradient(135deg, rgb(6 11 26 / .62), rgb(12 18 38 / .38));
+  box-shadow: inset 0 0 0 1px rgb(94 231 255 / .22), 0 0 20px -6px var(--sf-glow);
+  font: 9.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .16em; color: var(--sf-cyan);
+  opacity: .9; white-space: nowrap; text-shadow: 0 0 8px var(--sf-glow); animation: sf-hud-in 900ms 500ms steps(6) both;
+}
+html.hub-scifi[data-theme="light"]:not(.wall-on) .hub-reactor__hud {
+  background: linear-gradient(135deg, rgb(255 255 255 / .82), rgb(240 249 255 / .68));
+  box-shadow: inset 0 0 0 1px rgb(8 145 178 / .25), 0 4px 14px -6px var(--sf-glow);
 }
 .hub-reactor__hud b { font-weight: 700; color: var(--sf-violet); }
-.hub-reactor__hud i { font-style: normal; opacity: .78; }
-.hub-reactor__hud::before { content: ""; position: absolute; top: -6px; width: 14px; height: 14px; border: 1px solid var(--sf-cyan); border-bottom: 0; opacity: .6; }
-.hub-reactor__hud.is-tl { right: 96%; top: 30%; text-align: right; }
-.hub-reactor__hud.is-tl::before { right: -20px; border-left: 0; }
-.hub-reactor__hud.is-tr { left: 96%; top: 30%; }
-.hub-reactor__hud.is-br { left: 99%; top: 62%; }
-:is(.hub-reactor__hud.is-tr, .hub-reactor__hud.is-br)::before { left: -20px; border-right: 0; }
+.hub-reactor__hud i { font-style: normal; opacity: .82; }
+.hub-reactor__hud::before { content: ""; position: absolute; top: -4px; width: 12px; height: 12px; border: 1.5px solid var(--sf-cyan); border-bottom: 0; opacity: .75; }
+.hub-reactor__hud.is-tl { right: 95%; top: 28%; text-align: right; }
+.hub-reactor__hud.is-bl { right: 98%; top: 58%; text-align: right; }
+:is(.hub-reactor__hud.is-tl, .hub-reactor__hud.is-bl)::before { right: -8px; border-left: 0; }
+.hub-reactor__hud.is-tr { left: 95%; top: 28%; }
+.hub-reactor__hud.is-br { left: 98%; top: 58%; }
+:is(.hub-reactor__hud.is-tr, .hub-reactor__hud.is-br)::before { left: -8px; border-right: 0; }
+.hub-reactor__hud.is-warn { box-shadow: inset 0 0 0 1px rgb(244 114 208 / .45), 0 0 22px -5px rgb(244 114 208 / .45); }
 .hub-reactor__hud.is-warn b { color: var(--sf-magenta); animation: sf-blink 1.6s steps(1) infinite; }
 @keyframes sf-blink { 50% { opacity: .35; } }
 @keyframes sf-hud-in { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
 html.hub-scifi .home-hero { isolation: isolate; }
 html.hub-scifi .hero-clock { text-shadow: none; }
 /* 星核：上方正中那团星云辉光是星核的舞台，不压；越往下越暗，托住书签。 */
-html.hub-scifi[data-wallpaper="starcore"] .home-wall::after { background-image: linear-gradient(180deg, transparent 0, rgb(4 7 12 / .1) 30%, rgb(4 7 12 / .38)); background-color: rgb(4 7 12 / calc(var(--wall-dim, .38) * .6)); }
+html.hub-scifi[data-wallpaper="starcore"] .home-wall::after { background-image: linear-gradient(180deg, transparent 0, rgb(4 7 12 / .08) 32%, rgb(4 7 12 / .36)); background-color: rgb(4 7 12 / calc(var(--wall-dim, .38) * .55)); }
 
-/* 舞台：主面板透出星场，四周一圈冷光 */
+/* 舞台：主面板透出深空星场与反应堆，四周一圈冷光 + 顶沿一道流光激光线 */
 html.hub-scifi[data-theme="dark"]:not(.wall-on) body {
-  background: radial-gradient(900px 500px at 0% 0%, rgb(94 231 255 / .07), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgb(167 139 250 / .08), transparent 60%), #03050b;
+  background: radial-gradient(1000px 540px at 50% 18%, rgb(94 231 255 / .09), transparent 65%), radial-gradient(900px 500px at 0% 0%, rgb(94 231 255 / .07), transparent 60%), radial-gradient(780px 520px at 100% 100%, rgb(167 139 250 / .09), transparent 60%), #02040a;
 }
-html.hub-scifi[data-theme="light"]:not(.wall-on) body { background: radial-gradient(1200px 600px at 0% 0%, rgb(8 145 178 / .07), transparent 60%), #eef2f8; }
+html.hub-scifi[data-theme="light"]:not(.wall-on) body { background: radial-gradient(1200px 600px at 50% 10%, rgb(8 145 178 / .08), transparent 62%), #edf2f9; }
 @media (min-width: 761px) {
   html.hub-scifi:not(.wall-on) .main {
-    background: radial-gradient(65% 50% at 80% -5%, rgb(124 58 237 / .07), transparent 70%), radial-gradient(55% 45% at 5% 105%, rgb(8 145 178 / .08), transparent 70%), rgb(250 251 254 / .82);
-    border-color: var(--sf-line); box-shadow: 0 0 0 1px var(--sf-line), 0 0 60px -20px var(--sf-glow);
+    background: radial-gradient(65% 50% at 80% -5%, rgb(124 58 237 / .07), transparent 70%), radial-gradient(55% 45% at 5% 105%, rgb(8 145 178 / .08), transparent 70%), rgb(250 252 255 / .76);
+    border-color: var(--sf-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .6), 0 0 0 1px var(--sf-line), 0 0 68px -18px var(--sf-glow);
   }
   html.hub-scifi[data-theme="dark"]:not(.wall-on) .main {
-    background: radial-gradient(65% 50% at 80% -5%, rgb(139 92 246 / .16), transparent 70%), radial-gradient(55% 45% at 5% 105%, rgb(34 211 238 / .12), transparent 70%), rgb(6 8 18 / .78);
+    background: radial-gradient(60% 42% at 50% 8%, rgb(94 231 255 / .09), transparent 70%), radial-gradient(65% 50% at 85% -5%, rgb(139 92 246 / .15), transparent 70%), radial-gradient(55% 45% at 5% 105%, rgb(34 211 238 / .11), transparent 70%), rgb(4 7 16 / .52);
+    box-shadow: inset 0 1px 0 rgb(190 246 255 / .14), 0 0 0 1px var(--sf-line), 0 0 76px -18px var(--sf-glow);
   }
 }
 html.hub-scifi .main { position: relative; isolation: isolate; }
-html.hub-scifi .main::before {   /* 全息网格，从中间往四周淡掉 */
+html.hub-scifi .main::before {   /* 全息坐标网格，从核心往四周淡掉 */
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
   background-image: linear-gradient(to right, var(--sf-line) 1px, transparent 1px), linear-gradient(to bottom, var(--sf-line) 1px, transparent 1px);
-  background-size: 64px 64px; opacity: .35;
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 25%, #000, transparent 80%); mask-image: radial-gradient(ellipse 70% 55% at 50% 25%, #000, transparent 80%);
+  background-size: 64px 64px; opacity: .4;
+  -webkit-mask-image: radial-gradient(ellipse 82% 62% at 50% 26%, #000, transparent 84%); mask-image: radial-gradient(ellipse 82% 62% at 50% 26%, #000, transparent 84%);
+}
+@media (width > 760px) {
+  html.hub-scifi .main::after {
+    content: ""; position: absolute; left: 8%; right: 8%; top: 0; height: 1.5px; pointer-events: none; z-index: 2;
+    background: linear-gradient(90deg, transparent, var(--sf-cyan) 28%, #e0fbff 50%, var(--sf-violet) 72%, transparent);
+    opacity: .75; box-shadow: 0 0 16px var(--sf-cyan);
+  }
 }
 
-/* 时钟：全息渐变字 + 光晕，下面一条 HUD 刻度线 */
+/* 时钟：全息流光渐变字 + 双层霓虹光晕，下面一条 HUD 翼线 */
 html.hub-scifi .hero-clock {
-  background: linear-gradient(100deg, #0e7490 0%, #1d4ed8 40%, #7c3aed 72%, #be185d 100%);
+  background: linear-gradient(105deg, #0891b2 0%, #2563eb 38%, #7c3aed 70%, #db2777 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 300;
   animation: sf-holo-reveal 850ms 100ms cubic-bezier(.16, 1, .3, 1) both;
 }
 html.hub-scifi[data-theme="dark"] .hero-clock, html.hub-scifi.wall-on .hero-clock {
-  background: linear-gradient(100deg, #e0fbff 0%, #5ee7ff 35%, #a78bfa 68%, #f472d0 100%);
-  -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 0 14px rgb(94 231 255 / .45)) drop-shadow(0 0 34px rgb(167 139 250 / .35));
+  background: linear-gradient(105deg, #f0fdff 0%, #5ee7ff 32%, #a78bfa 66%, #f472d0 96%);
+  -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 16px rgb(94 231 255 / .52)) drop-shadow(0 0 38px rgb(167 139 250 / .42));
 }
 html.hub-scifi .home-hero { position: relative; }
-html.hub-scifi .hero-meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+html.hub-scifi .hero-meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
 @media (width > 760px) and (height > 720px) { html.hub-scifi[data-wallpaper="starcore"] .hero-meta { margin-top: 6px; } }
-html.hub-scifi .hero-meta #heroGreeting { color: var(--sf-cyan); text-shadow: 0 0 10px var(--sf-glow); }
+html.hub-scifi .hero-meta #heroGreeting { color: var(--sf-cyan); text-shadow: 0 0 12px var(--sf-glow); font-weight: 600; }
 html.hub-scifi .hero-meta::before, html.hub-scifi .hero-meta::after {
-  content: ""; width: clamp(22px, 4vw, 56px); height: 1px; background: linear-gradient(90deg, transparent, var(--sf-cyan)); opacity: .7;
+  content: ""; width: clamp(28px, 4.8vw, 68px); height: 1px; background: linear-gradient(90deg, transparent, var(--sf-cyan)); opacity: .82; box-shadow: 0 0 8px var(--sf-cyan);
 }
 html.hub-scifi .hero-meta::after { background: linear-gradient(90deg, var(--sf-cyan), transparent); }
 @keyframes sf-holo-reveal { from { opacity: 0; clip-path: inset(0 100% 0 0); transform: translateY(5px); } to { opacity: 1; clip-path: inset(0); transform: none; } }
@@ -2839,39 +2863,67 @@ html.hub-scifi .hero-meta::after { background: linear-gradient(90deg, var(--sf-c
   60%, 100% { clip-path: inset(0 0 0 0); transform: none; }
 }
 
-/* 搜索框：一圈流动的霓虹 */
+/* 搜索框：全息指令舱导管（旋转能量环 + 冷光内高光 + 仪表引擎胶囊 + 全息下拉面板） */
 @property --sf-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 @keyframes sf-spin { to { --sf-angle: 360deg; } }
-html.hub-scifi .home-search-bar { position: relative; border-color: transparent; box-shadow: 0 0 0 1px var(--sf-line), 0 10px 40px -12px var(--sf-glow); }
-html.hub-scifi .home-search-bar::after {
-  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1.2px; pointer-events: none;
-  background: conic-gradient(from var(--sf-angle), transparent 0 40%, var(--sf-cyan) 58%, var(--sf-violet) 74%, var(--sf-magenta) 86%, transparent 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  opacity: .6; animation: sf-spin 7s linear infinite;
+html.hub-scifi .home-search-bar {
+  position: relative; border-color: transparent;
+  background-image: linear-gradient(115deg, rgb(94 231 255 / .08), transparent 42%, rgb(167 139 250 / .08));
+  box-shadow: inset 0 1px 0 rgb(224 251 255 / .22), 0 0 0 1px rgb(94 231 255 / .26), 0 0 38px -8px var(--sf-glow), 0 14px 40px -12px rgb(0 0 0 / .6);
 }
-html.hub-scifi .home-search-bar:focus-within { box-shadow: 0 0 0 1px var(--sf-line), 0 0 0 5px rgb(94 231 255 / .08), 0 0 70px -10px var(--sf-glow); }
-html.hub-scifi .home-search-bar:focus-within::after { opacity: 1; animation-duration: 2.8s; }
-html.hub-scifi .home-search-bar { background-image: linear-gradient(115deg, rgb(94 231 255 / .035), transparent 45%, rgb(167 139 250 / .04)); }
-html.hub-scifi .home-search-dropdown { border-color: var(--sf-line); box-shadow: 0 18px 48px rgb(0 0 0 / .25), 0 0 0 1px var(--sf-line); }
+html.hub-scifi[data-theme="dark"]:not(.wall-on) .home-search-bar {
+  background-color: rgb(8 13 28 / .78);
+}
+html.hub-scifi .home-search-bar::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--sf-angle), transparent 0 32%, var(--sf-cyan) 54%, #e0fbff 62%, var(--sf-violet) 76%, var(--sf-magenta) 88%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: .82; animation: sf-spin 6s linear infinite;
+}
+html.hub-scifi .home-search-bar:focus-within {
+  box-shadow: inset 0 1px 0 rgb(224 251 255 / .35), 0 0 0 1px rgb(94 231 255 / .45), 0 0 0 5px rgb(94 231 255 / .11), 0 0 76px -6px var(--sf-glow);
+}
+html.hub-scifi .home-search-bar:focus-within::after { opacity: 1; animation-duration: 2.6s; }
+html.hub-scifi .engine-btn {
+  border: 1px solid rgb(94 231 255 / .26);
+  background: linear-gradient(135deg, rgb(94 231 255 / .14), rgb(167 139 250 / .10));
+  box-shadow: inset 0 1px 0 rgb(224 251 255 / .18), 0 0 16px -6px var(--sf-glow);
+}
+html.hub-scifi .engine-btn:hover { border-color: var(--sf-cyan); box-shadow: 0 0 0 1px rgb(94 231 255 / .32), 0 0 20px -4px var(--sf-glow); color: var(--sf-cyan); }
+html.hub-scifi .home-search-dropdown {
+  border-color: rgb(94 231 255 / .28);
+  background-image: linear-gradient(90deg, transparent, var(--sf-cyan) 22%, var(--sf-violet) 55%, var(--sf-magenta) 80%, transparent), radial-gradient(110% 70% at 0% 0%, rgb(94 231 255 / .10), transparent 55%), radial-gradient(90% 60% at 100% 100%, rgb(167 139 250 / .10), transparent 60%);
+  background-size: 100% 2px, 100% 100%, 100% 100%; background-repeat: no-repeat;
+  box-shadow: 0 0 0 1px rgb(94 231 255 / .12), 0 0 54px -14px var(--sf-glow), 0 24px 60px -16px rgb(0 0 0 / .78);
+}
+html.hub-scifi .home-search-row { position: relative; }
+html.hub-scifi .home-search-row.is-active {
+  background: linear-gradient(90deg, rgb(94 231 255 / .15), rgb(167 139 250 / .08) 58%, transparent);
+  box-shadow: inset 0 0 0 1px rgb(94 231 255 / .24), 0 0 22px -10px var(--sf-glow);
+}
+html.hub-scifi .home-search-row.is-active::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px;
+  background: linear-gradient(var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 10px var(--sf-cyan);
+}
+html.hub-scifi .home-search-row .hs-kind { background: rgb(94 231 255 / .1); color: var(--sf-cyan); box-shadow: inset 0 0 0 1px var(--sf-line); }
 
-/* 卡片：HaloWebUI 的全息面板——顶上一道青色高光、细冷光边，悬停边框亮起 + 光晕（不加位移：卡片里有按钮和菜单）；图标悬停一圈青光 */
+/* 卡片：HaloWebUI 的全息仪表盘——四角 HUD 取景框、顶上一道青色高光、细冷光边，悬停边框亮起 + 光晕（不加位移：卡片里有按钮和菜单） */
 html.hub-scifi :is(.deck-card, .bookmark-card, .home-widget) {
-  border-color: var(--sf-line);
-  background-image: linear-gradient(180deg, rgb(94 231 255 / .07), transparent 38%), radial-gradient(120% 80% at 100% 0%, rgb(167 139 250 / .08), transparent 60%);
-  box-shadow: inset 0 1px 0 rgb(190 246 255 / .10), 0 10px 30px -18px rgb(0 0 0 / .6);
+  border-color: rgb(94 231 255 / .22);
+  background-image: linear-gradient(180deg, rgb(94 231 255 / .08), transparent 38%), radial-gradient(120% 80% at 100% 0%, rgb(167 139 250 / .09), transparent 60%);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .14), 0 0 0 1px rgb(94 231 255 / .05), 0 12px 32px -18px rgb(0 0 0 / .65);
   transition: box-shadow .25s ease, border-color .25s ease;
 }
 html.hub-scifi :is(.deck-card, .bookmark-card, .home-widget):hover {
-  border-color: rgb(94 231 255 / .55);
-  box-shadow: inset 0 1px 0 rgb(190 246 255 / .18), 0 0 0 1px var(--sf-line), 0 0 34px -6px var(--sf-glow), 0 16px 34px -18px rgb(0 0 0 / .7);
+  border-color: rgb(94 231 255 / .58);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .24), 0 0 0 1px var(--sf-line), 0 0 38px -6px var(--sf-glow), 0 18px 38px -18px rgb(0 0 0 / .72);
 }
 html.hub-scifi .home-tile:hover .tile-avatar, html.hub-scifi .tile-link:focus-visible .tile-avatar {
-  box-shadow: 0 0 0 1.5px var(--sf-cyan), 0 0 26px -2px var(--sf-glow), 0 14px 28px -10px rgba(0, 0, 0, .55);
+  box-shadow: 0 0 0 1.5px var(--sf-cyan), 0 0 28px -2px var(--sf-glow), 0 14px 28px -10px rgba(0, 0, 0, .55);
 }
-html.hub-scifi .section-label { letter-spacing: .04em; }
-html.hub-scifi .section-label { position: relative; }
+html.hub-scifi .section-label { letter-spacing: .06em; position: relative; }
 /* 分组标题：标题右边那条分隔线换成青→紫、往右淡出的渐变（HaloWebUI 的分节样式）；不再在左边线外挂竖条 */
-html.hub-scifi .home-list .section-label::after { height: 1px; background: linear-gradient(90deg, rgb(94 231 255 / .5), rgb(167 139 250 / .25) 40%, transparent 85%); }
+html.hub-scifi .home-list .section-label::after { height: 1px; background: linear-gradient(90deg, rgb(94 231 255 / .55), rgb(167 139 250 / .28) 40%, transparent 85%); }
 
 /* 首屏入场（halo-motion.js 在页面打开后 3 秒内挂 .sf-entering）：分组、组件、预警条依次从模糊里扫描显形。 */
 html.hub-scifi.sf-entering :is(.home-section, .deck-card, .home-notice) { animation: sf-rise .85s cubic-bezier(.16, 1, .3, 1) both; }
@@ -2887,11 +2939,11 @@ html.hub-scifi.sf-entering :is(.home-section, .deck-card):nth-child(n + 7) { ani
 
 /* ⌘K 面板（侧栏的搜索按钮）：HaloWebUI 的全息面板——深空玻璃、顶上一道青→紫→品红的流光、输入行下一条渐变分隔线；
    选中行左侧一道冷光竖条 + 由左往右淡出的青紫底；分节标题是带青色小方块的等宽小字（同 HaloWebUI 分节）；打开时从模糊里浮出。 */
-html.hub-scifi .omni-mask { background: radial-gradient(60% 50% at 50% 20%, rgb(94 231 255 / .08), transparent 70%), rgb(2 3 10 / .62); }
+html.hub-scifi .omni-mask { background: radial-gradient(60% 50% at 50% 20%, rgb(94 231 255 / .10), transparent 70%), rgb(2 3 10 / .66); }
 html.hub-scifi .omni {
-  position: relative; width: min(100%, 700px); border-color: rgb(94 231 255 / .28); border-radius: 20px;
-  background: radial-gradient(120% 70% at 0% 0%, rgb(94 231 255 / .09), transparent 55%), radial-gradient(90% 60% at 100% 100%, rgb(167 139 250 / .1), transparent 60%), rgb(7 10 22 / .9);
-  box-shadow: 0 0 0 1px rgb(94 231 255 / .08), 0 0 70px -18px var(--sf-glow), 0 40px 90px -30px rgb(0 0 0 / .8);
+  position: relative; width: min(100%, 700px); border-color: rgb(94 231 255 / .32); border-radius: 20px;
+  background: radial-gradient(120% 70% at 0% 0%, rgb(94 231 255 / .10), transparent 55%), radial-gradient(90% 60% at 100% 100%, rgb(167 139 250 / .11), transparent 60%), rgb(6 9 22 / .92);
+  box-shadow: 0 0 0 1px rgb(94 231 255 / .10), 0 0 76px -16px var(--sf-glow), 0 40px 90px -30px rgb(0 0 0 / .82);
   color: #e6f6ff; animation: sf-omni-in .42s cubic-bezier(.16, 1, .3, 1) both;
 }
 html.hub-scifi[data-theme="light"]:not(.wall-on) .omni { background: radial-gradient(120% 70% at 0% 0%, rgb(8 145 178 / .08), transparent 55%), rgb(250 252 255 / .95); color: var(--text); }
@@ -2936,15 +2988,15 @@ html.hub-scifi .omni.is-opening .omni-list > :nth-child(n + 5) { animation-delay
 @keyframes sf-omni-row { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0); } }
 
 /* 导航：选中胶囊带冷光 */
-html.hub-scifi .cine-nav-pill { box-shadow: inset 0 0 0 1px var(--sf-line), 0 0 18px -4px var(--sf-glow); background: linear-gradient(135deg, rgb(94 231 255 / .14), rgb(167 139 250 / .12)); }
+html.hub-scifi .cine-nav-pill { box-shadow: inset 0 0 0 1px rgb(94 231 255 / .28), 0 0 20px -3px var(--sf-glow); background: linear-gradient(135deg, rgb(94 231 255 / .18), rgb(167 139 250 / .14)); }
 html.hub-scifi .tabs > .tab.active { color: var(--sf-cyan); }
 html.hub-scifi ::selection { background: rgb(94 231 255 / .3); }
 
-/* 切页：短促的一跳（覆盖电影感那套 8px 视差） */
+/* 切页：超空间跃迁光缝展开（覆盖电影感那套 8px 视差） */
 html.hub-scifi.cine-nav-running::view-transition-old(hub-page) { animation: sf-jump-out 220ms cubic-bezier(.4, 0, 1, 1) both; }
 html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: sf-jump-in 460ms cubic-bezier(.16, 1, .3, 1) both; }
-@keyframes sf-jump-out { to { opacity: 0; transform: scale(1.05); filter: blur(8px); } }
-@keyframes sf-jump-in { from { opacity: 0; transform: scale(.96); filter: blur(10px) brightness(1.4); } }
+@keyframes sf-jump-out { to { opacity: 0; transform: scale(1.045); filter: blur(8px) brightness(1.3); } }
+@keyframes sf-jump-in { from { opacity: 0; transform: scale(.965); filter: blur(10px) brightness(1.55); } }
 
 /* 开场 */
 .hub-boot {
@@ -2993,20 +3045,30 @@ html.hub-scifi.cine-nav-running::view-transition-new(hub-page) { animation: sf-j
 @keyframes sf-type { to { clip-path: inset(0 0 0 0); } }
 .hub-boot__skip { position: absolute; bottom: 1.5rem; font-size: 10px; letter-spacing: .3em; color: rgb(191 246 255 / .4); }
 
-/* ---------- 科幻层 II：首屏以外也是同一套 HUD（外壳 v71） ----------
-   首屏的星核 / 反应堆之外，侧栏、分组标题、图标、卡片、页头、设置面板、按钮原来还是素版「纸与墨」，一往下滚就像换了个站。
-   这里把它们接上 HaloWebUI 的科幻语言：冷光细边、渐变高光、霓虹选中、鼠标聚光、透视网格地面。
+/* ---------- 科幻层 II / III：全站 HUD 电影感（外壳 v71 / v74） ----------
+   首屏的星核 / 反应堆之外，侧栏、分组标题、全息发射舱图标、卡片、页头、设置面板、按钮与组件统一为 HaloWebUI 的科幻语言：
+   HUD 四角取景框、冷光细边、渐变流光、霓虹电浆主按钮、鼠标聚光、全站远景透视网格地面。
    只动外壳（边框、阴影、背景层、伪元素），不动版面尺寸和位置；图标头像本身不加滤镜（见「图标底板」）；不用毛玻璃。 */
-:root { --sf-tint: rgb(8 145 178 / .07); --sf-tint-2: rgb(124 58 237 / .06); --sf-edge: rgb(8 145 178 / .45); --sf-spot: rgb(8 145 178 / .12); }
-:root[data-theme="dark"], html.wall-on { --sf-tint: rgb(94 231 255 / .08); --sf-tint-2: rgb(167 139 250 / .08); --sf-edge: rgb(94 231 255 / .55); --sf-spot: rgb(94 231 255 / .2); }
+:root {
+  --sf-tint: rgb(8 145 178 / .07); --sf-tint-2: rgb(124 58 237 / .06); --sf-edge: rgb(8 145 178 / .48); --sf-spot: rgb(8 145 178 / .14);
+  --sf-corner: rgb(8 145 178 / .52);
+}
+:root[data-theme="dark"], html.wall-on {
+  --sf-tint: rgb(94 231 255 / .09); --sf-tint-2: rgb(167 139 250 / .09); --sf-edge: rgb(94 231 255 / .62); --sf-spot: rgb(94 231 255 / .22);
+  --sf-corner: rgb(94 231 255 / .65);
+}
 
 /* 侧栏：一圈冷光细边 + 外晕；品牌标是个小反应堆（暗核 + 转动的霓虹环）；选中项左侧一道光条、图标发光 */
 @media (width > 760px) {
-  html.hub-scifi .sidebar { box-shadow: 0 0 0 1px var(--sf-line), 0 0 46px -18px var(--sf-glow), 0 24px 60px -24px rgb(0 0 0 / .6); }
-  html.hub-scifi.wall-on .sidebar { border-color: rgb(94 231 255 / .2); }
+  html.hub-scifi .sidebar {
+    border-color: rgb(94 231 255 / .22);
+    background-image: linear-gradient(180deg, rgb(94 231 255 / .07), transparent 28%, transparent 78%, rgb(167 139 250 / .06));
+    box-shadow: inset 0 1px 0 rgb(224 251 255 / .14), 0 0 0 1px var(--sf-line), 0 0 50px -16px var(--sf-glow), 0 24px 60px -24px rgb(0 0 0 / .65);
+  }
+  html.hub-scifi.wall-on .sidebar { border-color: rgb(94 231 255 / .24); }
   html.hub-scifi .cine-nav-pill::before {
-    content: ""; position: absolute; left: -1px; top: 22%; bottom: 22%; width: 2px; border-radius: 2px;
-    background: linear-gradient(var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 10px var(--sf-cyan), 0 0 2px var(--sf-cyan);
+    content: ""; position: absolute; left: -1px; top: 20%; bottom: 20%; width: 2.5px; border-radius: 2px;
+    background: linear-gradient(var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 12px var(--sf-cyan), 0 0 3px #e0fbff;
   }
 }
 /* 手机底栏：一圈冷光细边；选中项那颗胶囊换成青→紫的霓虹底、深色图标（青色图标压在白胶囊上看不清） */
@@ -3029,60 +3091,154 @@ html.hub-scifi .tab:hover svg.ic, html.hub-scifi .omni-trigger:hover .ic { color
 html.hub-scifi .subnav-item.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent), 0 0 16px -3px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent); }
 html.hub-scifi .subnav-item.active .sub-ic { box-shadow: 0 0 10px -1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 80%, transparent); }
 
+/* 首页顶部工具舱（外观 / 组件 / 添加 / 编辑）：HUD 悬浮胶囊 */
+html.hub-scifi .home-toolbar {
+  border-color: rgb(94 231 255 / .24);
+  background-image: linear-gradient(180deg, rgb(94 231 255 / .09), transparent 70%);
+  box-shadow: inset 0 1px 0 rgb(224 251 255 / .16), 0 0 28px -10px var(--sf-glow), 0 10px 28px -12px rgb(0 0 0 / .55);
+}
+
 /* 分组标题：图标点亮、数量做成等宽的 HUD 读数框、右边那条渐变线上柔光缓行 */
 html.hub-scifi .home-section .section-label .btn .ic, html.hub-scifi .home-section .section-name .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-glow)); }
 html.hub-scifi .home-section .section-label .count {
-  padding: 1px 6px; border-radius: 4px; color: var(--sf-cyan); background: var(--sf-tint); box-shadow: inset 0 0 0 1px var(--sf-line);
+  padding: 1px 7px; border-radius: 4px; color: var(--sf-cyan); background: var(--sf-tint); box-shadow: inset 0 0 0 1px rgb(94 231 255 / .26), 0 0 12px -4px var(--sf-glow);
   font: 600 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em;
 }
 html.hub-scifi .home-list .section-label::after {
-  background: linear-gradient(90deg, transparent, rgb(190 246 255 / .55) 50%, transparent) no-repeat, linear-gradient(90deg, var(--sf-edge), rgb(167 139 250 / .25) 40%, transparent 85%);
+  background: linear-gradient(90deg, transparent, rgb(190 246 255 / .65) 50%, transparent) no-repeat, linear-gradient(90deg, var(--sf-edge), rgb(167 139 250 / .3) 42%, transparent 88%);
   background-size: 28% 100%, 100% 100%;
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 45%, transparent 85%); mask-image: linear-gradient(90deg, #000 0, #000 45%, transparent 85%);
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 45%, transparent 88%); mask-image: linear-gradient(90deg, #000 0, #000 45%, transparent 88%);
   animation: sf-line-run 12s ease-in-out infinite;
 }
 html.hub-scifi .home-list .home-section:nth-child(even) .section-label::after { animation-delay: -6s; }
 @keyframes sf-line-run { from { background-position: -50% 0, 0 0; } to { background-position: 150% 0, 0 0; } }
 
-/* 首页图标：脚下一团按网址色调的全息光座，悬停时亮起；头像上扫过一道高光（头像本身不加滤镜） */
-html.hub-scifi .tile-link { position: relative; isolation: isolate; }
-html.hub-scifi .tile-link::after {
-  content: ""; position: absolute; left: 50%; top: 56px; width: 88px; height: 24px; z-index: -1; pointer-events: none; transform: translateX(-50%);
-  background: radial-gradient(closest-side, hsl(var(--hue, 190) 95% 64% / .55), transparent); opacity: .55; transition: opacity .25s ease;
+/* 首页图标：全息发射舱（HUD 四角取景准星 + 脚下按网址色调的全息光座 + 悬停锁定光晕 + 头像流光，头像本身不加滤镜） */
+html.hub-scifi .tile-link { position: relative; isolation: isolate; transition: box-shadow .22s ease, background-color .22s ease; }
+@media (width > 760px) {
+  html.hub-scifi .tile-link {
+    background-image:
+      linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+      linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+      linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+      linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+      linear-gradient(180deg, rgb(94 231 255 / .055), rgb(167 139 250 / .02) 60%, transparent);
+    background-size: 8px 1px, 1px 8px, 8px 1px, 1px 8px, 8px 1px, 1px 8px, 8px 1px, 1px 8px, 100% 100%;
+    background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%, 0 0;
+    background-repeat: no-repeat;
+    box-shadow: inset 0 0 0 1px rgb(94 231 255 / .10), inset 0 1px 0 rgb(224 251 255 / .10);
+  }
+  html.hub-scifi .home-tile:hover .tile-link, html.hub-scifi .tile-link:focus-visible {
+    background-color: rgb(94 231 255 / .05);
+    box-shadow: inset 0 0 0 1px rgb(94 231 255 / .42), inset 0 1px 0 rgb(224 251 255 / .26), 0 0 28px -6px var(--sf-glow), 0 14px 30px -14px rgb(0 0 0 / .65);
+  }
 }
-html.hub-scifi .home-tile:hover .tile-link::after, html.hub-scifi .tile-link:focus-visible::after { opacity: 1; }
+html.hub-scifi .tile-avatar {
+  box-shadow: 0 0 0 1px rgb(94 231 255 / .22), 0 8px 20px -6px rgba(0, 0, 0, .5), 0 0 18px -5px hsl(var(--hue, 190) 95% 64% / .42);
+}
+html.hub-scifi .tile-link::after {
+  content: ""; position: absolute; left: 50%; top: 55px; width: 92px; height: 26px; z-index: -1; pointer-events: none; transform: translateX(-50%);
+  background: radial-gradient(closest-side, hsl(var(--hue, 190) 95% 64% / .62), rgb(94 231 255 / .18) 58%, transparent); opacity: .65; transition: opacity .25s ease, transform .25s ease;
+}
+html.hub-scifi .home-tile:hover .tile-link::after, html.hub-scifi .tile-link:focus-visible::after { opacity: 1; transform: translateX(-50%) scaleX(1.14); }
 @media (hover: none), (width <= 760px) { html.hub-scifi .tile-link::after { display: none; } }   /* 手机：图标和名字挨得近，光座会垫在名字底下 */
 html.hub-scifi .tile-avatar::after {
   content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / .38) 46%, transparent 60%) no-repeat; background-size: 250% 100%; background-position: 140% 0;
+  background: linear-gradient(115deg, transparent 30%, rgb(255 255 255 / .42) 46%, transparent 60%) no-repeat; background-size: 250% 100%; background-position: 140% 0;
 }
 html.hub-scifi .home-tile:hover .tile-avatar::after { animation: sf-sheen .9s cubic-bezier(.2, .6, .2, 1) both; }
 @keyframes sf-sheen { from { background-position: 140% 0; } to { background-position: -40% 0; } }
-html.hub-scifi .home-tile:hover .tile-title { color: var(--sf-cyan); }
+html.hub-scifi .home-tile:hover .tile-title { color: var(--sf-cyan); text-shadow: 0 0 10px var(--sf-glow); }
 
-/* 卡片 / 面板 / 页头：全息面板（顶上一道青色高光、冷光细边），鼠标在上面移动时有一团跟着走的冷光（--mx / --my 由 halo-motion.js 写） */
-html.hub-scifi :is(.panel, .bookmark-card, .deck-card, .home-widget) { --sf-panel: linear-gradient(180deg, var(--sf-tint), transparent 38%), radial-gradient(120% 80% at 100% 0%, var(--sf-tint-2), transparent 60%); }
-html.hub-scifi .panel {
-  border-color: var(--sf-line); background-image: var(--sf-panel);
-  box-shadow: inset 0 1px 0 rgb(190 246 255 / .10), 0 0 0 1px rgb(94 231 255 / .03), 0 14px 36px -22px rgb(0 0 0 / .65);
+/* 卡片 / 面板 / 分组网址卡 / 签到概览卡：全息仪表盘（四角 HUD 取景框 + 顶沿冷光 + 鼠标聚光 --mx / --my） */
+html.hub-scifi :is(.panel, .bookmark-card, .deck-card, .home-widget, .link-card, .ov-item) {
+  --sf-corners:
+    linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+    linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+    linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner)),
+    linear-gradient(var(--sf-corner), var(--sf-corner)), linear-gradient(var(--sf-corner), var(--sf-corner));
+  --sf-panel: var(--sf-corners), linear-gradient(180deg, var(--sf-tint), transparent 40%), radial-gradient(120% 80% at 100% 0%, var(--sf-tint-2), transparent 62%);
+  --sf-panel-size: 11px 1.5px, 1.5px 11px, 11px 1.5px, 1.5px 11px, 11px 1.5px, 1.5px 11px, 11px 1.5px, 1.5px 11px, 100% 100%, 100% 100%;
+  --sf-panel-pos: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%, 0 0, 0 0;
+}
+html.hub-scifi :is(.deck-card, .bookmark-card, .home-widget, .panel, .ov-item) {
+  border-color: rgb(94 231 255 / .24);
+  background-image: var(--sf-panel); background-size: var(--sf-panel-size); background-position: var(--sf-panel-pos); background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .15), 0 0 0 1px rgb(94 231 255 / .06), 0 14px 36px -20px rgb(0 0 0 / .65);
   transition: box-shadow .25s ease, border-color .25s ease;
 }
-html.hub-scifi .panel:hover { border-color: rgb(94 231 255 / .32); box-shadow: inset 0 1px 0 rgb(190 246 255 / .16), 0 0 30px -12px var(--sf-glow), 0 14px 36px -22px rgb(0 0 0 / .65); }
-@media (hover: hover) and (pointer: fine) {
-  html.hub-scifi :is(.panel, .bookmark-card, .deck-card, .home-widget):hover { background-image: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0), var(--sf-spot), transparent 70%), var(--sf-panel); }
+html.hub-scifi :is(.panel, .ov-item):hover {
+  border-color: rgb(94 231 255 / .5);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .24), 0 0 34px -10px var(--sf-glow), 0 16px 38px -20px rgb(0 0 0 / .7);
 }
+html.hub-scifi .link-card {
+  border-color: rgb(94 231 255 / .18);
+  background-image: linear-gradient(180deg, rgb(94 231 255 / .055), transparent 55%), radial-gradient(100% 80% at 100% 0%, rgb(167 139 250 / .055), transparent 65%);
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .09), 0 8px 22px -14px rgb(0 0 0 / .55);
+  transition: border-color .22s ease, box-shadow .22s ease;
+}
+html.hub-scifi .link-card:hover {
+  border-color: rgb(94 231 255 / .52);
+  background-image: var(--sf-panel); background-size: var(--sf-panel-size); background-position: var(--sf-panel-pos); background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .22), 0 0 28px -8px var(--sf-glow), 0 14px 30px -16px rgb(0 0 0 / .68);
+}
+html.hub-scifi .link-card:hover .link-title { color: var(--sf-cyan); text-shadow: 0 0 10px var(--sf-glow); }
+html.hub-scifi .link-host { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: color-mix(in srgb, var(--sf-cyan) 62%, var(--text-3)); }
+html.hub-scifi .tag { border-color: rgb(94 231 255 / .22); background: rgb(94 231 255 / .07); color: var(--sf-cyan); }
+@media (hover: hover) and (pointer: fine) {
+  html.hub-scifi :is(.panel, .bookmark-card, .deck-card, .home-widget, .link-card, .ov-item):hover {
+    background-image: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0), var(--sf-spot), transparent 70%), var(--sf-panel);
+    background-size: 100% 100%, var(--sf-panel-size); background-position: 0 0, var(--sf-panel-pos); background-repeat: no-repeat;
+  }
+}
+/* 看板与组件内细节：数值发光读数、状态灯霓虹晕、走势线发光、日历与倒数日全息舱 */
+html.hub-scifi :is(.widget-value, .field-item.is-primary .field-value) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #e8fcff; text-shadow: 0 0 14px var(--sf-glow);
+}
+html.hub-scifi[data-theme="light"]:not(.wall-on) :is(.widget-value, .field-item.is-primary .field-value) { color: #0e7490; text-shadow: none; }
+html.hub-scifi .status-dot { box-shadow: 0 0 10px currentColor; }
+html.hub-scifi .trend-svg { filter: drop-shadow(0 0 5px var(--sf-glow)); }
 html.hub-scifi .deck-title .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-glow)); }
+html.hub-scifi .cal-hero {
+  border-color: rgb(94 231 255 / .24);
+  background: linear-gradient(135deg, rgb(94 231 255 / .10), rgb(167 139 250 / .08) 65%, transparent);
+  box-shadow: inset 0 1px 0 rgb(224 251 255 / .14), 0 0 24px -10px var(--sf-glow);
+}
+html.hub-scifi .cal-hero-days b { color: var(--sf-cyan); text-shadow: 0 0 14px var(--sf-glow); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+html.hub-scifi .cal-chip { border-color: rgb(94 231 255 / .2); background: rgb(94 231 255 / .05); }
+html.hub-scifi .cal-chip b { color: var(--sf-cyan); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+html.hub-scifi .cal-day.is-today {
+  background: linear-gradient(135deg, rgb(94 231 255 / .28), rgb(167 139 250 / .26));
+  box-shadow: inset 0 0 0 1px var(--sf-cyan), 0 0 16px -3px var(--sf-glow);
+}
+html.hub-scifi .days-count b, html.hub-scifi .clock-time { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--sf-cyan); text-shadow: 0 0 10px var(--sf-glow); }
 html.hub-scifi .panel-title { position: relative; padding-left: 14px; }
 html.hub-scifi .panel-title::before {
   content: ""; position: absolute; left: 0; top: 13px; width: 6px; height: 6px; transform: rotate(45deg);   /* 对齐第一行文字：标题下面还挂着按钮时也不跑到中间 */
   background: var(--sf-cyan); box-shadow: 0 0 8px var(--sf-cyan);
 }
-/* 页头（签到中心 / 设置 / 分组页）：小标签是带光点的等宽小字，标题是全息渐变字，进页时一道光从左扫到右 */
-html.hub-scifi .view-header { position: relative; border-bottom-color: var(--sf-line); }
-html.hub-scifi.wall-on .view-header { border-color: var(--sf-line); background-image: linear-gradient(180deg, var(--sf-tint), transparent 60%), radial-gradient(70% 120% at 100% 0%, var(--sf-tint-2), transparent 70%); box-shadow: inset 0 1px 0 rgb(190 246 255 / .12), 0 0 40px -18px var(--sf-glow); }
+/* 页头（签到中心 / 设置 / 分组页 / 看板页）：全息舰桥指挥舱——顶沿流光、小标签带光点等宽字、图标带旋转脉冲环、标题全息渐变字、进页扫光 */
+html.hub-scifi .view-header {
+  position: relative; border-color: rgb(94 231 255 / .24);
+  background-image:
+    linear-gradient(90deg, transparent, var(--sf-cyan) 22%, var(--sf-violet) 55%, var(--sf-magenta) 82%, transparent),
+    linear-gradient(180deg, var(--sf-tint), transparent 62%),
+    radial-gradient(75% 120% at 100% 0%, var(--sf-tint-2), transparent 70%);
+  background-size: 100% 1.5px, 100% 100%, 100% 100%; background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .14), 0 0 42px -16px var(--sf-glow);
+}
+html.hub-scifi .view-header .view-icon {
+  position: relative; border-color: rgb(94 231 255 / .34);
+  box-shadow: inset 0 0 14px -4px var(--sf-glow), 0 0 20px -4px var(--sf-glow);
+}
+html.hub-scifi .view-header .view-icon::after {
+  content: ""; position: absolute; inset: -4px; border-radius: inherit; pointer-events: none;
+  border: 1px dashed rgb(94 231 255 / .45); animation: sf-rot 24s linear infinite;
+}
 html.hub-scifi .view-header::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(100deg, transparent 35%, rgb(94 231 255 / .16) 47%, rgb(224 251 255 / .28) 50%, transparent 58%) no-repeat; background-size: 260% 100%; background-position: 160% 0;
+  background: linear-gradient(100deg, transparent 35%, rgb(94 231 255 / .18) 47%, rgb(224 251 255 / .32) 50%, transparent 58%) no-repeat; background-size: 260% 100%; background-position: 160% 0;
 }
 html.hub-scifi .view.active .view-header::after { animation: sf-header-scan 1.3s .12s cubic-bezier(.4, 0, .2, 1) both; }
 @keyframes sf-header-scan { from { background-position: 160% 0; } to { background-position: -60% 0; } }
@@ -3094,16 +3250,54 @@ html.hub-scifi .view-header h1 {
   width: fit-content; background: linear-gradient(100deg, #0e7490 0%, #1d4ed8 45%, #7c3aed 80%, #be185d 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 html.hub-scifi[data-theme="dark"] .view-header h1, html.hub-scifi.wall-on .view-header h1 {
-  background-image: linear-gradient(100deg, #f2fdff 0%, #9ff0ff 40%, #c4b5fd 75%, #f9a8d4 100%); filter: drop-shadow(0 0 16px rgb(94 231 255 / .28));
+  background-image: linear-gradient(100deg, #f2fdff 0%, #7fe7ff 38%, #c4b5fd 74%, #f9a8d4 100%); filter: drop-shadow(0 0 18px rgb(94 231 255 / .34));
+}
+/* 空状态面板（如「还没有签到账户」）：全息舱 + 图标外圈脉冲环 */
+html.hub-scifi .empty-state {
+  border-color: rgb(94 231 255 / .24);
+  background-image:
+    linear-gradient(90deg, transparent 10%, var(--sf-cyan) 35%, var(--sf-violet) 65%, transparent 90%),
+    radial-gradient(60% 55% at 50% 0%, rgb(94 231 255 / .10), transparent 70%);
+  background-size: 100% 1.5px, 100% 100%; background-repeat: no-repeat;
+  box-shadow: inset 0 1px 0 rgb(190 246 255 / .12), 0 0 44px -18px var(--sf-glow);
+}
+html.hub-scifi .empty-icon {
+  position: relative; color: var(--sf-cyan); border-color: rgb(94 231 255 / .34);
+  background: radial-gradient(circle, rgb(94 231 255 / .16), rgb(167 139 250 / .06) 70%);
+  box-shadow: 0 0 24px -4px var(--sf-glow);
+}
+html.hub-scifi .empty-icon::after {
+  content: ""; position: absolute; inset: -5px; border-radius: inherit; pointer-events: none;
+  border: 1px dashed rgb(94 231 255 / .45); animation: sf-rot 28s linear infinite;
 }
 
-/* 按钮与控件：悬停时边框点亮 + 光晕（同 HaloWebUI）；选中的分段、打开的开关、聚焦的输入框都是青色冷光 */
+/* 按钮与控件：主按钮换成青→紫电浆霓虹按钮（不再是生硬的白块），悬停边框点亮 + 光晕；选中的分段、开关、聚焦输入框都是青色冷光 */
+html.hub-scifi .btn:not(.ghost):not(.soft):not(.danger) {
+  background-color: #38bdf8;
+  background-image: linear-gradient(135deg, #a5f3fc 0%, #38bdf8 46%, #a78bfa 100%);
+  color: #030712; border-color: rgb(224 251 255 / .72); font-weight: 600;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .75), 0 0 22px -3px var(--sf-glow), 0 8px 20px -8px rgb(94 231 255 / .55);
+}
+html.hub-scifi .btn:not(.ghost):not(.soft):not(.danger):not(:disabled):hover {
+  background-image: linear-gradient(135deg, #cffafe 0%, #5ee7ff 45%, #c4b5fd 100%);
+  box-shadow: inset 0 1px 0 #fff, 0 0 0 1px #e0fbff, 0 0 32px -2px var(--sf-cyan), 0 10px 24px -6px rgb(94 231 255 / .65);
+}
+html.hub-scifi[data-theme="light"]:not(.wall-on) .btn:not(.ghost):not(.soft):not(.danger) {
+  background-color: #0891b2;
+  background-image: linear-gradient(135deg, #0891b2 0%, #2563eb 52%, #7c3aed 100%);
+  color: #fff; border-color: rgb(8 145 178 / .5);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .35), 0 6px 18px -4px rgb(8 145 178 / .45);
+}
 html.hub-scifi .btn:not(:disabled):hover { box-shadow: 0 0 0 1px var(--sf-edge), 0 0 22px -6px var(--sf-glow); }
-html.hub-scifi .btn.ghost:not(:disabled):hover { border-color: var(--sf-edge); color: var(--sf-cyan); background: var(--sf-tint); }
-html.hub-scifi .segmented { border-color: var(--sf-line); }
-html.hub-scifi .segmented button.active { color: var(--sf-cyan); background: linear-gradient(135deg, rgb(94 231 255 / .14), rgb(167 139 250 / .12)); box-shadow: inset 0 0 0 1px var(--sf-line), 0 0 16px -6px var(--sf-glow); }
+html.hub-scifi .btn.ghost:not([aria-pressed="true"]):not(:disabled):hover { border-color: var(--sf-edge); color: var(--sf-cyan); background: var(--sf-tint); }
+html.hub-scifi .segmented { border-color: rgb(94 231 255 / .22); box-shadow: inset 0 1px 0 rgb(190 246 255 / .08); }
+html.hub-scifi .segmented button.active { color: var(--sf-cyan); background: linear-gradient(135deg, rgb(94 231 255 / .18), rgb(167 139 250 / .14)); box-shadow: inset 0 0 0 1px rgb(94 231 255 / .3), 0 0 16px -4px var(--sf-glow); }
 html.hub-scifi .switch input:checked + .slider { background: linear-gradient(90deg, var(--sf-cyan), var(--sf-violet)); box-shadow: 0 0 14px -2px var(--sf-glow); }
-html.hub-scifi .input:focus { border-color: var(--sf-cyan); box-shadow: 0 0 0 3px rgb(94 231 255 / .14), 0 0 22px -6px var(--sf-glow); }
+html.hub-scifi .input, html.hub-scifi .search-box .input { border-color: rgb(94 231 255 / .22); }
+html.hub-scifi .input:focus { border-color: var(--sf-cyan); box-shadow: 0 0 0 3px rgb(94 231 255 / .16), 0 0 24px -4px var(--sf-glow); }
+html.hub-scifi .deck-tab { border-color: rgb(94 231 255 / .2); }
+html.hub-scifi .deck-tab.is-active { border-color: rgb(94 231 255 / .5); background: linear-gradient(135deg, rgb(94 231 255 / .16), rgb(167 139 250 / .12)); color: var(--sf-cyan); box-shadow: 0 0 18px -5px var(--sf-glow); }
+html.hub-scifi .chip { border-color: rgb(94 231 255 / .2); }
 html.hub-scifi .chip.active { background: linear-gradient(135deg, #e0fbff, #c4b5fd); color: #05070f; box-shadow: 0 0 18px -4px var(--sf-glow); }
 html.hub-scifi[data-theme="light"]:not(.wall-on) .chip.active { background: linear-gradient(135deg, #0e7490, #6d28d9); color: #fff; }
 /* 签到概览的数字：等宽读数 + 冷光 */
@@ -3115,19 +3309,20 @@ html.hub-scifi .alert-chip .ic { animation: sf-pulse 2.4s ease-in-out infinite; 
 @keyframes sf-pulse { 50% { opacity: .4; } }
 /* 弹窗：冷光细边 + 外晕，顶上一道青→紫→品红的高光（同 ⌘K 面板） */
 html.hub-scifi .modal {
-  border-color: rgb(94 231 255 / .24);
+  border-color: rgb(94 231 255 / .28);
   background-image: linear-gradient(90deg, transparent, var(--sf-cyan) 20%, var(--sf-violet) 55%, var(--sf-magenta) 80%, transparent), radial-gradient(120% 60% at 0% 0%, var(--sf-tint), transparent 55%);
   background-size: 100% 2px, 100% 100%; background-repeat: no-repeat; background-attachment: local, local;
-  box-shadow: 0 0 0 1px rgb(94 231 255 / .06), 0 0 70px -24px var(--sf-glow), var(--shadow-pop);
+  box-shadow: 0 0 0 1px rgb(94 231 255 / .08), 0 0 74px -22px var(--sf-glow), var(--shadow-pop);
 }
 
-/* 透视网格地面：收藏首页底部一片缓缓推进的远景光网，只在宽屏、首页显示；遮罩在透视地平线以下完全淡出，避免顶边跳动。 */
+/* 透视网格地面：底部一片缓缓推进的远景全息光网 + 地平线冷光晕，宽屏全站可见（首页更亮、子页托底）；遮罩在地平线以下淡出。 */
 .hub-floor { display: none; }
 @media (width > 760px) {
-  html.hub-scifi:has(#view-bookmarks.active #homePage:not([hidden])) .hub-floor {
-    display: block; position: fixed; left: 0; right: 0; bottom: 0; height: min(30vh, 210px); z-index: -1; pointer-events: none; overflow: hidden;
-    opacity: .22; -webkit-mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .45) 30%, transparent 72%); mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .45) 30%, transparent 72%);
+  html.hub-scifi .hub-floor {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; height: min(32vh, 230px); z-index: -1; pointer-events: none; overflow: hidden;
+    opacity: .16; -webkit-mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .5) 32%, transparent 76%); mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .5) 32%, transparent 76%);
   }
+  html.hub-scifi:has(#view-bookmarks.active #homePage:not([hidden])) .hub-floor { opacity: .28; }
   html.hub-scifi[data-theme="light"]:not(.wall-on) .hub-floor { opacity: .12; }
 }
 .hub-floor::before {
@@ -3135,15 +3330,22 @@ html.hub-scifi .modal {
   background-image: linear-gradient(to right, var(--sf-cyan) 1px, transparent 1px), linear-gradient(to bottom, var(--sf-cyan) 1px, transparent 1px);
   background-size: 72px 72px; background-position: 50% 100%; transform: perspective(420px) rotateX(64deg); animation: sf-floor-run 16s linear infinite;
 }
+.hub-floor::after {
+  content: ""; position: absolute; left: 10%; right: 10%; bottom: -20px; height: 90px; pointer-events: none;
+  background: radial-gradient(50% 100% at 50% 100%, rgb(94 231 255 / .28), rgb(167 139 250 / .14) 55%, transparent);
+}
 @keyframes sf-floor-run { from { transform: perspective(420px) rotateX(64deg) translateY(0); } to { transform: perspective(420px) rotateX(64deg) translateY(72px); } }
 
-html.scene-still .brand-mark::before, html.scene-still .hub-floor::before, html.scene-still .home-list .section-label::after, html.scene-still .alert-chip .ic { animation: none !important; }
+html.scene-still .brand-mark::before, html.scene-still .hub-floor::before, html.scene-still .home-list .section-label::after, html.scene-still .alert-chip .ic,
+html.scene-still .view-header .view-icon::after, html.scene-still .empty-icon::after { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
   html.hub-scifi .brand-mark::before, .hub-floor::before, html.hub-scifi .home-list .section-label::after,
-  html.hub-scifi .home-tile:hover .tile-avatar::after, html.hub-scifi .view.active .view-header::after, html.hub-scifi .alert-chip .ic { animation: none !important; }
+  html.hub-scifi .home-tile:hover .tile-avatar::after, html.hub-scifi .view.active .view-header::after, html.hub-scifi .alert-chip .ic,
+  html.hub-scifi .view-header .view-icon::after, html.hub-scifi .empty-icon::after { animation: none !important; }
 }
 @media (prefers-contrast: more), (forced-colors: active) {
-  .hub-floor, html.hub-scifi .tile-link::after, html.hub-scifi .view-header::after, html.hub-scifi .brand-mark::before { display: none !important; }
+  .hub-floor, html.hub-scifi .tile-link::after, html.hub-scifi .view-header::after, html.hub-scifi .brand-mark::before,
+  html.hub-scifi .view-header .view-icon::after, html.hub-scifi .empty-icon::after, html.hub-scifi .main::after { display: none !important; }
   html.hub-scifi .view-header h1 { background: none; color: var(--text); filter: none; }
 }
 
@@ -3152,7 +3354,7 @@ html.scene-still .brand-mark::before, html.scene-still .hub-floor::before, html.
 }
 @media (max-width: 1180px) { .hub-reactor__hud { display: none; } }
 html.scene-still .home-search-bar::after,
-html.scene-still :is(.hub-reactor, .hub-reactor__ticks, .hub-reactor__dash, .hub-reactor__arcs, .hub-reactor__orbit, .hub-reactor__sweep, .hub-reactor__hud) { animation: none !important; }
+html.scene-still :is(.hub-reactor, .hub-reactor__ticks, .hub-reactor__reticle, .hub-reactor__tech, .hub-reactor__dash, .hub-reactor__arcs, .hub-reactor__inner, .hub-reactor__orbit, .hub-reactor__sweep, .hub-reactor__hud) { animation: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   html.hub-scifi .hero-clock, html.hub-scifi .home-search-bar::after { animation: none !important; }

@@ -158,25 +158,33 @@
   const wall = document.getElementById('homeWall');
 
   // ===== 星核反应堆 =====
-  // 以时钟为圆心：DOM 里是 .hub-reactor（刻度环 / 虚线环 / 渐变光弧 / 雷达扫描 / 轨道光点 / 三组读数，SVG + CSS，
-  // 跟着首页一起滚动）；星核壁纸下 canvas 再在同一圆心实时画星核本体（drawReactor）。读数只写真实的东西：
-  // 秒级时钟、首页网址数、看板站点数、预警数（index.html 渲染首页时经 HaloMotion.telemetry 报过来）。
+  // 以时钟为圆心：DOM 里是 .hub-reactor（刻度环 / 科技分段环 / 虚线环 / 渐变光弧 / 内层约束环 / 雷达扫描 / 轨道光点 / 四角读数，
+  // SVG + CSS，跟着首页一起滚动）；深色无壁纸或星核/星河/流光壁纸下 canvas 再在同一圆心实时画星核本体（drawReactor）。
+  // 读数只写真实的东西：秒级时钟、首页网址数、看板站点数、分组数、预警数（index.html 渲染首页时经 HaloMotion.telemetry 报过来）。
   const hero = document.querySelector('.home-hero');
   const hudSlots = {};
   if (hero) {
     const reactor = document.createElement('div');
     reactor.className = 'hub-reactor'; reactor.setAttribute('aria-hidden', 'true');
-    const ticks = Array.from({ length: 120 }, (_, i) => `<line y1="${i % 10 ? -180 : -187}" y2="-172" transform="rotate(${i * 3})"${i % 10 ? '' : ' class="major"'}/>`).join('');
+    const ticks = Array.from({ length: 120 }, (_, i) => {
+      const card = i % 30 === 0, maj = i % 10 === 0;
+      return `<line y1="${card ? -191 : maj ? -187 : -180}" y2="${card ? -169 : -172}" transform="rotate(${i * 3})"${card ? ' class="cardinal"' : maj ? ' class="major"' : ''}/>`;
+    }).join('');
+    const reticles = [0, 90, 180, 270].map(deg => `<path d="M-5,-195 L0,-189 L5,-195" transform="rotate(${deg})"/>`).join('');
     reactor.innerHTML = '<div class="hub-reactor__sweep"></div>'
       + '<svg class="hub-reactor__svg" viewBox="-200 -200 400 400"><defs><linearGradient id="hubReactorArc" x1="0" y1="0" x2="1" y2="1">'
-      + '<stop offset="0" stop-color="#5ee7ff"/><stop offset=".6" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472d0"/></linearGradient></defs>'
-      + `<g class="hub-reactor__ticks">${ticks}</g><circle class="hub-reactor__dash" r="152"/>`
-      + '<g class="hub-reactor__arcs"><circle r="128" pathLength="100" stroke-dasharray="18 82"/>'
-      + '<circle r="128" pathLength="100" stroke-dasharray="9 91" stroke-dashoffset="-40"/><circle r="128" pathLength="100" stroke-dasharray="14 86" stroke-dashoffset="-68"/></g>'
-      + '<g class="hub-reactor__orbit"><circle cy="-140" r="2.6"/><circle cy="140" r="1.6"/></g>'
-      + '<g class="hub-reactor__orbit is-slow"><circle cx="-164" r="2"/></g></svg>'
+      + '<stop offset="0" stop-color="#5ee7ff"/><stop offset=".55" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472d0"/></linearGradient></defs>'
+      + `<g class="hub-reactor__ticks">${ticks}</g><g class="hub-reactor__reticle">${reticles}</g>`
+      + '<circle class="hub-reactor__tech" r="166" pathLength="120" stroke-dasharray="9 5 2 5 19 8"/>'
+      + '<circle class="hub-reactor__dash" r="152"/>'
+      + '<g class="hub-reactor__arcs"><circle r="132" pathLength="100" stroke-dasharray="20 80"/>'
+      + '<circle r="132" pathLength="100" stroke-dasharray="10 90" stroke-dashoffset="-38"/><circle r="132" pathLength="100" stroke-dasharray="15 85" stroke-dashoffset="-68"/></g>'
+      + '<circle class="hub-reactor__inner" r="110" pathLength="100" stroke-dasharray="16 9"/>'
+      + '<g class="hub-reactor__orbit"><circle cy="-142" r="2.8"/><circle cy="142" r="1.8"/></g>'
+      + '<g class="hub-reactor__orbit is-slow"><circle cx="-166" r="2.2"/><circle cx="166" r="1.4"/></g></svg>'
       + '<div class="hub-reactor__hud is-tl"><b>SYS</b> ONLINE<br><i data-hud="clock">T+ --:--:--</i></div>'
       + '<div class="hub-reactor__hud is-tr"><b>LINKS</b> <span data-hud="links">--</span><br><i>MONITOR <span data-hud="monitors">--</span></i></div>'
+      + '<div class="hub-reactor__hud is-bl"><b>SECTORS</b> <span data-hud="groups">--</span><br><i data-hud="scene">REACTOR SYNC</i></div>'
       + '<div class="hub-reactor__hud is-br"><b data-hud="state">ALL NOMINAL</b><br><i data-hud="alerts">ALERT 0</i></div>';
     hero.prepend(reactor);
     reactor.querySelectorAll('[data-hud]').forEach(el => { hudSlots[el.dataset.hud] = el; });
@@ -187,6 +195,8 @@
     const locked = Boolean(tele.locked), alerts = tele.alerts || 0;
     hudSlots.links.textContent = locked || tele.links == null ? '--' : String(tele.links);
     hudSlots.monitors.textContent = locked || tele.monitors == null ? '--' : String(tele.monitors);
+    if (hudSlots.groups) hudSlots.groups.textContent = locked || tele.groups == null ? '--' : String(tele.groups);
+    if (hudSlots.scene) hudSlots.scene.textContent = locked ? 'STANDBY' : 'REACTOR SYNC';
     hudSlots.state.textContent = locked ? 'VAULT LOCKED' : alerts ? 'ATTENTION' : 'ALL NOMINAL';
     hudSlots.alerts.textContent = locked ? 'AUTH REQUIRED' : 'ALERT ' + alerts;
     hudSlots.state.parentElement.classList.toggle('is-warn', !locked && alerts > 0);
@@ -202,7 +212,7 @@
   const stars = document.createElement('canvas');
   stars.className = 'hub-stars'; stars.setAttribute('aria-hidden', 'true');
   (document.getElementById('homeWall') || document.body.firstChild)?.after(stars);
-  // 透视网格地面（只在宽屏收藏首页显示，见 app-v3.css「科幻层 II」）：纯 CSS 动画，这里只放个空节点。
+  // 透视网格地面（见 app-v3.css「科幻层 II / III」）：纯 CSS 动画，这里只放个空节点。
   const floor = document.createElement('div');
   floor.className = 'hub-floor'; floor.setAttribute('aria-hidden', 'true');
   stars.after(floor);
@@ -222,28 +232,35 @@
     while (field.length < n) field.push(spawn(false));
     field.length = n;
   };
-  // 星核本体（星核壁纸下）：外圈辉光、横向镜头光束、吸积盘粒子流（内圈转得快、朝我们转来的左侧更亮）、
-  // 日冕射线、被引力透镜弯到核上方的盘影、暗核 + 光子环、冲击波、偶发电弧。暗核正好托在时钟数字后面，
-  // 字永远读得清；盘的近半边从数字下方掠过，正对文字那一段淡掉。跃迁（切页 / 开场）时整体增亮、加速。
+  // 星核本体（深色科幻舞台 & 星核/星河/流光壁纸）：外圈等离子星云辉光、变形宽银幕镜头光束 + 光圈鬼影、
+  // 连续吸积盘流光带 + 多普勒粒子弧、柔和日冕弧、引力透镜上下光环、暗核 + 双层光子环、脉冲冲击波、偶发电弧。
+  // 暗核正好托在时钟数字后面，字永远读得清；跃迁或聚焦搜索时整体增能加速。
   const clockEl = document.getElementById('heroClock');
-  const DISK_TINTS = ['#e6fbff', '#7fe3ff', '#a78bfa', '#f472d0'];
-  const flow = Array.from({ length: 220 }, () => {
-    const e = 1.22 + Math.random() ** 1.4 * 2.3;
-    return { a: Math.random() * 6.2832, e, lift: (Math.random() - .5) * .05, len: .1 + Math.random() * .16, tint: DISK_TINTS[Math.min(3, ((e - 1.22) / .6) | 0)] };
+  const DISK_TINTS = ['#e6fbff', '#5ee7ff', '#a78bfa', '#f472d0'];
+  const RINGS = [
+    { e: 1.15, w: 1.8, a: .52 },
+    { e: 1.36, w: 1.3, a: .38 },
+    { e: 1.64, w: 1.1, a: .28 },
+    { e: 1.98, w: .9, a: .18 },
+  ];
+  const flow = Array.from({ length: 44 }, (_, i) => {
+    const e = 1.14 + (i / 44) ** 1.35 * 1.18;
+    return { a: (i * 2.39996) % 6.2832, e, len: .38 + (i % 5) * .11, tint: DISK_TINTS[Math.min(3, ((e - 1.14) / .3) | 0)] };
   });
-  const RAYS = Array.from({ length: 72 }, (_, i) => ({ a: i / 72 * 6.2832 + Math.random() * .05, len: .2 + Math.random() ** 2 * 1.2, ph: Math.random() * 6.28 }));
-  const DISK_TILT = -.08, TC = Math.cos(DISK_TILT), TS = Math.sin(DISK_TILT);
-  let DISK_FLAT = .3;
+  const CORONA = Array.from({ length: 18 }, (_, i) => ({ a: i / 18 * 6.2832, span: .16 + (i % 3) * .08, reach: 1.05 + (i % 4) * .035, ph: i * 1.1 }));
+  const DISK_TILT = -.085, TC = Math.cos(DISK_TILT), TS = Math.sin(DISK_TILT);
+  let DISK_FLAT = .24;
   let reactorLast = 0, arc = null, nextArc = 0;
-  const onDisk = (r, e, a, lift = 0) => {
-    const x = Math.cos(a) * e * r, y = (Math.sin(a) * e * DISK_FLAT + lift) * r;
+  const onDisk = (r, e, a) => {
+    const x = Math.cos(a) * e * r, y = Math.sin(a) * e * DISK_FLAT * r;
     return [x * TC - y * TS, x * TS + y * TC];
   };
   const reactorAnchor = () => {
-    if (root.dataset.wallpaper !== 'starcore' || !clockEl) return null;
+    const wp = root.dataset.wallpaper;
+    const darkScene = wp === 'starcore' || wp === 'galaxy' || wp === 'flow' || (!root.classList.contains('wall-on') && root.getAttribute('data-theme') !== 'light');
+    if (!darkScene || !clockEl) return null;
     const b = clockEl.getBoundingClientRect();
     if (!b.width || b.bottom < -b.height * 3 || b.top > sh) return null;
-    // 桌面：暗核要装得下整排数字和下面那行问候；手机：时钟只有 32px，画扁平版（没有暗核和光环，见 drawReactor）。
     return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: phone() ? Math.max(30, b.height) : Math.max(b.height * 1.3, b.width * .64) };
   };
   const drawReactor = (now, energy) => {
@@ -251,90 +268,119 @@
     if (!at) return;
     const r = at.r, t = now / 1000, dt = reactorLast && t > reactorLast ? Math.min(.1, t - reactorLast) : 0;
     const still = stillScene(), small = phone();
-    DISK_FLAT = small ? .16 : .3;
-    const boost = 1 + energy * 1.6 + (root.classList.contains('cine-search') ? .35 : 0), lift = Math.min(1.5, boost);
+    DISK_FLAT = small ? .16 : .24;
+    const boost = 1 + energy * 1.6 + (root.classList.contains('cine-search') ? .4 : 0), lift = Math.min(1.55, boost);
     const breathe = .5 + .5 * Math.sin(t * .9);
     reactorLast = t;
     sctx.save(); sctx.translate(at.x, at.y); sctx.lineCap = 'round';
     sctx.globalCompositeOperation = 'lighter';
-    let g = sctx.createRadialGradient(0, 0, r * .8, 0, 0, r * 4.4);
-    g.addColorStop(0, 'rgba(167,139,250,.34)'); g.addColorStop(.35, 'rgba(94,231,255,.11)'); g.addColorStop(1, 'rgba(94,231,255,0)');
-    sctx.globalAlpha = (.6 + .4 * breathe) * lift; sctx.fillStyle = g; sctx.fillRect(-r * 4.4, -r * 4.4, r * 8.8, r * 8.8);
-    const beam = Math.min(sw * .5, r * 4.2);   // 只在星核两侧亮一段，不横贯整屏
+    let g = sctx.createRadialGradient(0, 0, r * .65, 0, 0, r * 4.8);
+    g.addColorStop(0, 'rgba(94,231,255,.28)'); g.addColorStop(.28, 'rgba(167,139,250,.22)'); g.addColorStop(.62, 'rgba(244,114,208,.07)'); g.addColorStop(1, 'rgba(94,231,255,0)');
+    sctx.globalAlpha = (.65 + .35 * breathe) * lift; sctx.fillStyle = g; sctx.fillRect(-r * 4.8, -r * 4.8, r * 9.6, r * 9.6);
+    // 变形宽银幕镜头光束（Anamorphic Lens Flare）+ 对称光圈鬼影
+    const beam = Math.min(sw * .54, r * 4.8);
     g = sctx.createLinearGradient(-beam, 0, beam, 0);
-    g.addColorStop(0, 'rgba(94,231,255,0)'); g.addColorStop(.5, 'rgba(214,248,255,.95)'); g.addColorStop(1, 'rgba(94,231,255,0)');
-    sctx.fillStyle = g; sctx.globalAlpha = (.4 + .25 * breathe) * lift; sctx.fillRect(-beam, -.8, beam * 2, 1.6);
-    sctx.globalAlpha *= .3; sctx.fillRect(-beam * .75, -6, beam * 1.5, 12);
+    g.addColorStop(0, 'rgba(94,231,255,0)'); g.addColorStop(.28, 'rgba(94,231,255,.38)'); g.addColorStop(.5, 'rgba(235,252,255,.98)'); g.addColorStop(.72, 'rgba(167,139,250,.38)'); g.addColorStop(1, 'rgba(167,139,250,0)');
+    sctx.fillStyle = g; sctx.globalAlpha = (.48 + .28 * breathe) * lift; sctx.fillRect(-beam, -.9, beam * 2, 1.8);
+    sctx.globalAlpha *= .34; sctx.fillRect(-beam * .8, -7, beam * 1.6, 14);
+    if (!small) {
+      for (const [ox, rx, ry, col] of [[-r * 2.25, r * .26, r * .12, 'rgba(94,231,255,.16)'], [r * 2.25, r * .26, r * .12, 'rgba(167,139,250,.16)'], [-r * 3.05, r * .14, r * .07, 'rgba(244,114,208,.12)'], [r * 3.05, r * .14, r * .07, 'rgba(94,231,255,.12)']]) {
+        sctx.strokeStyle = col; sctx.lineWidth = 1.1; sctx.globalAlpha = (.35 + .25 * breathe) * lift;
+        sctx.beginPath(); sctx.ellipse(ox, 0, rx, ry, 0, 0, 6.2832); sctx.stroke();
+      }
+    }
     const disk = (front) => {
-      sctx.lineWidth = small ? 1.1 : 1.6;
-      for (let i = 0, n = small ? 100 : flow.length; i < n; i++) {
+      sctx.save(); sctx.rotate(DISK_TILT); sctx.scale(1, DISK_FLAT);
+      const rg = sctx.createRadialGradient(-r * .35, 0, r * 1.02, 0, 0, r * 2.55);
+      rg.addColorStop(0, 'rgba(224,251,255,0)'); rg.addColorStop(.14, 'rgba(94,231,255,.32)'); rg.addColorStop(.45, 'rgba(167,139,250,.20)'); rg.addColorStop(.76, 'rgba(244,114,208,.08)'); rg.addColorStop(1, 'rgba(94,231,255,0)');
+      sctx.fillStyle = rg; sctx.globalAlpha = (front ? .44 : .72) * lift;
+      sctx.beginPath(); sctx.arc(0, 0, r * 2.55, front ? 0 : Math.PI, front ? Math.PI : 6.2832); sctx.arc(0, 0, r * 1.05, front ? Math.PI : 6.2832, front ? 0 : Math.PI, true); sctx.closePath(); sctx.fill();
+      sctx.restore();
+      const lg = sctx.createLinearGradient(-r * 2.3, 0, r * 2.3, 0);
+      lg.addColorStop(0, 'rgba(224,251,255,.95)'); lg.addColorStop(.28, 'rgba(94,231,255,.85)'); lg.addColorStop(.62, 'rgba(167,139,250,.55)'); lg.addColorStop(1, 'rgba(244,114,208,.32)');
+      sctx.strokeStyle = lg;
+      for (const ring of RINGS) {
+        sctx.lineWidth = small ? ring.w * .75 : ring.w;
+        sctx.globalAlpha = ring.a * (front ? .55 : .9) * lift;
+        sctx.beginPath(); sctx.ellipse(0, 0, r * ring.e, r * ring.e * DISK_FLAT, DISK_TILT, front ? 0 : Math.PI, front ? Math.PI : 6.2832); sctx.stroke();
+      }
+      sctx.lineWidth = small ? 1.15 : 1.5;
+      for (let i = 0, n = small ? 24 : flow.length; i < n; i++) {
         const p = flow[i];
-        if (!front) p.a += dt * (.5 + energy * 2.4) / p.e ** 1.5;
+        if (!front) p.a = (p.a + dt * (.48 + energy * 2.2) / p.e ** 1.4) % 6.2832;
         if ((Math.sin(p.a) > 0) !== front) continue;
-        const [x0, y0] = onDisk(r, p.e, p.a - p.len / p.e, p.lift), [x1, y1] = onDisk(r, p.e, p.a, p.lift);
-        let alpha = (.16 + .66 * (1 - .7 * Math.cos(p.a)) / 1.7) * (1 - .5 * (p.e - 1.22) / 2.3);
-        if (front) alpha *= Math.min(1, Math.max(.1, (Math.abs(x1) - r * .5) / r));
+        const a0 = p.a - p.len / p.e;
+        let alpha = (.22 + .65 * (1 - .65 * Math.cos(p.a)) / 1.65) * (1 - .45 * (p.e - 1.14) / 1.2);
+        if (front) alpha *= Math.min(1, Math.max(.14, (Math.abs(Math.cos(p.a) * p.e) - .45)));
         sctx.globalAlpha = alpha * lift; sctx.strokeStyle = p.tint;
-        sctx.beginPath(); sctx.moveTo(x0, y0); sctx.lineTo(x1, y1); sctx.stroke();
+        sctx.beginPath(); sctx.ellipse(0, 0, r * p.e, r * p.e * DISK_FLAT, DISK_TILT, a0, p.a); sctx.stroke();
       }
     };
     disk(false);
-    if (!small) {   // 手机上到此为止只剩辉光、光束与扁平盘：暗核、光环、透镜弧都不画
-      sctx.lineWidth = 1; sctx.strokeStyle = '#9fe9ff';
-      for (const ray of RAYS) {
-        const a = ray.a + t * .025, len = ray.len * (.65 + .35 * Math.sin(t * 1.3 + ray.ph));
-        sctx.globalAlpha = .08 * lift;
-        sctx.beginPath(); sctx.moveTo(Math.cos(a) * r * 1.06, Math.sin(a) * r * 1.06);
-        sctx.lineTo(Math.cos(a) * r * (1.06 + len), Math.sin(a) * r * (1.06 + len)); sctx.stroke();
-      }
-    }
     if (!small) {
-      g = sctx.createLinearGradient(-r * 1.2, 0, r * 1.2, 0);
+      // 柔和日冕光弧
+      sctx.lineWidth = 1.3;
+      for (const c of CORONA) {
+        const a = c.a + t * .035, pulse = .55 + .45 * Math.sin(t * 1.4 + c.ph);
+        sctx.strokeStyle = c.ph > 3.14 ? '#a78bfa' : '#7fe3ff';
+        sctx.globalAlpha = .16 * pulse * lift;
+        sctx.beginPath(); sctx.arc(0, 0, r * (1.03 + (c.reach - 1.03) * pulse), a, a + c.span); sctx.stroke();
+      }
+      g = sctx.createLinearGradient(-r * 1.22, 0, r * 1.22, 0);
       g.addColorStop(0, '#5ee7ff'); g.addColorStop(.45, '#f2fbff'); g.addColorStop(1, '#f472d0');
-      sctx.strokeStyle = g; sctx.shadowColor = '#a78bfa'; sctx.shadowBlur = small ? 6 : 16;
-      sctx.lineWidth = small ? 1.6 : 2.4; sctx.globalAlpha = (.55 + .3 * breathe) * Math.min(1.4, boost);
-      sctx.beginPath(); sctx.ellipse(0, -r * .04, r * 1.17, r * 1.1, 0, Math.PI * 1.04, Math.PI * 1.96); sctx.stroke();
-      sctx.lineWidth = 1.2; sctx.globalAlpha *= .5;
-      sctx.beginPath(); sctx.ellipse(0, r * .02, r * 1.08, r * 1.04, 0, Math.PI * .1, Math.PI * .9); sctx.stroke();
+      sctx.strokeStyle = g; sctx.shadowColor = '#a78bfa'; sctx.shadowBlur = 18;
+      sctx.lineWidth = 2.5; sctx.globalAlpha = (.62 + .3 * breathe) * Math.min(1.45, boost);
+      sctx.beginPath(); sctx.ellipse(0, -r * .04, r * 1.18, r * 1.11, 0, Math.PI * 1.04, Math.PI * 1.96); sctx.stroke();
+      sctx.lineWidth = 1.4; sctx.globalAlpha *= .58;
+      sctx.beginPath(); sctx.ellipse(0, r * .02, r * 1.09, r * 1.05, 0, Math.PI * .08, Math.PI * .92); sctx.stroke();
       sctx.shadowBlur = 0;
       sctx.globalCompositeOperation = 'source-over';
-      g = sctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.03);
-      g.addColorStop(0, 'rgba(2,3,10,.95)'); g.addColorStop(.85, 'rgba(3,4,14,.92)'); g.addColorStop(1, 'rgba(3,4,14,0)');
-      sctx.globalAlpha = 1; sctx.fillStyle = g; sctx.beginPath(); sctx.arc(0, 0, r * 1.03, 0, 6.2832); sctx.fill();
+      g = sctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.04);
+      g.addColorStop(0, 'rgba(2,3,10,.96)'); g.addColorStop(.84, 'rgba(3,5,15,.92)'); g.addColorStop(1, 'rgba(3,5,15,0)');
+      sctx.globalAlpha = 1; sctx.fillStyle = g; sctx.beginPath(); sctx.arc(0, 0, r * 1.04, 0, 6.2832); sctx.fill();
       sctx.globalCompositeOperation = 'lighter';
-      sctx.lineWidth = 1.4; sctx.strokeStyle = '#dff8ff'; sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = small ? 4 : 12;
-      sctx.globalAlpha = (.5 + .35 * breathe) * Math.min(1.4, boost);
-      sctx.beginPath(); sctx.arc(0, 0, r, 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
+      sctx.lineWidth = 1.6; sctx.strokeStyle = '#e6fbff'; sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 14;
+      sctx.globalAlpha = (.58 + .35 * breathe) * Math.min(1.45, boost);
+      sctx.beginPath(); sctx.arc(0, 0, r, 0, 6.2832); sctx.stroke();
+      sctx.lineWidth = .9; sctx.strokeStyle = '#a78bfa'; sctx.globalAlpha *= .55;
+      sctx.beginPath(); sctx.arc(0, 0, r * 1.05, 0, 6.2832); sctx.stroke();
+      sctx.shadowBlur = 0;
+    } else {
+      // 手机端：在时钟四周点亮一圈轻量光子弧，不遮挡数字
+      sctx.lineWidth = 1.1; sctx.strokeStyle = 'rgba(94,231,255,.45)';
+      sctx.globalAlpha = (.45 + .25 * breathe) * lift;
+      sctx.beginPath(); sctx.arc(0, 0, r * 1.18, -.55, .55); sctx.stroke();
+      sctx.beginPath(); sctx.arc(0, 0, r * 1.18, 2.59, 3.69); sctx.stroke();
     }
     disk(true);
-    const wave = (t % 7) / 1.8;
+    const wave = (t % 6.4) / 1.8;
     if (!still && wave < 1) {
-      const k = 1.05 + wave * 3;
-      sctx.globalAlpha = (1 - wave) ** 2 * .6; sctx.strokeStyle = '#9fe9ff'; sctx.lineWidth = .8 + 2 * (1 - wave);
+      const k = 1.04 + wave * 2.9;
+      sctx.globalAlpha = (1 - wave) ** 2 * .68; sctx.strokeStyle = '#9fe9ff'; sctx.lineWidth = .9 + 2.2 * (1 - wave);
       sctx.beginPath(); sctx.ellipse(0, 0, r * k, r * k * DISK_FLAT, DISK_TILT, 0, 6.2832); sctx.stroke();
-      sctx.globalAlpha *= .5; sctx.strokeStyle = '#c4b0ff';
-      sctx.beginPath(); sctx.arc(0, 0, r * (1.02 + wave * 1.4), 0, 6.2832); sctx.stroke();
+      sctx.globalAlpha *= .55; sctx.strokeStyle = '#c4b0ff';
+      sctx.beginPath(); sctx.arc(0, 0, r * (1.02 + wave * 1.45), 0, 6.2832); sctx.stroke();
     }
     if (energy > .05) {   // 跃迁：一圈冷光从暗核边缘炸开
-      sctx.globalAlpha = energy * .7; sctx.strokeStyle = '#e0fbff'; sctx.lineWidth = 2 + energy * 3;
-      sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 20;
+      sctx.globalAlpha = energy * .75; sctx.strokeStyle = '#e0fbff'; sctx.lineWidth = 2 + energy * 3.2;
+      sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 22;
       sctx.beginPath(); sctx.arc(0, 0, r * (1 + (1 - energy) * 2.4), 0, 6.2832); sctx.stroke(); sctx.shadowBlur = 0;
     }
     if (!still && !small) {
       if (now > nextArc) {
         // 从暗核边缘沿径向打到盘上：起点取终点方向上的光子环，整条电弧都在暗核外面，不会划过时钟数字。
-        const a = Math.random() * 6.2832, e = 1.6 + Math.random() * 1.2, pts = [];
-        const [ex, ey] = onDisk(1, e, a), b = Math.atan2(ey, ex) + (Math.random() - .5) * .5, sx = Math.cos(b) * 1.03, sy = Math.sin(b) * 1.03;
+        const a = Math.random() * 6.2832, e = 1.55 + Math.random() * 1.15, pts = [];
+        const [ex, ey] = onDisk(1, e, a), b = Math.atan2(ey, ex) + (Math.random() - .5) * .45, sx = Math.cos(b) * 1.03, sy = Math.sin(b) * 1.03;
         for (let i = 0; i <= 10; i++) {
-          const k = i / 10, jit = i && i < 10 ? (Math.random() - .5) * .18 : 0;
+          const k = i / 10, jit = i && i < 10 ? (Math.random() - .5) * .16 : 0;
           const x = sx * (1 - k) + ex * k, y = sy * (1 - k) + ey * k;
           pts.push([x - (ey - sy) * jit, y + (ex - sx) * jit]);
         }
-        arc = { start: now, pts }; nextArc = now + 2600 + Math.random() * 4000;
+        arc = { start: now, pts }; nextArc = now + 2400 + Math.random() * 3600;
       }
       if (arc && now - arc.start < 260) {
-        sctx.globalAlpha = .55 + .45 * Math.random(); sctx.strokeStyle = '#e6f9ff'; sctx.lineWidth = 1.3;
-        sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 10;
+        sctx.globalAlpha = .58 + .42 * Math.random(); sctx.strokeStyle = '#e6f9ff'; sctx.lineWidth = 1.35;
+        sctx.shadowColor = '#5ee7ff'; sctx.shadowBlur = 12;
         sctx.beginPath(); arc.pts.forEach(([x, y], i) => (i ? sctx.lineTo(x * r, y * r) : sctx.moveTo(x * r, y * r))); sctx.stroke();
         sctx.shadowBlur = 0;
       }
@@ -348,6 +394,13 @@
     const cx = sw / 2 + spx, cy = sh / 2 + spy, scale = Math.max(sw, sh) * .55;
     const light = root.getAttribute('data-theme') === 'light' && !root.classList.contains('wall-on');
     sctx.clearRect(0, 0, sw, sh); sctx.lineCap = 'round';
+    if (!light && !root.classList.contains('wall-on')) {
+      // 深色无壁纸场景：在星场底层铺两团缓慢随视差呼吸的深空星云，让星核与网格融入电影感深空
+      const nx = sw * .5 + spx * .4, ny = sh * .24 + spy * .4, nr = Math.max(sw, sh) * .48;
+      const ng = sctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+      ng.addColorStop(0, 'rgba(94,231,255,.09)'); ng.addColorStop(.45, 'rgba(167,139,250,.07)'); ng.addColorStop(1, 'rgba(6,8,18,0)');
+      sctx.fillStyle = ng; sctx.fillRect(0, 0, sw, sh);
+    }
     for (const s of field) {
       s.z -= speed * dt;
       if (s.z <= .04) { Object.assign(s, spawn(true)); continue; }
@@ -366,7 +419,14 @@
           sctx.globalAlpha = alpha * .4 * energy; sctx.strokeStyle = s.tint === '#ffffff' ? '#f472d0' : '#5ee7ff'; sctx.lineWidth = size * 2.2;
           sctx.beginPath(); sctx.moveTo(cx + s.x / far * scale, cy + s.y / far * scale); sctx.lineTo(cx + s.x / tail * scale, cy + s.y / tail * scale); sctx.stroke();
         }
-      } else { sctx.fillStyle = color; sctx.beginPath(); sctx.arc(x, y, size, 0, 6.2832); sctx.fill(); }
+      } else {
+        sctx.fillStyle = color; sctx.beginPath(); sctx.arc(x, y, size, 0, 6.2832); sctx.fill();
+        if (!light && !phone() && near > .82) {   // 近景亮星带微弱十字星芒
+          sctx.strokeStyle = color; sctx.lineWidth = .65; sctx.globalAlpha = alpha * .38;
+          const arm = size * 2.6;
+          sctx.beginPath(); sctx.moveTo(x - arm, y); sctx.lineTo(x + arm, y); sctx.moveTo(x, y - arm); sctx.lineTo(x, y + arm); sctx.stroke();
+        }
+      }
     }
     sctx.globalAlpha = 1;
     drawReactor(now, energy);
@@ -429,7 +489,7 @@
 
   // 卡片聚光：鼠标在卡片 / 面板上移动时，把指针在卡片里的位置写进 --mx / --my，CSS 在那里画一团冷光。
   // 只桌面鼠标、科幻特效开着、没要求减弱动态时；每帧最多写一次，只写指针下面那一张。
-  const SPOT = '.panel, .bookmark-card, .deck-card, .home-widget';
+  const SPOT = '.panel, .bookmark-card, .deck-card, .home-widget, .link-card, .ov-item';
   let spotEl = null, spotFrame = 0, spotX = 0, spotY = 0;
   document.addEventListener('pointermove', e => {
     if (e.pointerType !== 'mouse' || !desktop.matches || reduced.matches || !scifiOn()) return;

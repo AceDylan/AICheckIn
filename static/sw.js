@@ -45,7 +45,9 @@
 // 色差跃迁、HUD 扫描线与时钟彗星。壁纸重画了，换号让 cache-first 的旧星核失效。
 // v65：首页分组全部展开后刷新不再被同步的旧折叠列表盖回去（全部展开写 none）。
 // v66：选了星核壁纸时「AI 聊天」框给深色、「笔记」框给 neural（WebObsidian 黑金主题）。
-const CACHE_VERSION = 'bh-shell-v73';
+// v74：科幻层 III——全深色场景实时星核反应堆（连续吸积盘流光带、柔和日冕弧、变形宽银幕镜头光束、四角 HUD 遥测舱）、
+// 全息发射舱图标、全站四角 HUD 取景框、全息指令搜索导管、电浆霓虹主按钮、页头舰桥扫光与图标脉冲环、全站远景透视网格地面。
+const CACHE_VERSION = 'bh-shell-v74';
 const SHELL = [
   '/',
   '/static/app-v3.css',

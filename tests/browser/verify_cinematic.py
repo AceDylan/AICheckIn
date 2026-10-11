@@ -50,6 +50,17 @@ def scifi(b):
           'bh_scifi_boot=1' in page.evaluate('document.cookie') and page.locator('.hub-boot').count() == 0)
     check('sci-fi: starfield is drawn', page.locator('.hub-stars').evaluate('el => getComputedStyle(el).display') == 'block'
           and page.locator('.hub-stars').evaluate('el => el.width > 0'))
+    check('sci-fi: default dark scene activates reactor and 4 HUD callouts',
+          page.locator('.hub-reactor').evaluate('el => getComputedStyle(el).display') == 'block'
+          and page.locator('.hub-reactor__hud').count() == 4
+          and page.locator('.main').evaluate("el => getComputedStyle(el).backgroundColor.startsWith('rgba(')"))
+    check('sci-fi: launchpad tiles and panels render holographic HUD frames',
+          page.locator('.tile-link').first.evaluate('el => getComputedStyle(el).borderTopColor') != 'rgba(0, 0, 0, 0)'
+          and page.locator('.deck-card').first.evaluate("el => getComputedStyle(el).backgroundImage.split('gradient(').length >= 11"))
+    page.evaluate("openLibPage('monitor')"); page.wait_for_selector('#addBm')
+    check('sci-fi: primary buttons use plasma neon gradient',
+          'linear-gradient' in page.locator('#addBm').evaluate('el => getComputedStyle(el).backgroundImage'))
+    page.evaluate("openLibPage('@home')"); page.wait_for_timeout(300)
     page.reload(); page.wait_for_timeout(400)
     check('sci-fi: no second opening within 6 hours', page.locator('.hub-boot').count() == 0)
     page.evaluate("openHomeLook()"); page.wait_for_selector('#scifiSeg')
