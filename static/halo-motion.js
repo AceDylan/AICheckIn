@@ -218,11 +218,13 @@
     if (typeof cut.animate !== 'function') return;
     const duration = Math.max(560, Math.min(ms, 900)), easing = 'cubic-bezier(.65, 0, .35, 1)';
     const [top, bottom, flare] = cut.children;
+    // 只在播的时候挂出来：常驻的话即便黑边在屏幕外，也是一整屏的合成层（手机显存吃紧时会挤掉内容层）。
+    cut.classList.add('is-on');
     [[top, '-101%'], [bottom, '101%']].forEach(([el, away]) => el.animate([
       { transform: `translateY(${away})` }, { transform: 'none', offset: .3 }, { transform: 'none', offset: .55 }, { transform: `translateY(${away})` },
     ], { duration, easing }));
     flare.animate([{ opacity: 0, transform: 'scaleX(0)' }, { opacity: 1, transform: 'scaleX(1)', offset: .4 }, { opacity: 0, transform: 'scaleX(1.15)' }],
-      { duration, easing: 'ease-out' });
+      { duration, easing: 'ease-out' }).finished.then(() => { if (!cut.getAnimations({ subtree: true }).length) cut.classList.remove('is-on'); }, () => {});
   };
   const sctx = stars.getContext && stars.getContext('2d');
   const TINTS = ['#ffffff', '#bfe9ff', '#9fd8ff', '#d7c8ff', '#ffe6c4'];

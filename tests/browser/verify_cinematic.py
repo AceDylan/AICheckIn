@@ -188,5 +188,30 @@ def omni_and_pages(b):
     ctx.close()
 
 
+
+def touch_layers(b):
+    """折叠屏 / 平板横屏宽过 760px，却是触屏：重的装饰层不该铺上去。10-11 折叠屏录屏里时钟、搜索框、侧栏、图标整块消失又出现，
+    是合成层把手机浏览器的显存占满（透视地面单层约 87MB、胶片 / 切镜各一整屏、每个分组一条滚动时间轴），图块被丢。"""
+    reset()
+    js_hidden = "sel => getComputedStyle(document.querySelector(sel)).display === 'none'"
+    ctx, page = open_page(b, 1172, 905, mobile=True, cookies={'bh_theme': 'dark', 'bh_wallpaper': 'starcore'})
+    page.wait_for_timeout(900)
+    check('fold: wide touch screen has no perspective floor', page.evaluate("(" + js_hidden + ")('.hub-floor')"))
+    check('fold: no film grain / vignette layer on touch', page.evaluate("(" + js_hidden + ")('.hub-film')"))
+    check('fold: letterbox cut layer is not mounted while idle', page.evaluate("(" + js_hidden + ")('.hub-cut')"))
+    check('fold: no scroll-driven dolly / materialize on a wide touch screen', page.evaluate(
+        "() => getComputedStyle(document.querySelector('.home-hero')).animationName !== 'sf-dolly' && ![...document.querySelectorAll('#homeList .home-section')].some(el => getComputedStyle(el).animationName === 'sf-materialize')"))
+    check('fold: page entry animation releases its layer once played', page.evaluate("() => document.querySelector('#view-bookmarks').getAnimations().length === 0"))
+    ctx.close()
+    ctx, page = open_page(b, 1440, 900, cookies={'bh_theme': 'dark'})
+    page.wait_for_timeout(300)
+    check('desktop: floor and film stay on', not page.evaluate("(" + js_hidden + ")('.hub-floor')") and not page.evaluate("(" + js_hidden + ")('.hub-film')"))
+    check('desktop: cut layer idle until a warp', page.evaluate("(" + js_hidden + ")('.hub-cut')"))
+    page.evaluate("HaloMotion.warp(700)")
+    check('desktop: cut layer is mounted while it plays', not page.evaluate("(" + js_hidden + ")('.hub-cut')"))
+    page.wait_for_timeout(1300)
+    check('desktop: cut layer is unmounted after it plays', page.evaluate("(" + js_hidden + ")('.hub-cut')"))
+    ctx.close()
+
 if __name__ == '__main__':
-    main((cinematic, card_editor, scifi, stellar_scene, scene_budget, omni_and_pages), os.environ.get('BH_VERIFY_RESULTS', ''))
+    main((cinematic, card_editor, scifi, stellar_scene, scene_budget, omni_and_pages, touch_layers), os.environ.get('BH_VERIFY_RESULTS', ''))

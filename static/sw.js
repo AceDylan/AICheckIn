@@ -49,7 +49,7 @@
 // （v74 / v75 已回退，换号跳过它们，客户端里残留的旧缓存一并作废。）
 // v77：手机收藏首页滚动防抖——壁纸 / 星场 / 胶片这几层固定背景高度锁 100lvh（地址栏伸缩不再缩放壁纸、不重建画布），
 // 手机不再画跟随时钟的画布星核，滚动推镜与分组浮现只在电脑上。
-const CACHE_VERSION = 'bh-shell-v77';
+const CACHE_VERSION = 'bh-shell-v78';
 const SHELL = [
   '/',
   '/static/app-v3.css',

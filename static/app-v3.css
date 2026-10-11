@@ -312,9 +312,9 @@ html[data-theme="light"] .theme-toggle .ic-sun { display: block; }
 /* ---------- 主区 ---------- */
 .main { min-width: 0; }
 .content { width: min(100%, 1480px); margin: 0 auto; padding: 30px clamp(24px, 3vw, 48px) 96px; }
-.view { display: none; animation: view-in .22s var(--ease) both; }
+.view { display: none; animation: view-in .22s var(--ease) backwards; }   /* backwards：播完不再挂着，免得整页一直是个合成层 */
 .view.active { display: block; }
-@keyframes view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes view-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* 页头：标题 + 说明 + 操作排成一行，下面一条细分隔线；不再是一整块带光晕的卡片。
    壁纸场景里字直接压在画面上读不清，那里另给一块玻璃底（见「外观」一节）。 */
@@ -2747,7 +2747,7 @@ html.hub-scifi.wall-on .main::before { display: none; }
 html.hub-scifi .hub-reactor {
   display: block; position: absolute; left: 50%; top: calc(var(--hero-pad) + var(--clock-size) / 2);
   width: calc(var(--clock-size) * 5.6); aspect-ratio: 1; transform: translate(-50%, -50%); z-index: -1;
-  animation: sf-reactor-in 1.2s cubic-bezier(.16, 1, .3, 1) both;
+  animation: sf-reactor-in 1.2s cubic-bezier(.16, 1, .3, 1) backwards;
 }
 @keyframes sf-reactor-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.55) rotate(-40deg); filter: blur(8px); } }
 .hub-reactor__svg, .hub-reactor__sweep {
@@ -3121,9 +3121,11 @@ html.hub-scifi .modal {
   box-shadow: 0 0 0 1px rgb(94 231 255 / .06), 0 0 70px -24px var(--sf-glow), var(--shadow-pop);
 }
 
-/* 透视网格地面：收藏首页底部一片缓缓推进的远景光网，只在宽屏、首页显示；遮罩在透视地平线以下完全淡出，避免顶边跳动。 */
+/* 透视网格地面：收藏首页底部一片缓缓推进的远景光网，只在有鼠标的宽屏、首页显示；遮罩在透视地平线以下完全淡出，避免顶边跳动。
+   触屏不画：这层是 3D 变换动画，合成出来的纹理约有两屏半宽、十倍地面高（折叠屏 / 平板上单层约 87MB 显存），
+   手机浏览器显存不够时会丢掉别的层的图块——时钟、搜索框、侧栏、图标整块消失又出现（10-11 折叠屏录屏）。 */
 .hub-floor { display: none; }
-@media (width > 760px) {
+@media (width > 760px) and (hover: hover) and (pointer: fine) {
   html.hub-scifi:has(#view-bookmarks.active #homePage:not([hidden])) .hub-floor {
     display: block; position: fixed; left: 0; right: 0; bottom: 0; height: min(30vh, 210px); z-index: -1; pointer-events: none; overflow: hidden;
     opacity: .22; -webkit-mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .45) 30%, transparent 72%); mask-image: linear-gradient(to top, #000 0, rgb(0 0 0 / .45) 30%, transparent 72%);
@@ -3188,7 +3190,10 @@ html.hub-scifi .hub-film::after {   /* 胶片颗粒：一张噪点小图铺满�
   0% { transform: translate(0, 0); } 17% { transform: translate(-13px, 9px); } 33% { transform: translate(11px, -16px); }
   50% { transform: translate(-7px, 19px); } 67% { transform: translate(17px, 5px); } 83% { transform: translate(-19px, -11px); }
 }
-html.hub-scifi .hub-cut { display: block; position: fixed; inset: 0; z-index: 46; pointer-events: none; overflow: hidden; }
+html.hub-scifi .hub-cut { position: fixed; inset: 0; z-index: 46; pointer-events: none; overflow: hidden; }
+html.hub-scifi .hub-cut.is-on { display: block; }   /* 只在播切镜时挂出来（playCut 加减 .is-on）：平时常驻也是一整屏合成层 */
+/* 触屏不铺胶片层：暗角和颗粒各是一整屏的合成层，颗粒还每 1/12 秒整屏重新合成一次；手机显存吃紧时会挤掉内容层的图块。 */
+@media (hover: none), (pointer: coarse) { html.hub-scifi:is([data-theme="dark"], .wall-on) .hub-film { display: none; } }
 .hub-cut__bar {
   position: absolute; left: 0; right: 0; height: 11vh; background: #000; transform: translateY(-101%);
 }
@@ -3200,7 +3205,8 @@ html.hub-scifi .hub-cut { display: block; position: fixed; inset: 0; z-index: 46
   box-shadow: 0 0 14px 2px rgb(94 231 255 / .55), 0 0 60px 10px rgb(167 139 250 / .25);
 }
 @media (prefers-reduced-motion: no-preference) {
-  @supports (animation-timeline: view()) { @media (width > 760px) {   /* 只在电脑上：手机上随滚动位移的内容读起来就是「抖」 */
+  @supports (animation-timeline: view()) { @media (width > 760px) and (hover: hover) and (pointer: fine) {   /* 只在电脑上：手机上随滚动位移的内容读起来就是「抖」；
+      宽度不够判断——折叠屏、平板横屏也有 760px 以上，每个分组一条滚动时间轴就是一个常驻合成层 */
     /* 推镜：首屏随滚动后退（独立的 translate / scale，不碰搜索镜头用的 transform） */
     html.hub-scifi:not(.scene-still) .home-hero {
       animation: sf-dolly linear both; animation-timeline: scroll(root block); animation-range: 0 60vh;
