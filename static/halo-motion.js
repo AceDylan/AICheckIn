@@ -732,6 +732,15 @@
       { duration: tFlare + tLight * .5, easing: 'ease-out', fill: 'forwards' });
     ir.wave.animate([{ transform: 'scale(.9)', opacity: .9 }, { transform: 'scale(4.2)', opacity: 0 }], { duration: tFlare * 1.6, easing: 'cubic-bezier(.2, .6, .3, 1)', fill: 'forwards' });
     if (ir.to === 'bookmarks') warpStars(tFlare + tLight);   // 星核重新点火（电脑 + 星核壁纸时画布上那颗跟着增亮）
+    // 大触屏（折叠屏内屏 / 平板）：暗幕是一整屏的渐变，每帧改孔就要整屏重画；这时框里的应用也在入场，
+    // 手机浏览器显存顶到上限就丢图块——暗幕一块块消失又出现（10-12 Fold6 内屏录屏）。那里孔一次开好，照亮改成暗幕淡出（只动不透明度）。
+    if (ir.tier === 'touch') {
+      hole(ir, dest.x, dest.y, dest.r * 1.3, dest.r * .8, .9);
+      if (!await tween(ir, tFlare, () => {})) return;
+      ir.veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: tLight, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+      if (await tween(ir, tLight, () => {})) irisFinish(ir);
+      return;
+    }
     if (!await tween(ir, tFlare, p => hole(ir, dest.x, dest.y, dest.r * 1.3 * ease(p), dest.r * .8 * ease(p), .9 * p))) return;
     // ④ 照亮：孔带着光边扩到整屏
     const far = Math.max(...[[0, 0], [innerWidth, 0], [0, innerHeight], [innerWidth, innerHeight]].map(([x, y]) => Math.hypot(x - dest.x, y - dest.y)));

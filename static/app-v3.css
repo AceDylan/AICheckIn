@@ -3307,6 +3307,8 @@ html.scene-still .hub-film::after { animation: none; }
 
 /* 触屏：刻度环不带 drop-shadow 光晕（每帧重画滤镜太贵） */
 .hub-iris:not(.is-desk) .hub-reactor__svg * { filter: none; }
+/* 大触屏：辉光不用滤色叠加（混合要把整层光圈另合成一整屏），照亮时显存最紧 */
+.hub-iris.is-touch .hub-iris__bloom { mix-blend-mode: normal; }
 .hub-iris.is-narrow .hub-iris__hud { font-size: 10px; }
 
 /* 减弱动态效果 / 省流量：只有暗幕一淡一出 */

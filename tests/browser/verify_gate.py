@@ -138,15 +138,16 @@ WATCH = """([loadingId]) => {
   const tick = () => {
     const w = window.__w, ir = document.querySelector('.hub-iris');
     const view = (document.querySelector('.view.active') || { id: '' }).id.replace('view-', '');
-    let ring = null, veil = 0;
+    let ring = null, veil = 0, hole = '';
     if (ir) {
       ir.className.split(' ').forEach(c => w.classes.add(c));
       ir.querySelectorAll('.hub-iris__hud b, .hub-iris__hud p span').forEach(el => w.lines.add(el.textContent));   // 读数只留最近三行：攒下见过的每一行
       const b = ir.querySelector('.hub-iris__ring').getBoundingClientRect();
       ring = [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2), Math.round(b.width)];
-      veil = parseFloat(getComputedStyle(ir.querySelector('.hub-iris__veil')).opacity);
+      const v = ir.querySelector('.hub-iris__veil');
+      veil = parseFloat(getComputedStyle(v).opacity); hole = v.style.getPropertyValue('--ir');
     }
-    w.out.push({ t: performance.now() - w.t0, on: !!ir, cls: ir ? ir.className : '', veil, ring, view, loading: !loading.hidden });
+    w.out.push({ t: performance.now() - w.t0, on: !!ir, cls: ir ? ir.className : '', veil, hole, ring, view, loading: !loading.hidden });
     if (!ir && w.out.length > 10 && w.out[w.out.length - 2].on) { w.end = performance.now() - w.t0; return; }
     if (performance.now() - w.t0 < 12000) setTimeout(tick, 30);
   };
@@ -239,6 +240,7 @@ def desktop(b, halo, vault):
     orb = orb_center(page, halo)
     check("电脑·进聊天：光圈落在 HaloWebUI 新对话的光圈上", near(land, orb), (land, orb))
     check("电脑·进聊天：落点亮起（点亮）后照亮整屏，层删干净", flare is not None and gone(page) and w["end"] > 0, w["classes"])
+    check("电脑·进聊天：照亮仍是孔扩到整屏", len({s["hole"] for s in w["out"] if s["on"] and "is-flare" in s["cls"]}) > 3)
     took = w["end"] - w["readyAt"]
     check("电脑·冷进入：就绪后约两秒半内收尾（不太快也不拖）", 1200 < took < 3200, round(took))
     check("电脑·冷进入：加载层撤掉", page.evaluate("() => document.getElementById('chatLoading').hidden"))
@@ -337,6 +339,14 @@ def touch_and_fold(b, halo, vault):
     check("内屏：触屏档（不是电脑档），播完整", {"is-touch", "is-flare"} <= set(w["classes"]) and "is-desk" not in w["classes"] and gone(page), w["classes"])
     land, _ = landing(w)
     check("内屏：落在 HaloWebUI 的光圈上", near(land, orb_center(page, halo)), (land, orb_center(page, halo)))
+    # 10-12 Fold6 内屏录屏：照亮时暗幕一块块消失又出现——整屏渐变每帧改孔要整屏重画，框里的应用同时在入场，显存顶满丢图块。
+    lit = [s for s in w["out"] if s["on"] and "is-flare" in s["cls"]]
+    holes = {s["hole"] for s in lit}
+    check("内屏：点亮后暗幕的孔不再逐帧改（不整屏重画）", len(lit) > 3 and len(holes) == 1, sorted(holes)[:6])
+    check("内屏：照亮是暗幕淡出", any(s["veil"] < .5 for s in lit), [round(s["veil"], 2) for s in lit][-6:])
+    blend = page.evaluate("() => { const o = document.createElement('div'); o.className = 'hub-iris is-touch'; o.innerHTML = '<i class=\"hub-iris__bloom\"></i>';"
+                          " document.body.append(o); const m = getComputedStyle(o.firstChild).mixBlendMode; o.remove(); return m; }")
+    check("内屏：辉光不用滤色叠加", blend == "normal", blend)
     filt = page.evaluate("""async () => { document.querySelector('.tab[data-view="bookmarks"]').click(); await new Promise(r => setTimeout(r, 200));
         const a = document.querySelector('.hub-iris .hub-reactor__arcs'); return a ? getComputedStyle(a).filter : null; }""")
     check("内屏：飞的那一圈不带滤镜光晕", filt == "none", filt)
@@ -354,6 +364,7 @@ def touch_and_fold(b, halo, vault):
     check("外屏：光圈从时钟外亮起", start is not None and near(start["ring"], clock, 8) and "is-narrow" in w["classes"], (start and start["ring"], clock))
     land, flare = landing(w)
     check("外屏：落在 HaloWebUI 的光圈上、播完整", near(land, orb_center(page, halo)) and flare is not None and gone(page), (land, orb_center(page, halo)))
+    check("外屏：照亮仍是孔扩到整屏", len({s["hole"] for s in w["out"] if s["on"] and "is-flare" in s["cls"]}) > 3)
     check("外屏：没有横向溢出", page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1"))
     ctx.close()
 
