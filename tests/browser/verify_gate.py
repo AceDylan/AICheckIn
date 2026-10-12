@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
-"""星门（进「AI 聊天」「笔记」时的过渡，halo-motion.js 的 gate）的真实浏览器回归。
+"""光圈接力（收藏首页 ⇄ AI 聊天 / 笔记的过渡，halo-motion.js 的 iris，外壳 v81）的真实浏览器回归。
 
     python tests/browser/verify_gate.py
 
 只有真浏览器说得清的几件事：
-  - 框里的应用说「好了」之前，框始终被星门或加载层盖着（以前 load 一到就撤，HaloWebUI 每次都先露出 /auth 登录页）；
-  - 冷进入等真实就绪、热进入一秒左右收尾，开门后才把 enter 发进框；
-  - 电脑 / 折叠屏内屏（触屏宽）/ 外屏（窄竖屏）三档的样子，折叠开合时立即收尾；
-  - 减弱动态效果只给静止的一帧，科幻特效关掉时没有门但加载层照样等就绪；
-  - 星门只盖在舞台上：播的时候侧栏照样能点，切走就收掉。
+  - 先变暗、再换页：点下去以后首页还在，整屏暗下去只剩光圈（起点是首页时钟外的星核刻度环）；
+  - 光圈飞到目的地的光圈上：进聊天落在 HaloWebUI 新对话那颗光圈上（框里报来的位置），进笔记落在舞台中央的星光上，
+    回首页落回星核；然后那里亮起、照亮整屏，这时才把 enter 发进框（只发一次）；
+  - 框里的应用说「好了」之前，框始终被暗幕或加载层盖着（冷进入先停在舞台中央等）；
+  - 旧版 HaloWebUI 不回答光圈位置：落在舞台中央，之后不再干等；
+  - 点一下 / Esc 直接收尾，点在侧栏标签上照样切过去；折叠开合立即收尾；
+  - 减弱动态效果只有暗幕一淡一出；科幻特效关掉时不播，但加载层照样等就绪。
 
 布置：一个隔离的本站实例（配了 HUB_CHAT_URL + 共享密钥、HUB_VAULT_URL + 嵌入密钥），一个扮演 HaloWebUI 的假站
-（/auth 按 MODE 说话：ready = 先报「验票中」过一会儿说 ready；form = 报「登录表单」；silent = 一声不吭，像旧版），
-一个扮演 WebObsidian 的假站（/auth/hub/sso 303 到首页，首页过一会儿说 ready）。两个假站都把收到的 enter 记在页面上。
+（/auth 按 MODE 说话：ready = 先报「验票中」过一会儿说 ready、再画出新对话的光圈并回答 beacon；form = 报「登录表单」；
+silent = 一声不吭，像旧版），一个扮演 WebObsidian 的假站（/auth/hub/sso 303 到首页，首页过一会儿说 ready）。
+两个假站都把收到的 enter 记在页面上。
 """
 import http.server
 import os
@@ -25,6 +28,7 @@ from common import _free_port
 
 RESULTS = []
 MODE = {"halo": "ready", "halo_delay": 1500, "vault_delay": 900}
+ORB = {"left": "50%", "top": "34%"}   # 假 HaloWebUI 新对话光圈的位置（框内）
 
 
 def check(name, ok, detail=""):
@@ -33,11 +37,24 @@ def check(name, ok, detail=""):
 
 
 _FRAME_SCRIPT = """<script>
-window.__enters = 0;
+window.__enters = 0; window.__beacons = 0;
 addEventListener('message', e => { if (e.data && e.data.source === 'hub' && e.data.type === 'enter') window.__enters++; });
 const post = (m) => parent.postMessage(Object.assign({ source: '%(source)s' }, m), '%(hub)s');
 %(body)s
 </script>"""
+
+# 新版 HaloWebUI：ready 之后画出光圈（真站上是 data-halo-orb，这里用类名，免得被当成本站页面的选择器），并按 hub-embed.ts 的协议回答「光圈在哪」（这里不等，有就报、没有报 none）。
+_HALO_ORB = """
+const drawOrb = () => { const o = document.createElement('div'); o.className = 'fake-orb';
+  o.style.cssText = 'position:absolute;left:%(left)s;top:%(top)s;width:88px;height:88px;margin-left:-44px;border-radius:50%%;background:radial-gradient(white,cyan 40%%,transparent 70%%)';
+  document.body.append(o); };
+addEventListener('message', e => {
+  const d = e.data; if (!d || d.source !== 'hub' || d.type !== 'beacon') return;
+  window.__beacons++;
+  const o = document.querySelector('.fake-orb'), b = o && o.getBoundingClientRect();
+  post(b ? { type: 'beacon', id: d.id, x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), r: Math.round(b.width / 2) } : { type: 'beacon', id: d.id, none: true });
+});
+"""
 
 
 class _Peer(http.server.BaseHTTPRequestHandler):
@@ -60,7 +77,7 @@ class _Peer(http.server.BaseHTTPRequestHandler):
 class _Halo(_Peer):
     def do_GET(self):
         mode, delay = MODE["halo"], MODE["halo_delay"]
-        body = {"ready": "post({ type: 'auth', state: 'signing-in' }); setTimeout(() => post({ type: 'ready' }), %d);" % delay,
+        body = {"ready": (_HALO_ORB % ORB) + "post({ type: 'auth', state: 'signing-in' }); setTimeout(() => { drawOrb(); post({ type: 'ready' }); }, %d);" % delay,
                 "form": "post({ type: 'auth', state: 'form' });",
                 "silent": ""}[mode]
         self._html("halo-auth", _FRAME_SCRIPT % {"source": "halowebui", "hub": self.hub_origin, "body": body})
@@ -102,55 +119,86 @@ def open_hub(b, w, h, mobile=False, cookies=None, **kw):
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(BASE + "/")
     page.wait_for_function("() => typeof STATE_LOADED !== 'undefined' && STATE_LOADED")
-    page.wait_for_timeout(700)   # 让星场 / 星核先画几帧（离港从星核出发要用到它最后画过的那一帧）
+    page.wait_for_timeout(700)
     page.evaluate("""() => { window.__readyAt = 0; addEventListener('message', e => {
         const d = e.data; if (d && (d.type === 'ready' || (d.type === 'auth' && d.state === 'form')) && !window.__readyAt) window.__readyAt = performance.now(); }); }""")
     return ctx, page, errors
 
 
-# 从点下去开始，每 40ms 记一次：星门在不在、是不是已经在开门、加载层盖没盖着；外加门上见过的类名与读数。
-WATCH = """async ([stageId, loadingId, limit]) => {
-  const stage = document.getElementById(stageId), loading = document.getElementById(loadingId);
-  const t0 = performance.now(), out = [], classes = new Set();
-  let lines = '', title = '';
-  while (performance.now() - t0 < limit) {
-    const gate = stage.querySelector('.hub-gate');
-    if (gate) {
-      gate.className.split(' ').forEach(c => classes.add(c));
-      lines = gate.querySelector('.hub-gate__lines').innerText;
-      title = gate.querySelector('.hub-gate__title span').textContent;
+# 点下去之前挂上：每 30ms 记一帧——接力层在不在、类名、暗幕不透明度、光圈圆心与大小、当前是哪一页、加载层盖没盖着。
+WATCH = """([loadingId]) => {
+  const loading = document.getElementById(loadingId);
+  window.__w = { t0: performance.now(), out: [], classes: new Set(), lines: new Set(), end: 0 };
+  const tick = () => {
+    const w = window.__w, ir = document.querySelector('.hub-iris');
+    const view = (document.querySelector('.view.active') || { id: '' }).id.replace('view-', '');
+    let ring = null, veil = 0;
+    if (ir) {
+      ir.className.split(' ').forEach(c => w.classes.add(c));
+      ir.querySelectorAll('.hub-iris__hud b, .hub-iris__hud p span').forEach(el => w.lines.add(el.textContent));   // 读数只留最近三行：攒下见过的每一行
+      const b = ir.querySelector('.hub-iris__ring').getBoundingClientRect();
+      ring = [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2), Math.round(b.width)];
+      veil = parseFloat(getComputedStyle(ir.querySelector('.hub-iris__veil')).opacity);
     }
-    out.push([performance.now(), !!gate && !gate.classList.contains('is-open'), !loading.hidden, !!gate]);
-    if (!gate && loading.hidden && performance.now() - t0 > 300) break;
-    await new Promise(r => setTimeout(r, 40));
-  }
-  return { out, classes: [...classes], lines, title, readyAt: window.__readyAt || 0, t0,
-           flight: !!document.querySelector('.hub-gate-flight'), end: performance.now() };
+    w.out.push({ t: performance.now() - w.t0, on: !!ir, cls: ir ? ir.className : '', veil, ring, view, loading: !loading.hidden });
+    if (!ir && w.out.length > 10 && w.out[w.out.length - 2].on) { w.end = performance.now() - w.t0; return; }
+    if (performance.now() - w.t0 < 12000) setTimeout(tick, 30);
+  };
+  tick();
 }"""
 
 
-# 星门一出现就数一下离子中枢的部件。
-CORE_PROBE = """() => { window.__core = null; new MutationObserver(() => {
-  const g = document.querySelector('#chatStage .hub-gate');
-  if (g && !window.__core) window.__core = { orbits: g.querySelectorAll('.e.orbit').length, photons: g.querySelectorAll('.o').length,
-    tri: g.querySelectorAll('.e.tri').length, hex: g.querySelectorAll('.e.hex').length, sweep: g.querySelectorAll('.sw').length };
-}).observe(document.body, { childList: true, subtree: true }); }"""
+def watch(page, view, click=None, limit=9000):
+    loading = "chatLoading" if view == "chat" else "vaultLoading"
+    page.evaluate(WATCH, [loading])
+    page.click(click or '.tab[data-view="%s"]' % view)
+    t0 = time.time()
+    while time.time() - t0 < limit / 1000:
+        page.wait_for_timeout(120)
+        if page.evaluate("() => window.__w.end > 0"):
+            break
+    w = page.evaluate("() => ({ ...window.__w, classes: [...window.__w.classes], lines: [...window.__w.lines].join(' | '), readyAt: window.__readyAt ? window.__readyAt - window.__w.t0 : 0 })")
+    return w
 
 
-def click_and_watch(page, view, limit=9000):
-    stage, loading = ("chatStage", "chatLoading") if view == "chat" else ("vaultStage", "vaultLoading")
-    page.evaluate("(v) => { window.__flightSeen = false; window.__holdSeen = false; window.__coreSeen = false;"
-                  " new MutationObserver(() => { const f = document.querySelector('.hub-gate-flight'); if (f) { window.__flightSeen = true; if (f.classList.contains('is-core')) window.__coreSeen = true; }"
-                  " if (document.querySelector('.hub-cut.is-hold')) window.__holdSeen = true; }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] }); }", view)
-    page.click('.tab[data-view="%s"]' % view)
-    return page.evaluate(WATCH, [stage, loading, limit])
+def reactor_center(page):
+    return page.evaluate("""() => { const r = document.querySelector('.home-hero .hub-reactor').getBoundingClientRect();
+        return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; }""")
+
+
+def orb_center(page, halo):
+    frame = peer_frame(page, halo)
+    fb = page.evaluate("() => { const b = document.querySelector('#chatStage iframe').getBoundingClientRect(); return [b.left, b.top]; }")
+    ob = frame.evaluate("() => { const b = document.querySelector('.fake-orb').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; }")
+    return [round(fb[0] + ob[0]), round(fb[1] + ob[1])]
+
+
+def stage_center(page, view):
+    return page.evaluate("""(id) => { const b = document.getElementById(id).getBoundingClientRect();
+        return [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2)]; }""", "chatStage" if view == "chat" else "vaultStage")
+
+
+def near(a, b, tol=6):
+    return a is not None and b is not None and abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol
+
+
+def first(w, pred):
+    return next((s for s in w["out"] if pred(s)), None)
+
+
+def landing(w):
+    """点亮（is-flare）前最后一帧光圈的圆心：光圈落在哪。"""
+    before = [s for s in w["out"] if s["on"] and "is-flare" not in s["cls"] and s["ring"]]
+    flare = first(w, lambda s: "is-flare" in s["cls"])
+    return (before[-1]["ring"] if before else None), flare
 
 
 def covered_until_ready(w):
-    """就绪（ready / 登录表单）之前的每一帧，舞台要么被（还没开门的）星门盖着，要么被加载层盖着。"""
+    """就绪（ready / 登录表单）之前的每一帧，舞台要么被暗幕（基本不透明）盖着，要么被加载层盖着。"""
     ready = w["readyAt"]
-    bare = [s for s in w["out"] if (not ready or s[0] < ready) and not s[1] and not s[2]]
-    return ready > 0 and not bare, {"readyAt": ready, "bare": bare[:3]}
+    after_switch = [s for s in w["out"] if s["view"] in ("chat", "vault")]
+    bare = [s for s in after_switch if (not ready or s["t"] < ready) and not (s["on"] and s["veil"] > .85) and not s["loading"]]
+    return ready > 0 and not bare, {"readyAt": round(ready), "bare": bare[:2]}
 
 
 def peer_frame(page, origin):
@@ -160,80 +208,104 @@ def peer_frame(page, origin):
     return None
 
 
+def gone(page):
+    return page.evaluate("() => !document.querySelector('.hub-iris')")
+
+
 def desktop(b, halo, vault):
     MODE.update(halo="ready", halo_delay=1500)
     ctx, page, errors = open_hub(b, 1440, 900)
-    page.evaluate(CORE_PROBE)
-    w = click_and_watch(page, "chat")
+    home = reactor_center(page)
+    w = watch(page, "chat")
+    early = first(w, lambda s: s["on"] and 0 < s["veil"] < .95)
+    check("电脑·进聊天：先暗下去、页面还没换（首页还在）", early is not None and early["view"] == "bookmarks", early)
+    start = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("电脑·进聊天：光圈从首页的星核刻度环出发", start is not None and near(start["ring"], home), (start and start["ring"], home))
+    dark = first(w, lambda s: s["view"] == "chat")
+    check("电脑·进聊天：全暗时才换页", dark is not None and dark["on"] and dark["veil"] > .95, dark)
     ok, detail = covered_until_ready(w)
-    check("电脑·冷进入：HaloWebUI 说 ready 之前框一直被盖着（不再露出登录页）", ok, detail)
-    core = page.evaluate("() => window.__core")
-    check("电脑：HaloWebUI 的签名线稿是离子中枢（六边形 + 六芒星 + 三条轨道各一颗光子 + 雷达扫描）",
-          core == {"orbits": 3, "photons": 3, "tri": 2, "hex": 1, "sweep": 1}, core)
-    check("电脑·冷进入：星门是电脑档、播了点火和开门", {"hub-gate", "is-chat", "is-desk", "is-ignite", "is-open"} <= set(w["classes"]) and "is-warm" not in w["classes"], w["classes"])
-    check("电脑·冷进入：离港光点从星核出发、遮幅合上停住", page.evaluate("() => window.__flightSeen && window.__coreSeen && window.__holdSeen"),
-          page.evaluate("() => [window.__flightSeen, window.__coreSeen, window.__holdSeen]"))
-    for text in ("签发通行票据", "接入 HaloWebUI", "验证通行票据", "会话就绪"):
-        check("电脑·冷进入：读数里有「%s」" % text, text in w["lines"], w["lines"])
-    gone = w["end"] - w["readyAt"]
-    check("电脑·冷进入：就绪后约一秒内开门收尾", 0 < gone < 1600, round(gone))
-    check("电脑·冷进入：开门后加载层撤掉、星门与离港层都删干净",
-          page.evaluate("() => document.getElementById('chatLoading').hidden && !document.querySelector('.hub-gate, .hub-gate-flight') && !document.querySelector('.hub-cut.is-hold')"))
+    check("电脑·冷进入：HaloWebUI 说 ready 之前框一直被暗幕或加载层盖着", ok, detail)
+    waiting = first(w, lambda s: "is-waiting" in s["cls"])
+    check("电脑·冷进入：先停在舞台中央等", waiting is not None and near(waiting["ring"], stage_center(page, "chat"), 8), (waiting and waiting["ring"], stage_center(page, "chat")))
+    for text in ("HALO · WEBUI", "签发通行票据", "接入 HaloWebUI", "验证通行票据"):
+        check("电脑·冷进入：等的时候读数里有「%s」" % text, text in w["lines"], w["lines"])
+    land, flare = landing(w)
+    orb = orb_center(page, halo)
+    check("电脑·进聊天：光圈落在 HaloWebUI 新对话的光圈上", near(land, orb), (land, orb))
+    check("电脑·进聊天：落点亮起（点亮）后照亮整屏，层删干净", flare is not None and gone(page) and w["end"] > 0, w["classes"])
+    took = w["end"] - w["readyAt"]
+    check("电脑·冷进入：就绪后约两秒半内收尾（不太快也不拖）", 1200 < took < 3200, round(took))
+    check("电脑·冷进入：加载层撤掉", page.evaluate("() => document.getElementById('chatLoading').hidden"))
     frame = peer_frame(page, halo)
-    check("电脑·冷进入：开门时把 enter 发进框（只发一次）", frame is not None and frame.evaluate("() => window.__enters") == 1, frame and frame.evaluate("() => window.__enters"))
+    check("电脑·冷进入：点亮时把 enter 发进框（只发一次）", frame is not None and frame.evaluate("() => window.__enters") == 1, frame and frame.evaluate("() => window.__enters"))
 
-    # 回收藏库：回程光点 + 旧画面收成光圈
-    # （无头 Chromium 软件渲染，给带框的页面拍转场快照要几百毫秒，切页本身就晚；所以看「一秒多内出现过」）
-    page.evaluate("""() => { window.__backSeen = false; window.__backFlight = false;
-        new MutationObserver(() => { if (document.documentElement.classList.contains('gate-back')) window.__backSeen = true;
-          if (document.querySelector('.hub-gate-flight.is-core')) window.__backFlight = true; })
-          .observe(document.documentElement, { attributes: true, childList: true, subtree: true }); }""")
-    page.click('.tab[data-view="bookmarks"]')
-    page.wait_for_timeout(1200)
-    check("回收藏库：回程镜头（旧画面收成光圈、光点飞回星核）", page.evaluate("() => window.__backSeen && window.__backFlight"),
-          page.evaluate("() => [window.__backSeen, window.__backFlight]"))
-    check("回收藏库：回程层播完即删", page.evaluate("() => !document.querySelector('.hub-gate-flight') && !document.documentElement.classList.contains('gate-back')"))
-    t0 = time.time()
-    w = click_and_watch(page, "chat", 4000)
-    check("电脑·热进入：照样过一道门（热档）", {"is-warm", "is-ignite", "is-open"} <= set(w["classes"]), w["classes"])
-    check("电脑·热进入：读数是此刻的状态", "链路保持" in w["lines"] and "待命" in w["lines"], w["lines"])
-    took = (w["end"] - w["t0"])
-    check("电脑·热进入：一秒左右收尾", took < 1400, round(took))
+    # 回收藏库：暗下去只留 HaloWebUI 的光圈 → 飞回星核 → 点亮
+    w = watch(page, "bookmarks")
+    early = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("回首页：先暗下去、聊天页还在，光圈从 HaloWebUI 的光圈出发", early is not None and early["view"] == "chat" and near(early["ring"], orb), (early, orb))
+    land, flare = landing(w)
+    home = reactor_center(page)
+    check("回首页：光圈落回星核刻度环", near(land, home), (land, home))
+    check("回首页：点亮后照亮整屏、层删干净", flare is not None and gone(page) and page.evaluate("() => document.getElementById('view-bookmarks').classList.contains('active')"))
+    took = w["end"]
+    check("回首页：全程约两到三秒半（无头软件渲染偏慢，放宽到四秒）", 1800 < took < 4000, round(took))
+
+    w = watch(page, "chat")
+    check("电脑·热进入：不停在中央等", not any("is-waiting" in s["cls"] for s in w["out"]), w["classes"])
+    land, flare = landing(w)
+    check("电脑·热进入：直接落在 HaloWebUI 的光圈上", near(land, orb_center(page, halo)), (land, orb_center(page, halo)))
+    check("电脑·热进入：两到三秒半收尾（同上，放宽到四秒）", 1800 < w["end"] < 4000, round(w["end"]))
     check("电脑·热进入：框又收到一次 enter", frame.evaluate("() => window.__enters") == 2, frame.evaluate("() => window.__enters"))
+    check("电脑·热进入：没有横向溢出", page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1"))
     check("电脑：页面没有脚本错误", not errors, errors[:3])
     ctx.close()
 
 
-def skip_and_sidebar(b, halo, vault):
+def skip_and_old(b, halo, vault):
     MODE.update(halo="silent")
     ctx, page, errors = open_hub(b, 1440, 900)
     page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(600)
-    check("旧版 HaloWebUI（不说话）：门在等", page.locator("#chatStage .hub-gate").count() == 1 and not page.evaluate("() => document.getElementById('chatLoading').hidden"))
-    page.keyboard.press("Escape")
-    page.wait_for_timeout(1000)   # 开门 560ms + 收尾；无头软件渲染要留余量
-    check("Esc 直接开门（门收掉，加载层接着盖着框）", page.locator(".hub-gate").count() == 0 and not page.evaluate("() => document.getElementById('chatLoading').hidden"))
     page.wait_for_timeout(2600)
+    check("旧版 HaloWebUI（不说话）：停在中央等", page.evaluate("() => !!document.querySelector('.hub-iris.is-waiting')"))
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(150)
+    check("Esc 直接收尾（层收掉，加载层接着盖着框）", gone(page) and not page.evaluate("() => document.getElementById('chatLoading').hidden"))
+    page.wait_for_timeout(3000)
     check("旧版 HaloWebUI：load 后 3 秒按兜底撤掉加载层", page.evaluate("() => document.getElementById('chatLoading').hidden"))
     frame = peer_frame(page, halo)
-    check("Esc 开门时也把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") >= 1)
+    check("旧版 HaloWebUI：就绪时把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") >= 1)
+    # 旧版不回答光圈位置：回首页从舞台中央出发；问过一次没回音，这张框之后不再问（不干等）
+    mid = stage_center(page, "chat")
+    w = watch(page, "bookmarks")
+    early = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("旧版：回首页从舞台中央出发", early is not None and near(early["ring"], mid, 8), (early, mid))
+    t0 = time.time()
+    w = watch(page, "chat")
+    check("旧版：之后不再干等光圈位置（热进入照常收尾）", w["end"] > 0 and w["end"] < 4000, round(w["end"]))
     ctx.close()
 
+    MODE.update(halo="ready", halo_delay=800)
     ctx, page, errors = open_hub(b, 1440, 900)
     page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(300)
-    page.click('.tab[data-view="settings"]')
     page.wait_for_timeout(250)
-    check("播的时候侧栏照样能点：切到系统设置", page.evaluate("() => document.getElementById('view-settings').classList.contains('active')"))
-    check("切走后星门与遮幅一并收掉", page.evaluate("() => !document.querySelector('.hub-gate') && !document.querySelector('.hub-cut.is-hold')"))
-    check("播放中切走：页面没有脚本错误", not errors, errors[:3])
+    page.mouse.click(720, 450)
+    page.wait_for_timeout(100)
+    check("点一下直接收尾：该换的页先换上", gone(page) and page.evaluate("() => document.getElementById('view-chat').classList.contains('active')"))
+    page.wait_for_timeout(1500)
+    page.click('.tab[data-view="bookmarks"]')
+    page.wait_for_timeout(300)
+    box = page.evaluate("() => { const b = document.querySelector('.tab[data-view=\"settings\"]').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; }")
+    page.mouse.click(box[0], box[1])
+    page.wait_for_timeout(900)   # 切到系统设置走 View Transition，无头软件渲染要几百毫秒
+    check("播的时候点在侧栏标签上：收尾并切过去（系统设置）", gone(page) and page.evaluate("() => document.getElementById('view-settings').classList.contains('active')"))
+    check("点击收尾：页面没有脚本错误", not errors, errors[:3])
     ctx.close()
 
     MODE.update(halo="form")
     ctx, page, errors = open_hub(b, 1440, 900)
-    w = click_and_watch(page, "chat", 5000)
-    check("免登录没接通（框里是登录表单）：门变成警示色、读数写明，然后开门露出登录页",
-          "is-fail" in w["classes"] and "需要登录" in w["lines"] and page.evaluate("() => document.getElementById('chatLoading').hidden"), (w["classes"], w["lines"]))
+    w = watch(page, "chat")
+    check("免登录没接通（框里是登录表单）：变警示色、读数写明，照亮后露出登录页",
+          "is-fail" in w["classes"] and "需要登录" in w["lines"] and page.evaluate("() => document.getElementById('chatLoading').hidden") and gone(page), (w["classes"], w["lines"]))
     ctx.close()
 
 
@@ -241,52 +313,40 @@ def touch_and_fold(b, halo, vault):
     # 折叠屏内屏：近正方形、触屏、宽度 > 760（侧栏在左边）
     MODE.update(halo="ready", halo_delay=1200)
     ctx, page, errors = open_hub(b, 880, 812, mobile=True)
-    w = click_and_watch(page, "chat")
+    w = watch(page, "chat")
     ok, detail = covered_until_ready(w)
     check("内屏（触屏宽）：就绪前一直盖着", ok, detail)
-    check("内屏：触屏档（不是电脑档），播完整", {"is-touch", "is-ignite", "is-open"} <= set(w["classes"]) and "is-desk" not in w["classes"], w["classes"])
-    check("内屏：离港光点从侧栏图标出发（触屏不画画布星核）", page.evaluate("() => window.__flightSeen && !window.__coreSeen"))
+    check("内屏：触屏档（不是电脑档），播完整", {"is-touch", "is-flare"} <= set(w["classes"]) and "is-desk" not in w["classes"] and gone(page), w["classes"])
+    land, _ = landing(w)
+    check("内屏：落在 HaloWebUI 的光圈上", near(land, orb_center(page, halo)), (land, orb_center(page, halo)))
+    filt = page.evaluate("""async () => { document.querySelector('.tab[data-view="bookmarks"]').click(); await new Promise(r => setTimeout(r, 200));
+        const a = document.querySelector('.hub-iris .hub-reactor__arcs'); return a ? getComputedStyle(a).filter : null; }""")
+    check("内屏：飞的那一圈不带滤镜光晕", filt == "none", filt)
+    page.wait_for_timeout(3500)
     check("内屏：没有横向溢出", page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1"))
-    page.click('.tab[data-view="bookmarks"]')
-    page.wait_for_timeout(900)
-    page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(120)
-    styles = page.evaluate("""() => { const g = document.querySelector('.hub-gate'); if (!g) return null;
-        return { filter: getComputedStyle(g.querySelector('.hub-gate__glyph')).filter, grid: getComputedStyle(g.querySelector('.hub-gate__grid')).display, warm: g.classList.contains('is-warm') }; }""")
-    check("内屏·热进入：不用 filter 光晕、不画网格地面", styles and styles["filter"] == "none" and styles["grid"] == "none" and styles["warm"], styles)
-    page.wait_for_timeout(1200)
     check("内屏：页面没有脚本错误", not errors, errors[:3])
     ctx.close()
 
-    # 外屏：窄竖屏，侧栏变底部标签栏
-    MODE.update(halo="ready", halo_delay=1500)
+    # 外屏：窄竖屏，侧栏变底部标签栏；没有反应堆，光圈从时钟外亮起
+    MODE.update(halo="ready", halo_delay=1200)
     ctx, page, errors = open_hub(b, 400, 880, mobile=True)
-    page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(1300)
-    info = page.evaluate("""() => { const g = document.querySelector('.hub-gate'); if (!g) return null;
-        const lines = [...g.querySelectorAll('.hub-gate__lines p')].filter(p => getComputedStyle(p).display !== 'none').length;
-        const bar = document.querySelector('.hub-cut.is-hold .hub-cut__bar'), side = document.querySelector('.sidebar').getBoundingClientRect();
-        return { narrow: g.classList.contains('is-narrow'), lines, orbits: g.querySelectorAll('.hub-gate__glyph .e.orbit').length,
-                 tri: g.querySelectorAll('.hub-gate__glyph .e.tri').length,
-                 bar: bar ? bar.getBoundingClientRect().height / innerHeight : 0, bottom: g.getBoundingClientRect().bottom, barTop: side.top,
-                 svg: g.querySelector('.hub-gate__svg').getBoundingClientRect().width }; }""")
-    check("外屏：窄屏档，读数最多两行、离子中枢减配（两条轨道、没有六芒星）", info and info["narrow"] and info["lines"] <= 2 and info["orbits"] == 2 and info["tri"] == 0, info)
-    check("外屏：遮幅变细（约 7vh）", info and 0.05 < info["bar"] < 0.09, info)
-    check("外屏：星门不压到底部标签栏、线稿不超过屏宽", info and info["bottom"] <= info["barTop"] + 1 and info["svg"] <= 400 * 0.72 + 1, info)
+    clock = page.evaluate("() => { const b = document.getElementById('heroClock').getBoundingClientRect(); return [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2)]; }")
+    w = watch(page, "chat")
+    start = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("外屏：光圈从时钟外亮起", start is not None and near(start["ring"], clock, 8) and "is-narrow" in w["classes"], (start and start["ring"], clock))
+    land, flare = landing(w)
+    check("外屏：落在 HaloWebUI 的光圈上、播完整", near(land, orb_center(page, halo)) and flare is not None and gone(page), (land, orb_center(page, halo)))
     check("外屏：没有横向溢出", page.evaluate("() => document.documentElement.scrollWidth <= innerWidth + 1"))
-    page.wait_for_timeout(1500)
     ctx.close()
 
-    # 折叠 / 展开：播到一半宽度档位变了 → 立即开门收尾
+    # 折叠 / 展开：播到一半宽度档位变了 → 立即收尾
     MODE.update(halo="ready", halo_delay=4000)
     ctx, page, errors = open_hub(b, 880, 812, mobile=True)
     page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(1200)
     page.set_viewport_size({"width": 400, "height": 880})
     page.wait_for_timeout(250)
-    check("折叠（内屏 → 外屏）：正在播的门立即开门", page.evaluate("() => { const g = document.querySelector('.hub-gate'); return !g || g.classList.contains('is-open'); }"))
-    page.wait_for_timeout(600)
-    check("折叠：门删干净、遮幅拉开", page.evaluate("() => !document.querySelector('.hub-gate') && !document.querySelector('.hub-cut.is-hold')"))
+    check("折叠（内屏 → 外屏）：正在播的立即收尾", gone(page) and page.evaluate("() => document.getElementById('view-chat').classList.contains('active')"))
     check("折叠：加载层仍然盖着（框里还没好）", not page.evaluate("() => document.getElementById('chatLoading').hidden"))
     page.wait_for_timeout(3600)
     check("折叠：就绪后加载层撤掉", page.evaluate("() => document.getElementById('chatLoading').hidden"))
@@ -297,22 +357,20 @@ def touch_and_fold(b, halo, vault):
 def prefs(b, halo, vault):
     MODE.update(halo="ready", halo_delay=1200)
     ctx, page, errors = open_hub(b, 1440, 900, reduced_motion="reduce")
-    page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(200)
-    still = page.evaluate("""() => { const g = document.querySelector('.hub-gate'); if (!g) return null;
-        const e = g.querySelector('.hub-gate__glyph .e');
-        return { still: g.classList.contains('is-still'), offset: parseFloat(getComputedStyle(e).strokeDashoffset), anim: getComputedStyle(e).animationName }; }""")
-    check("减弱动态效果：静止的一帧——线稿已经画好、没有动画", still and still["still"] and still["offset"] == 0 and still["anim"] == "none", still)
-    check("减弱动态效果：没有离港光点、遮幅不动", not page.evaluate("() => !!document.querySelector('.hub-gate-flight, .hub-cut.is-hold')"))
-    page.wait_for_timeout(2200)
-    check("减弱动态效果：就绪后门收掉、加载层撤掉", page.evaluate("() => !document.querySelector('.hub-gate') && document.getElementById('chatLoading').hidden"))
+    w = watch(page, "chat")
+    check("减弱动态效果：只有暗幕（静止档，不飞、不点亮）", "is-still" in w["classes"] and "is-flare" not in w["classes"]
+          and page.evaluate("() => true"), w["classes"])
+    ok, detail = covered_until_ready(w)
+    check("减弱动态效果：就绪前一直盖着", ok, detail)
+    check("减弱动态效果：就绪后暗幕淡出、加载层撤掉", gone(page) and page.evaluate("() => document.getElementById('chatLoading').hidden"))
     ctx.close()
 
     ctx, page, errors = open_hub(b, 1440, 900, cookies={"bh_scifi": "off"})
-    w = click_and_watch(page, "chat")
+    w = watch(page, "chat", limit=4000)
     ok, detail = covered_until_ready(w)
-    check("科幻特效关：没有门", not w["classes"], w["classes"])
-    check("科幻特效关：加载层照样等 HaloWebUI 说 ready 才撤", ok, detail)
+    check("科幻特效关：没有接力", not w["classes"], w["classes"])
+    page.wait_for_timeout(1500)
+    check("科幻特效关：加载层照样等 HaloWebUI 说 ready 才撤", page.evaluate("() => document.getElementById('chatLoading').hidden"))
     frame = peer_frame(page, halo)
     check("科幻特效关：就绪时直接把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") == 1)
     ctx.close()
@@ -321,25 +379,31 @@ def prefs(b, halo, vault):
 def vault_entry(b, halo, vault):
     MODE.update(vault_delay=900, halo="ready", halo_delay=800)
     ctx, page, errors = open_hub(b, 1440, 900)
-    w = click_and_watch(page, "vault")
+    w = watch(page, "vault")
     ok, detail = covered_until_ready(w)
     check("笔记·冷进入：WebObsidian 说 ready 之前一直盖着", ok, detail)
-    check("笔记：神经晶体（笔记档的门），播完整", {"is-vault", "is-desk", "is-ignite", "is-open"} <= set(w["classes"]), w["classes"])
-    check("笔记：标题从乱码解出「NEURAL · VAULT」", w["title"] == "NEURAL · VAULT", w["title"])
-    for text in ("签发通行证", "解锁笔记库", "图谱同步"):
+    land, flare = landing(w)
+    check("笔记：光圈落在舞台中央、点亮的是星光（十字星芒）", near(land, stage_center(page, "vault"), 8) and "is-star" in (flare or {}).get("cls", ""), (land, stage_center(page, "vault"), flare and flare["cls"]))
+    for text in ("NEURAL · VAULT", "签发通行证", "解锁笔记库"):
         check("笔记·冷进入：读数里有「%s」" % text, text in w["lines"], w["lines"])
     frame = peer_frame(page, vault)
-    check("笔记：开门时把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") == 1, frame and frame.evaluate("() => window.__enters"))
-    # 笔记 → 聊天：换一道门，不叠两道
-    page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(200)
-    check("笔记 → 聊天：只剩聊天这一道门", page.evaluate("() => document.querySelectorAll('.hub-gate').length === 1 && !!document.querySelector('#chatStage .hub-gate')"))
-    page.wait_for_timeout(2600)
+    check("笔记：点亮时把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") == 1, frame and frame.evaluate("() => window.__enters"))
+    # 回首页：从中央的星光出发，落回星核
+    mid = stage_center(page, "vault")
+    w = watch(page, "bookmarks")
+    early = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("笔记 → 首页：从中央的星光出发", early is not None and early["view"] == "vault" and near(early["ring"], mid, 8), (early, mid))
+    land, _ = landing(w)
+    check("笔记 → 首页：落回星核", near(land, reactor_center(page)), (land, reactor_center(page)))
+    # 笔记 → 聊天：只有一层
     page.click('.tab[data-view="vault"]')
-    page.wait_for_timeout(120)
-    check("笔记·热进入：热档的门", page.evaluate("() => !!document.querySelector('#vaultStage .hub-gate.is-warm')"))
-    page.wait_for_timeout(1300)
-    check("笔记·热进入：框又收到一次 enter", frame.evaluate("() => window.__enters") == 2, frame.evaluate("() => window.__enters"))
+    page.wait_for_timeout(3600)
+    page.click('.tab[data-view="chat"]')
+    page.wait_for_timeout(300)
+    check("笔记 → 聊天：只有一层接力", page.evaluate("() => document.querySelectorAll('.hub-iris').length === 1"))
+    page.wait_for_timeout(4000)
+    check("笔记 → 聊天：播完删干净", gone(page))
+    check("笔记：框收到第二次 enter（热进入）", frame.evaluate("() => window.__enters") == 2, frame.evaluate("() => window.__enters"))
     check("笔记：页面没有脚本错误", not errors, errors[:3])
     ctx.close()
 
@@ -358,7 +422,7 @@ def main():
     start_server()
     with sync_playwright() as p:
         b = launch(p)
-        for fn in (desktop, skip_and_sidebar, touch_and_fold, prefs, vault_entry):
+        for fn in (desktop, skip_and_old, touch_and_fold, prefs, vault_entry):
             print("==", fn.__name__, flush=True)
             try:
                 fn(b, halo, vault)

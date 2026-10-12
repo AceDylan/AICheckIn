@@ -29,6 +29,11 @@ SECRET = secrets.token_hex(32)
 HANDSHAKES = []   # 假 HaloWebUI 收到的 probe 票据：(是否验签通过, 签发方, 接收方)
 
 
+def relay_done(page):
+    page.wait_for_timeout(200)
+    page.wait_for_function("() => !document.querySelector('.hub-iris')", timeout=10000)
+
+
 def check(name, ok, detail=""):
     RESULTS.append({"name": name, "ok": bool(ok), "detail": str(detail)[:300]})
     print(("PASS " if ok else "FAIL ") + name + ((" — " + str(detail)[:200]) if detail and not ok else ""), flush=True)
@@ -199,10 +204,10 @@ def admin_desktop(b, halo):
     # 切走再切回：框不重建（聊到一半不丢）
     page.evaluate("() => { document.querySelector('#chatStage iframe').__hubKeep = 'kept'; }")
     page.click('.tab[data-view="bookmarks"]')
-    page.wait_for_timeout(200)
+    relay_done(page)   # 科幻特效开着：先暗下去、光圈接力播完（halo-motion.js 的 iris）
     check("切到收藏库：聊天页收起、铺满态解除", active_view(page) == "view-bookmarks" and not page.evaluate("() => document.documentElement.classList.contains('chat-on')"))
     page.click('.tab[data-view="chat"]')
-    page.wait_for_timeout(200)
+    relay_done(page)
     check("切回来：还是同一个框", page.evaluate("() => (document.querySelector('#chatStage iframe') || {}).__hubKeep") == "kept")
 
     # 框上方不再有工具条：框的上沿就是聊天页的上沿（等切页的入场动画放完再量，动画中途量到的是缩放过的位置）

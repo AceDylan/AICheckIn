@@ -1153,18 +1153,43 @@
       const origin = name === 'chat' ? chatOrigin() : vaultOrigin();
       try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type: 'enter' }, origin); } catch (_) {}
     }
-    // 星门（halo-motion.js 的 gate）：进聊天 / 笔记时盖在框上播一段过渡，框里的应用说「好了」才开门；
-    // 门开到一小半时才告诉框「有人进来了」（框里接着播自己的入场）。没有星门（科幻特效关、高对比）就照旧直接说。
-    // 从这两页回收藏库：回程镜头；去别处：正在播的门直接收掉。
+    // 光圈接力（halo-motion.js 的 iris，对外仍叫 gate）：进聊天 / 笔记时整屏暗下去、光圈飞到框里的光圈上，
+    // 框里的应用说「好了」才点亮；点亮那一下才告诉框「有人进来了」（框里接着播自己的入场）。
+    // 没有接力（科幻特效关、高对比）就照旧直接说。去别处：正在播的收掉（从这两页回首页由接力接手）。
     function frameViewMotion(name, from, tab) {
       const gate = window.HaloMotion && window.HaloMotion.gate;
-      if (name !== 'chat' && name !== 'vault') {
-        if (gate) { gate.leave(); if (name === 'bookmarks' && (from === 'chat' || from === 'vault')) gate.back(tab); }
-        return;
-      }
+      if (name !== 'chat' && name !== 'vault') { if (gate) gate.leave(name, from); return; }
       const lines = frameShown(name) ? frameGateLines(name)
         : [[name === 'chat' ? '建立链路 HUB ⇄ HALO' : '建立链路 HUB ⇄ VAULT', 'SYNC']];
-      if (!gate || !gate.enter(name, { ready: frameShown(name), tab, lines, onOpen: () => tellFrameEnter(name) })) tellFrameEnter(name);
+      if (!gate || !gate.enter(name, { ready: frameShown(name), tab, lines, beacon: frameBeacon, onOpen: () => tellFrameEnter(name) })) tellFrameEnter(name);
+    }
+    // HaloWebUI 新对话页中间那颗光圈在本页的位置（光圈接力的起落点）。问框里的 HaloWebUI（wait：最多等它多久把光圈画出来），
+    // 它回框内坐标，这里加上框的位置。没有光圈（开着某个对话）、超时：null，接力就用舞台中央。
+    // 旧版 HaloWebUI 不回话：超时一次以后这张框不再问，免得每次切页都干等。笔记框没有光圈，不问。
+    const BEACON = { seq: 0, asks: new Map(), heard: null, mute: null };
+    function frameBeacon(name, wait = 0) {
+      const frame = chatFrame(), origin = chatOrigin();
+      if (name !== 'chat' || !frame || !frame.contentWindow || !origin || BEACON.mute === frame) return Promise.resolve(null);
+      const id = ++BEACON.seq;
+      return new Promise(resolve => {
+        const timer = setTimeout(() => {
+          BEACON.asks.delete(id);
+          if (BEACON.heard !== frame) BEACON.mute = frame;
+          resolve(null);
+        }, wait + 250);
+        BEACON.asks.set(id, { frame, resolve, timer });
+        try { frame.contentWindow.postMessage({ source: 'hub', type: 'beacon', id, wait }, origin); }
+        catch (_) { clearTimeout(timer); BEACON.asks.delete(id); resolve(null); }
+      });
+    }
+    function onFrameBeacon(frame, data) {
+      BEACON.heard = frame;
+      const ask = BEACON.asks.get(data.id);
+      if (!ask || ask.frame !== frame) return;
+      BEACON.asks.delete(data.id); clearTimeout(ask.timer);
+      const b = frame.getBoundingClientRect();
+      const ok = [data.x, data.y, data.r].every(Number.isFinite) && data.r > 0 && data.r < Math.max(b.width, b.height);
+      ask.resolve(ok ? { x: b.left + data.x, y: b.top + data.y, r: data.r } : null);
     }
     // 框已经开着、里面的应用也说过「好了」（热进入）。
     function frameShown(name) { return name === 'chat' ? !!chatFrame() && CHAT.ready : !!vaultFrame() && VAULT_EMBED.shown; }
@@ -1735,7 +1760,7 @@
     }
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
       const update = () => { switchView(tab.dataset.view); if (tab.dataset.view === 'bookmarks') openLibPage('@home'); };
-      if (window.HaloMotion) window.HaloMotion.change(update, tab.dataset.view); else update();
+      if (window.HaloMotion) window.HaloMotion.change(update, tab.dataset.view, { tab, beacon: frameBeacon }); else update();
     }));
     document.querySelectorAll('[data-checkin-page]').forEach(btn => btn.addEventListener('click', () => {
       switchView('checkin/' + btn.dataset.checkinPage);
@@ -2305,7 +2330,7 @@
       const base = STATE.chat.url;
       CHAT.busy = true;
       CHAT.ready = false;   // 新框：加载层等它说「好了」再撤（见 showChatFrame）
-      // 已经在聊天页时换新框（「发送到 AI 聊天」、重新登录）：同样过一道星门。从别处进来的由 switchView 负责。
+      // 已经在聊天页时换新框（「发送到 AI 聊天」、重新登录）：同样过一段光圈接力。从别处进来的由 switchView 负责。
       if (force && currentViewName() === 'chat') frameViewMotion('chat', '', document.querySelector('.tab[data-view="chat"]'));
       try {
         $('chatLoading').hidden = false;
@@ -2367,7 +2392,7 @@
       clearTimeout(CHAT.fallback);
       if (!CHAT.spoke) CHAT.fallback = setTimeout(() => { if (chatFrame() === frame) showChatFrame(); }, CHAT_SILENT_MS);
     }
-    // 撤加载层；星门在等就让它点火开门（fail：没能免登录，开门露出登录页），没有门就直接告诉框「有人进来了」。
+    // 撤加载层；光圈接力在等就让它点亮（fail：没能免登录，照亮后露出登录页），没在播就直接告诉框「有人进来了」。
     function showChatFrame(fail) {
       if (CHAT.ready || !chatFrame()) return;
       CHAT.ready = true;
@@ -2424,6 +2449,7 @@
       // 只是换个标签页、打开自己库里的一篇，最坏也就是开错一篇；路径照样过 cleanNotePath。
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
       if (data.type === 'reauth') { reenterChat(data.path); return; }
+      if (data.type === 'beacon') { onFrameBeacon(frame, data); return; }
       // 换框的那一下（等票据时）旧框说的不算。
       if (data.type === 'ready') { if (!CHAT.busy) showChatFrame(); return; }
       if (data.type === 'auth') {
@@ -2495,7 +2521,7 @@
       const base = STATE.vault_embed.url;
       $('vaultLoading').hidden = false;
       closeVault();
-      // 已经在笔记页时换新框（打开另一篇、重新登录）：同样过一道星门。从别处进来的由 switchView 负责。
+      // 已经在笔记页时换新框（打开另一篇、重新登录）：同样过一段光圈接力。从别处进来的由 switchView 负责。
       if (force && currentViewName() === 'vault') frameViewMotion('vault', '', document.querySelector('.tab[data-view="vault"]'));   // 换一个新框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
       // 本站自己的一页；没解锁、密码不合格时它只回一段说明。theme：本站此刻的深浅色（星核场景下是 neural），它转给 WebObsidian（见 frameTheme）
       const open = '/vault/open?to=' + encodeURIComponent(to || '/') + '&theme=' + frameTheme('vault');
