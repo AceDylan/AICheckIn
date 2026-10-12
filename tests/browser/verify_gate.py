@@ -18,6 +18,7 @@ silent = 一声不吭，像旧版），一个扮演 WebObsidian 的假站（/aut
 两个假站都把收到的 enter 记在页面上。
 """
 import http.server
+import json
 import os
 import secrets
 import threading
@@ -84,11 +85,14 @@ class _Halo(_Peer):
                 "silent": ""}[mode]
         self._html("halo-auth", _FRAME_SCRIPT % {"source": "halowebui", "hub": self.hub_origin, "body": body})
 
-    def do_POST(self):   # 启动握手（probe 票）：一律回失败，本套不关心
+    def do_POST(self):   # 启动握手（probe 票）：不验票，一律回通过——和线上一样每次开框都签票
         self.rfile.read(int(self.headers.get("Content-Length", "0") or 0))
-        self.send_response(401)
-        self.send_header("Content-Length", "0")
+        body = json.dumps({"ok": True, "frame_ancestors": ["'self'", self.hub_origin]}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        self.wfile.write(body)
 
 
 class _Vault(_Peer):
@@ -273,7 +277,9 @@ def skip_and_old(b, halo, vault):
     page.wait_for_timeout(150)
     check("Esc 直接收尾（层收掉，加载层接着盖着框）", gone(page) and not page.evaluate("() => document.getElementById('chatLoading').hidden"))
     page.wait_for_timeout(3000)
-    check("旧版 HaloWebUI：load 后 3 秒按兜底撤掉加载层", page.evaluate("() => document.getElementById('chatLoading').hidden"))
+    check("签了票、不说话的框：load 后 3 秒加载层仍盖着（不露出验票中的 /auth 页）", not page.evaluate("() => document.getElementById('chatLoading').hidden"))
+    page.wait_for_timeout(9000)
+    check("签了票、不说话的框：12 秒兜底撤掉加载层", page.evaluate("() => document.getElementById('chatLoading').hidden"))
     frame = peer_frame(page, halo)
     check("旧版 HaloWebUI：就绪时把 enter 发进框", frame is not None and frame.evaluate("() => window.__enters") >= 1)
     # 旧版不回答光圈位置：回首页从舞台中央出发；问过一次没回音，这张框之后不再问（不干等）
@@ -290,10 +296,10 @@ def skip_and_old(b, halo, vault):
     ctx, page, errors = open_hub(b, 1440, 900)
     page.click('.tab[data-view="chat"]')
     page.wait_for_timeout(4000)
-    check("说过话但没报 auth 的框：过了 3 秒兜底也还盖着（不露出 /auth 登录页）",
+    check("签了票、没报 auth 的框：load 后过了 3 秒也还盖着（不露出 /auth 登录页）",
           page.evaluate("() => !!document.querySelector('.hub-iris.is-waiting') && !document.getElementById('chatLoading').hidden"))
     page.wait_for_timeout(4000)
-    check("说过话的框：ready 到了才撤加载层、接力播完", gone(page) and page.evaluate("() => document.getElementById('chatLoading').hidden"))
+    check("签了票的框：ready 到了才撤加载层、接力播完", gone(page) and page.evaluate("() => document.getElementById('chatLoading').hidden"))
     ctx.close()
 
     MODE.update(halo="ready", halo_delay=800)

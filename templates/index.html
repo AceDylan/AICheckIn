@@ -2293,7 +2293,7 @@
     // back：下一次开框登录后落到哪个对话（见 reenterChat）；sso：当前这张框是不是本站替它登录的；
     // reenteredAt：上一次应框里的请求重新登录的时间。
     // ready：框里的 HaloWebUI 说过「好了」（或等不到、按兜底算好了），加载层已撤；spoke：这张框说过话（新版 HaloWebUI），
-    // 说过话就耐心等它的 ready，没说过话的旧版按 load 后 CHAT_SILENT_MS 兜底。
+    // 说过话就耐心等它的 ready，没说过话的按 load 后 CHAT_SILENT_MS（签了票则 CHAT_WAIT_MS）兜底。
     const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0, ready: false, spoke: false, fallback: 0 };
     const CHAT_SILENT_MS = 3000, CHAT_WAIT_MS = 12000;
     function chatPlace(path) { return typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : ''; }
@@ -2385,12 +2385,14 @@
       openChat(true);
     }
     // 框 load 时 HaloWebUI 多半还停在 /auth 登录页（验票、拉应用代码都在这之后，进应用是页内跳转、不再 load），
-    // 所以不在这里撤加载层：等它自己说 ready / auth（见下方消息）。旧版 HaloWebUI 不说话：load 后 3 秒照旧打开。
+    // 所以不在这里撤加载层：等它自己说 ready / auth（见下方消息）。还没开口时的兜底：
+    // 签了票 = 它一定会验票进应用（或被拒后报 form），等 CHAT_WAIT_MS——手机慢网上 load 后好几秒才轮到应用代码，
+    // 按 3 秒撤层露出的正是「正在登录」的 /auth 页；没签票（框里本来就是登录页）或旧版不说话：load 后 3 秒打开。
     function chatFrameLoaded(frame) {
       if (chatFrame() !== frame || CHAT.ready) return;
       gateStep('chat', '接入 HaloWebUI');
       clearTimeout(CHAT.fallback);
-      if (!CHAT.spoke) CHAT.fallback = setTimeout(() => { if (chatFrame() === frame) showChatFrame(); }, CHAT_SILENT_MS);
+      if (!CHAT.spoke) CHAT.fallback = setTimeout(() => { if (chatFrame() === frame) showChatFrame(); }, CHAT.sso ? CHAT_WAIT_MS : CHAT_SILENT_MS);
     }
     // 撤加载层；光圈接力在等就让它点亮（fail：没能免登录，照亮后露出登录页），没在播就直接告诉框「有人进来了」。
     function showChatFrame(fail) {
@@ -2450,13 +2452,6 @@
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
       if (data.type === 'reauth') { reenterChat(data.path); return; }
       if (data.type === 'beacon') { onFrameBeacon(frame, data); return; }
-      // 开口说了话（哪一句都算）就是新版：不按旧版的 load 后 CHAT_SILENT_MS 打开——验票后应用代码还在路上，
-      // 那时撤加载层露出的正是 /auth 登录页。耐心等它的 ready，CHAT_WAIT_MS 兜底。
-      if (!CHAT.busy && !CHAT.ready && !CHAT.spoke) {
-        CHAT.spoke = true;
-        clearTimeout(CHAT.fallback);
-        CHAT.fallback = setTimeout(showChatFrame, CHAT_WAIT_MS);
-      }
       // 换框的那一下（等票据时）旧框说的不算。
       if (data.type === 'ready') { if (!CHAT.busy) showChatFrame(); return; }
       if (data.type === 'auth') {
