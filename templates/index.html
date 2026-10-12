@@ -2450,6 +2450,13 @@
       if (data.type === 'open-note') { openVaultNote(data.path); return; }
       if (data.type === 'reauth') { reenterChat(data.path); return; }
       if (data.type === 'beacon') { onFrameBeacon(frame, data); return; }
+      // 开口说了话（哪一句都算）就是新版：不按旧版的 load 后 CHAT_SILENT_MS 打开——验票后应用代码还在路上，
+      // 那时撤加载层露出的正是 /auth 登录页。耐心等它的 ready，CHAT_WAIT_MS 兜底。
+      if (!CHAT.busy && !CHAT.ready && !CHAT.spoke) {
+        CHAT.spoke = true;
+        clearTimeout(CHAT.fallback);
+        CHAT.fallback = setTimeout(showChatFrame, CHAT_WAIT_MS);
+      }
       // 换框的那一下（等票据时）旧框说的不算。
       if (data.type === 'ready') { if (!CHAT.busy) showChatFrame(); return; }
       if (data.type === 'auth') {

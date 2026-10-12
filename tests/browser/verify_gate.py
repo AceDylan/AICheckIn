@@ -79,6 +79,8 @@ class _Halo(_Peer):
         mode, delay = MODE["halo"], MODE["halo_delay"]
         body = {"ready": (_HALO_ORB % ORB) + "post({ type: 'auth', state: 'signing-in' }); setTimeout(() => { drawOrb(); post({ type: 'ready' }); }, %d);" % delay,
                 "form": "post({ type: 'auth', state: 'form' });",
+                # 线上 10-12 的样子：/auth 不报 auth（未登录拿不到 Hub 源），验完票先报 activity，应用代码到了才 ready
+                "chatty": (_HALO_ORB % ORB) + "setTimeout(() => post({ type: 'activity', state: 'idle' }), 300); setTimeout(() => { drawOrb(); post({ type: 'ready' }); }, %d);" % delay,
                 "silent": ""}[mode]
         self._html("halo-auth", _FRAME_SCRIPT % {"source": "halowebui", "hub": self.hub_origin, "body": body})
 
@@ -282,6 +284,16 @@ def skip_and_old(b, halo, vault):
     t0 = time.time()
     w = watch(page, "chat")
     check("旧版：之后不再干等光圈位置（热进入照常收尾）", w["end"] > 0 and w["end"] < 4000, round(w["end"]))
+    ctx.close()
+
+    MODE.update(halo="chatty", halo_delay=4600)
+    ctx, page, errors = open_hub(b, 1440, 900)
+    page.click('.tab[data-view="chat"]')
+    page.wait_for_timeout(4000)
+    check("说过话但没报 auth 的框：过了 3 秒兜底也还盖着（不露出 /auth 登录页）",
+          page.evaluate("() => !!document.querySelector('.hub-iris.is-waiting') && !document.getElementById('chatLoading').hidden"))
+    page.wait_for_timeout(4000)
+    check("说过话的框：ready 到了才撤加载层、接力播完", gone(page) and page.evaluate("() => document.getElementById('chatLoading').hidden"))
     ctx.close()
 
     MODE.update(halo="ready", halo_delay=800)
