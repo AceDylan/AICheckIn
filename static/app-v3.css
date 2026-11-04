@@ -2532,6 +2532,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
     border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface);
     box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
   }
+  html.wall-on .nav-more-menu:not([hidden]) { background: #15171d; }   /* 壁纸上 --surface 是半透明的 */
   .nav-more-menu button {
     min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: transparent;
     color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
