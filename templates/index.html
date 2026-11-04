@@ -55,7 +55,7 @@
       </button>
       <button class="keys-hint" id="keysOpen" type="button" title="查看全部键盘快捷键">快捷键 <kbd>?</kbd></button>
       <div class="nav-label">工作区</div>
-      <nav class="tabs" aria-label="主视图">
+      <nav class="tabs" id="mainTabs" aria-label="主视图">
         <button class="tab active" data-view="bookmarks" title="收藏库" aria-label="收藏库">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.5L6 21z"/></svg>
           <span class="tab-text">收藏库</span><span class="nav-count" id="bmNavCount">0</span>
@@ -71,6 +71,11 @@
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 5A2 2 0 0 1 7.5 3H19v15H7.5a2 2 0 0 0-2 2z"/><path d="M5.5 20a2 2 0 0 0 2 2H19v-4"/><path d="M9.5 7.5h5.5M9.5 11h3.5"/></svg>
           <span class="tab-text">笔记</span>
         </button>
+        <!-- 监控：框里是自己的 CF-Server-Monitor。解锁后、且部署配置了 HUB_MONITOR_URL + HUB_MONITOR_EMBED_SECRET 才出现（见 syncAdminViews）。 -->
+        <button class="tab" data-view="fleet" title="服务器监控" aria-label="服务器监控" hidden>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h4l2.5-6.5 4 13 2.5-6.5h4"/></svg>
+          <span class="tab-text">监控</span>
+        </button>
         <button class="tab" data-view="checkin" title="签到中心" aria-label="签到中心">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg>
           <span class="tab-text">签到中心</span>
@@ -79,7 +84,16 @@
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7.7 7.7 0 0 0 14.8 6L14.5 3h-5l-.3 3a7.7 7.7 0 0 0-1.7 1L5.1 6.1l-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7.7 7.7 0 0 0 1.7 1l.3 3h5l.3-3a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/></svg>
           <span class="tab-text">系统设置</span><span class="dot" id="schedDot" style="display:none"></span>
         </button>
+        <!-- 手机底栏放不下时才出现（.tabs.has-more，见 syncAdminViews）：签到中心、系统设置收进这里。 -->
+        <button class="tab tab-more" id="navMore" type="button" title="更多" aria-label="更多" aria-haspopup="menu" aria-expanded="false" aria-controls="navMoreMenu">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18.5" cy="12" r="1.4"/></svg>
+          <span class="tab-text">更多</span>
+        </button>
       </nav>
+      <div class="nav-more-menu" id="navMoreMenu" role="menu" aria-label="更多页面" hidden>
+        <button type="button" role="menuitem" data-more-view="checkin">签到中心</button>
+        <button type="button" role="menuitem" data-more-view="settings">系统设置</button>
+      </div>
       <button class="install-btn" id="installBtn" type="button" hidden title="把 Bookmark Hub 装成独立应用窗口">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10m0 0 3.5-3.5M12 14l-3.5-3.5M5 17v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2"/></svg>
         <span>安装为应用</span>
@@ -403,6 +417,13 @@
         <section class="view" id="view-vault" aria-label="笔记">
           <div class="chat-stage" id="vaultStage">
             <div class="chat-loading" id="vaultLoading">正在打开笔记…</div>
+          </div>
+        </section>
+
+        <!-- ===== 监控：CF-Server-Monitor 嵌在这里（样式与「AI 聊天」共用） ===== -->
+        <section class="view" id="view-fleet" aria-label="服务器监控">
+          <div class="chat-stage" id="fleetStage">
+            <div class="chat-loading" id="fleetLoading">正在打开监控…</div>
           </div>
         </section>
 
@@ -1136,7 +1157,8 @@
     // 仍按设备 / 主题来——曾经让壁纸把框也压成深色，浅色设备上聊天也跟着变黑，用户要的是跟真实系统走。
     // 例外是星核壁纸（用户 2026-10-07 定）：它是一整套深色科幻场景，选了它两个框也进场景——聊天框给深色，
     // 笔记框给 neural（WebObsidian 的黑金主题）。两边照旧只在自己设的是「跟随系统」时照办。
-    const FRAME_SCENES = { starcore: { chat: 'dark', vault: 'neural' } };
+    const FRAME_SCENES = { starcore: { chat: 'dark', vault: 'neural', fleet: 'dark' } };
+    const FRAME_VIEWS = ['chat', 'vault', 'fleet'];
     let FRAME_SCENE = '';   // applyLook 记下此刻生效的场景壁纸，进出场景时再告诉框
     function frameScene() {
       const w = currentWallpaper();
@@ -1148,19 +1170,22 @@
       return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
     }
     function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme('chat'); }
-    function tellFrameEnter(name) {
-      const frame = name === 'chat' ? chatFrame() : vaultFrame();
-      const origin = name === 'chat' ? chatOrigin() : vaultOrigin();
-      try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type: 'enter' }, origin); } catch (_) {}
+    function tellFrame(name, type) {
+      const [frame, origin] = name === 'chat' ? [chatFrame(), chatOrigin()]
+        : name === 'vault' ? [vaultFrame(), vaultOrigin()] : [fleetFrame(), fleetOrigin()];
+      try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type }, origin); } catch (_) {}
     }
+    function tellFrameEnter(name) { tellFrame(name, 'enter'); }
     // 光圈接力（halo-motion.js 的 iris，对外仍叫 gate）：进聊天 / 笔记时整屏暗下去、光圈飞到框里的光圈上，
     // 框里的应用说「好了」才点亮；点亮那一下才告诉框「有人进来了」（框里接着播自己的入场）。
     // 没有接力（科幻特效关、高对比）就照旧直接说。去别处：正在播的收掉（从这两页回首页由接力接手）。
     function frameViewMotion(name, from, tab) {
       const gate = window.HaloMotion && window.HaloMotion.gate;
-      if (name !== 'chat' && name !== 'vault') { if (gate) gate.leave(name, from); return; }
+      // 监控框切走后没人在看：让它停掉实时连接，不然探针一直保持高频上报（框被隐藏时它自己察觉不到）。
+      if (from === 'fleet' && name !== 'fleet') tellFrame('fleet', 'leave');
+      if (!FRAME_VIEWS.includes(name)) { if (gate) gate.leave(name, from); return; }
       const lines = frameShown(name) ? frameGateLines(name)
-        : [[name === 'chat' ? '建立链路 HUB ⇄ HALO' : '建立链路 HUB ⇄ VAULT', 'SYNC']];
+        : [[name === 'chat' ? '建立链路 HUB ⇄ HALO' : name === 'vault' ? '建立链路 HUB ⇄ VAULT' : '建立链路 HUB ⇄ FLEET', 'SYNC']];
       if (!gate || !gate.enter(name, { ready: frameShown(name), tab, lines, beacon: frameBeacon, onOpen: () => tellFrameEnter(name) })) tellFrameEnter(name);
     }
     // HaloWebUI 新对话页中间那颗光圈在本页的位置（光圈接力的起落点）。问框里的 HaloWebUI（wait：最多等它多久把光圈画出来），
@@ -1192,17 +1217,21 @@
       ask.resolve(ok ? { x: b.left + data.x, y: b.top + data.y, r: data.r } : null);
     }
     // 框已经开着、里面的应用也说过「好了」（热进入）。
-    function frameShown(name) { return name === 'chat' ? !!chatFrame() && CHAT.ready : !!vaultFrame() && VAULT_EMBED.shown; }
+    function frameShown(name) {
+      if (name === 'fleet') return !!fleetFrame() && FLEET.shown;
+      return name === 'chat' ? !!chatFrame() && CHAT.ready : !!vaultFrame() && VAULT_EMBED.shown;
+    }
     // 热进入时门上的读数：只写此刻真实的状态（回复在跑 / 有没看的回复，见 CHAT_ACTIVITY）。
     function frameGateLines(name) {
       if (name === 'vault') return [['笔记库在线', 'ONLINE'], ['图谱就绪', 'OK']];
+      if (name === 'fleet') return [['监控在线', 'ONLINE'], ['实时恢复', 'LIVE']];
       const now = CHAT_ACTIVITY.state === 'running' ? ['回复生成中', 'LIVE'] : CHAT_ACTIVITY.unseen ? ['有新回复', 'NEW'] : ['待命', 'IDLE'];
       return [['链路保持', 'ONLINE'], now];
     }
     function gateStep(name, text, state) { window.HaloMotion?.gate?.step(name, text, state); }
     function tellFramesTheme() {
       // 目标源写死成配置的那个：框要是还停在本站的跳板页上（或别处），浏览器直接丢掉这条消息。
-      [['chat', chatFrame(), chatOrigin()], ['vault', vaultFrame(), vaultOrigin()]].forEach(([name, frame, origin]) => {
+      [['chat', chatFrame(), chatOrigin()], ['vault', vaultFrame(), vaultOrigin()], ['fleet', fleetFrame(), fleetOrigin()]].forEach(([name, frame, origin]) => {
         const msg = { source: 'hub', type: 'theme', theme: frameTheme(name) };
         try { if (frame && frame.contentWindow && origin) frame.contentWindow.postMessage(msg, origin); } catch (_) { /* 下次开框时地址里带着 */ }
       });
@@ -1615,7 +1644,7 @@
     const LIB = { page: '@home' };  // @ 不允许出现在分组 id 中，避免与用户分组重名。
     const CHECKIN = { page: 'overview' };
     const CHECKIN_PAGES = ['overview', 'configs', 'history'];
-    const MAIN_VIEWS = ['bookmarks', 'chat', 'checkin', 'settings', 'vault'];
+    const MAIN_VIEWS = ['bookmarks', 'chat', 'checkin', 'settings', 'vault', 'fleet'];
     function libHash() { return LIB.page === '@home' ? '#bookmarks' : '#links/' + LIB.page; }
     // 浏览器的「返回」：收藏库是首页。从它切到别的页面（AI 聊天、笔记、签到、设置）时记一条历史，
     // 那些页面之间互相切换、在收藏库里翻分组都只改当前这一条。于是在别的页面按「返回」（手机的返回手势）
@@ -1680,6 +1709,7 @@
       if (mainName === 'checkin' && STATE_LOADED && !canEdit()) { switchView('bookmarks'); return; }
       if (mainName === 'chat' && STATE_LOADED && !chatAvailable()) { switchView('bookmarks'); return; }
       if (mainName === 'vault' && STATE_LOADED && !vaultEmbedAvailable()) { switchView('bookmarks'); return; }
+      if (mainName === 'fleet' && STATE_LOADED && !fleetEmbedAvailable()) { switchView('bookmarks'); return; }
       const tab = document.querySelector(`.tab[data-view="${mainName}"]`);
       const view = $('view-' + mainName);
       if (!tab || !view) return;
@@ -1689,9 +1719,11 @@
         t.classList.toggle('active', active);
         t.setAttribute('aria-current', active ? 'page' : 'false');
       });
+      // 手机底栏上这两页收在「更多」里：亮「更多」。
+      $('navMore').classList.toggle('active', mainName === 'checkin' || mainName === 'settings');
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
       // 聊天页、笔记页要整块铺满（去掉内容区的留白与最大宽度），由 <html> 上的类统一切换。
-      document.documentElement.classList.toggle('chat-on', mainName === 'chat' || mainName === 'vault');
+      document.documentElement.classList.toggle('chat-on', FRAME_VIEWS.includes(mainName));
       $('libSubnav').hidden = mainName !== 'bookmarks';
       if (section) {
         CHECKIN.page = section;
@@ -1724,7 +1756,7 @@
       applyLook();
       window.HaloMotion?.nav(tab, view);
       if (STATE_LOADED && fromMain !== mainName) frameViewMotion(mainName, fromMain, tab);
-      else if (STATE_LOADED && (mainName === 'chat' || mainName === 'vault')) tellFrameEnter(mainName);
+      else if (STATE_LOADED && FRAME_VIEWS.includes(mainName)) tellFrameEnter(mainName);
       window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
     // 标签页标题跟着当前页走：多开几个标签、翻浏览器历史时能认出哪个是哪个（「服务配置 · 签到中心 · Bookmark Hub」）。
@@ -1751,6 +1783,7 @@
       else if (name === 'settings') loadDiagnostics();
       else if (name === 'chat') openChat();
       else if (name === 'vault') { openVault(); focusVaultFrame(); }
+      else if (name === 'fleet') openFleet();
       else if (name === 'bookmarks') scheduleAutoFresh();
     }
     function currentViewName() {
@@ -1758,7 +1791,10 @@
       const name = view ? view.id.replace('view-', '') : '';
       return name === 'checkin' && CHECKIN.page !== 'overview' ? CHECKIN.page : name;
     }
-    document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+    // 「更多」没有 data-view，它开的是菜单（见 navMore）。
+    document.querySelectorAll('.tab').forEach(tab => tab.dataset.view && tab.addEventListener('click', () => {
+      // 已经在监控页时再点一下：回到监控首页（框里可能停在管理后台，那边没有回首页的入口）。
+      if (tab.dataset.view === 'fleet' && currentViewName() === 'fleet') { fleetGoHome(); return; }
       const update = () => { switchView(tab.dataset.view); if (tab.dataset.view === 'bookmarks') openLibPage('@home'); };
       if (window.HaloMotion) window.HaloMotion.change(update, tab.dataset.view, { tab, beacon: frameBeacon }); else update();
     }));
@@ -2285,6 +2321,18 @@
       else if (!show && ADMIN_VIEWS.includes(here)) switchView('bookmarks');
       else if (here === 'chat' && !chatAvailable()) switchView('bookmarks');
       else if (here === 'vault' && !vaultEmbedAvailable()) switchView('bookmarks');
+      syncFleetTab(here);
+    }
+    function syncFleetTab(here) {
+      const available = fleetEmbedAvailable();
+      const tab = document.querySelector('.tab[data-view="fleet"]');
+      if (tab) tab.hidden = !available;
+      // 多了「监控」手机底栏放不下：签到中心、系统设置收进「更多」（没解锁时用不着，底栏本来就空）。
+      $('mainTabs').classList.toggle('has-more', available);
+      closeNavMore();
+      if (available) return;
+      closeFleet(true);   // 锁定 / 会话过期：框一并卸掉，并结束由本站登录的监控会话
+      if (here === 'fleet') switchView('bookmarks');
     }
 
     // ===== AI 聊天 =====
@@ -2680,6 +2728,123 @@
       dropVaultAsk();
       focusVaultFrame();
     });
+
+
+    // ===== 监控 =====
+    // CF-Server-Monitor 嵌在框里，登录走法与「笔记」相同：看不见的小框打开 /monitor/open，表单把票据 POST 进这张还空着的框，
+    // 空框的第一次导航不留历史，按返回不会退到跳板页。框里的主题说 ready 再撤加载层，没登录上就说 reauth。
+    const FLEET = { url: '', hop: null, seq: 0, shown: false, fallback: 0, reauthAt: 0 };
+    const FLEET_SILENT_MS = 2500;
+    const FLEET_REAUTH_GAP_MS = 60000;   // 对面一直不认票时别无限重开
+    function fleetEmbedAvailable() { return !!(STATE.monitor_embed && STATE.monitor_embed.url) && canEdit(); }
+    function fleetFrame() { return $('fleetStage') ? $('fleetStage').querySelector('iframe') : null; }
+    function fleetOrigin() {
+      try { return FLEET.url ? new URL(FLEET.url).origin : ''; } catch (_) { return ''; }
+    }
+    function dropFleetHop() {
+      if (FLEET.hop) FLEET.hop.remove();
+      FLEET.hop = null;
+    }
+    function closeFleet(signOut) {
+      const frame = fleetFrame();
+      if (frame) frame.remove();
+      dropFleetHop();
+      FLEET.shown = false;
+      clearTimeout(FLEET.fallback);
+      const url = FLEET.url || (signOut && STATE.monitor_embed && STATE.monitor_embed.url) || '';
+      FLEET.url = '';
+      if (signOut) signOutVault(url);   // 同一条退出路：对面只结束由本站登录的会话
+    }
+    function openFleet(force) {
+      if (!fleetEmbedAvailable() || (FLEET.url && !force)) {
+        if (FLEET.url) tellFrameEnter('fleet');
+        return;
+      }
+      const base = STATE.monitor_embed.url;
+      $('fleetLoading').hidden = false;
+      closeFleet();
+      if (force && currentViewName() === 'fleet') frameViewMotion('fleet', '', document.querySelector('.tab[data-view="fleet"]'));
+      const open = '/monitor/open?theme=' + (frameTheme('fleet') === 'light' ? 'light' : 'dark');
+      const name = 'hub-fleet-' + (++FLEET.seq);
+      const frame = document.createElement('iframe');
+      frame.className = 'chat-frame';
+      frame.title = '服务器监控';
+      frame.name = name;
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      // 同样不给 allow-top-navigation：框里的页面无论如何不能把外层的 Hub 整个带走。
+      frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads');
+      frame.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
+      frame.addEventListener('load', () => {
+        if (frameIsBlank(frame)) return;
+        dropFleetHop();
+        if (fleetFrame() !== frame || FLEET.shown) return;
+        if (frameSameOrigin(frame)) { showFleetFrame('未能免登录'); return; }   // 框里是本站自己的说明页
+        gateStep('fleet', '同步探针');
+        clearTimeout(FLEET.fallback);
+        FLEET.fallback = setTimeout(() => { if (fleetFrame() === frame) showFleetFrame(); }, FLEET_SILENT_MS);
+      });
+      $('fleetStage').appendChild(frame);
+      const hop = document.createElement('iframe');
+      hop.hidden = true;
+      hop.tabIndex = -1;
+      hop.setAttribute('aria-hidden', 'true');
+      hop.addEventListener('load', () => {
+        let form = null;
+        try { form = hop.contentDocument && hop.contentDocument.querySelector('form'); } catch (_) { /* 读不到就当没有 */ }
+        if (!form && fleetFrame() === frame && frameIsBlank(frame)) { frame.src = open; dropFleetHop(); }
+        else if (form) gateStep('fleet', '签发通行证');
+      });
+      hop.src = open + '&target=' + name;
+      document.body.appendChild(hop);
+      FLEET.hop = hop;
+      FLEET.url = base;
+    }
+    function showFleetFrame(fail) {
+      if (FLEET.shown || !fleetFrame()) return;
+      FLEET.shown = true;
+      clearTimeout(FLEET.fallback);
+      $('fleetLoading').hidden = true;
+      const gate = window.HaloMotion && window.HaloMotion.gate;
+      if (!(gate && gate.ready('fleet', fail || '')) && currentViewName() === 'fleet') tellFrameEnter('fleet');
+    }
+    function fleetGoHome() {
+      const frame = fleetFrame(), origin = fleetOrigin();
+      if (frame && origin) frame.src = origin + '/';
+    }
+    window.addEventListener('message', (e) => {
+      const frame = fleetFrame();
+      if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== fleetOrigin()) return;
+      const data = e.data;
+      if (!data || typeof data !== 'object' || data.source !== 'cfsm') return;
+      if (data.type === 'ready') {
+        frame.contentWindow.postMessage({ source: 'hub', type: 'theme', theme: frameTheme('fleet') === 'light' ? 'light' : 'dark' }, e.origin);
+        if (FLEET.shown) { if (currentViewName() !== 'fleet') tellFrame('fleet', 'leave'); }
+        else showFleetFrame();
+      } else if (data.type === 'reauth' && Date.now() - FLEET.reauthAt > FLEET_REAUTH_GAP_MS) {
+        FLEET.reauthAt = Date.now();
+        openFleet(true);
+      } else if (data.type === 'reauth') {
+        showFleetFrame('未能免登录');
+      }
+    });
+    function closeNavMore() {
+      $('navMoreMenu').hidden = true;
+      $('navMore').setAttribute('aria-expanded', 'false');
+    }
+    $('navMore').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const opening = $('navMoreMenu').hidden;
+      $('navMoreMenu').hidden = !opening;
+      $('navMore').setAttribute('aria-expanded', String(opening));
+    });
+    $('navMoreMenu').addEventListener('click', (e) => {
+      const button = e.target.closest && e.target.closest('[data-more-view]');
+      if (!button) return;
+      closeNavMore();
+      document.querySelector(`.tab[data-view="${button.dataset.moreView}"]`).click();
+    });
+    document.addEventListener('click', closeNavMore);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNavMore(); });
 
 
     // ===== 发送到 AI 聊天 / 存入笔记 =====

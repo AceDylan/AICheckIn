@@ -1570,7 +1570,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
 }
 @media (prefers-reduced-transparency: reduce) {
   html.wall-on .home-search-bar, html.wall-on .sidebar,
-  html.wall-on #view-chat.active, html.wall-on #view-vault.active { background: #15171d; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html.wall-on #view-chat.active, html.wall-on #view-vault.active, html.wall-on #view-fleet.active { background: #15171d; backdrop-filter: none; -webkit-backdrop-filter: none; }
   html.wall-on .view-header { backdrop-filter: none; -webkit-backdrop-filter: none; }
   html.wall-on .app-shell { --surface: #15171d; --surface-2: #191b22; --surface-input: #15171d; }
 }
@@ -1589,7 +1589,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   }
   /* 聊天 / 笔记和侧栏一样浮成一块圆角玻璃面板，四周露出壁纸；框填满整块面板
      （框自己不透明，玻璃只在载入时看得到）。 */
-  html.wall-on #view-chat.active, html.wall-on #view-vault.active {
+  html.wall-on #view-chat.active, html.wall-on #view-vault.active, html.wall-on #view-fleet.active {
     height: calc(100vh - 20px); margin: 10px 10px 10px 8px; overflow: hidden;
     border: 1px solid rgba(255, 255, 255, .13); border-radius: 20px;
     background: rgba(13, 15, 20, .58);
@@ -2044,7 +2044,7 @@ label.set-row { cursor: pointer; }
 .cine-search .home-hero { transform: scale(.98); opacity: .7; }
 .home-search { transition: transform 240ms var(--spring-smooth); }
 .cine-search .home-search { transform: translateY(-4px); }
-#view-chat.active .chat-stage, #view-vault.active .chat-stage { animation: cine-overlay 240ms var(--spring-smooth) both; }
+#view-chat.active .chat-stage, #view-vault.active .chat-stage, #view-fleet.active .chat-stage { animation: cine-overlay 240ms var(--spring-smooth) both; }
 .cine-card-return { position: fixed; z-index: 9999; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-xl); pointer-events: none; }
 .motion-paused *, .motion-paused *::before, .motion-paused *::after { animation-play-state: paused !important; }
 @media (max-width: 760px), (pointer: coarse) {
@@ -2055,7 +2055,7 @@ label.set-row { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .cine-nav-pill, .home-body, .home-hero, .home-search, .home-wall::before { transition: none; }
   .home-wall::before, .cine-search .home-wall::before, .cine-search .home-body, .cine-search .home-hero, .cine-search .home-search { transform: none; }
-  .modal-mask.show .modal, #view-chat.active .chat-stage, #view-vault.active .chat-stage { animation: cine-fade 120ms ease-out both; }
+  .modal-mask.show .modal, #view-chat.active .chat-stage, #view-vault.active .chat-stage, #view-fleet.active .chat-stage { animation: cine-fade 120ms ease-out both; }
   @keyframes cine-fade { from { opacity: 0; } to { opacity: 1; } }
 }
 
@@ -2492,8 +2492,8 @@ html.wall-on .home-todo { --todo-drag-bg: #23262d; }
    整块铺满内容区：<html class="chat-on"> 由 switchView 切换（两个页面都用它），去掉内容区的留白与最大宽度，
    提示条 + 框纵向排开，框吃掉剩下的全部高度（不放工具条：框里的页面从内容区最上沿开始）。笔记页直接复用下面这套 .chat-* 样式。 */
 html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
-#view-chat.active, #view-vault.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
-@media (min-width: 761px) { html:not(.wall-on) #view-chat.active, html:not(.wall-on) #view-vault.active { height: calc(100vh - 18px); } }
+#view-fleet.active, #view-chat.active, #view-vault.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
+@media (min-width: 761px) { html:not(.wall-on) #view-chat.active, html:not(.wall-on) #view-vault.active, html:not(.wall-on) #view-fleet.active { height: calc(100vh - 18px); } }
 .chat-note {
   display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0;
   padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
@@ -2521,10 +2521,28 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
   html.wall-on .chat-note { background: rgba(255, 255, 255, .04); border-bottom-color: rgba(255, 255, 255, .09); }
   html.wall-on .chat-stage { background: transparent; }
 }
+/* 手机底栏放不下时的「更多」（.tabs.has-more 由 syncAdminViews 决定；桌面和侧栏永远不出现）。 */
+.tab-more, .nav-more-menu { display: none; }
+@media (max-width: 760px) {
+  .tabs.has-more .tab-more { display: flex; }
+  .tabs.has-more .tab[data-view="checkin"], .tabs.has-more .tab[data-view="settings"] { display: none; }
+  .nav-more-menu:not([hidden]) {
+    position: absolute; right: 8px; bottom: calc(100% + 8px); z-index: 5;
+    display: flex; flex-direction: column; min-width: 148px; padding: 6px;
+    border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+  }
+  .nav-more-menu button {
+    min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: transparent;
+    color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+  }
+  .nav-more-menu button:hover, .nav-more-menu button:focus-visible { background: var(--surface-hover); }
+}
+
 @media (max-width: 760px) {
   /* 底部固定标签栏约 66px + 安全区：框到它上沿为止，别让最后一行输入框藏在标签栏后面。 */
   html.chat-on .content { padding: 0; }
-  #view-chat.active, #view-vault.active { height: calc(100vh - 76px - env(safe-area-inset-bottom)); }
+  #view-fleet.active, #view-chat.active, #view-vault.active { height: calc(100vh - 76px - env(safe-area-inset-bottom)); }
 }
 
 @media (max-width: 760px) {

@@ -386,7 +386,7 @@ class PageShapeTest(unittest.TestCase):
 
     def test_the_view_reuses_the_chat_layout(self):
         self.assertIn("#view-chat.active, #view-vault.active {", self.css)
-        self.assertIn("document.documentElement.classList.toggle('chat-on', mainName === 'chat' || mainName === 'vault');", self.html)
+        self.assertIn("document.documentElement.classList.toggle('chat-on', FRAME_VIEWS.includes(mainName));", self.html)
 
     def test_service_worker_was_bumped_and_never_touches_the_vault_page(self):
         self.assertGreaterEqual(int(re.search(r"bh-shell-v(\d+)", self.sw).group(1)), 20)

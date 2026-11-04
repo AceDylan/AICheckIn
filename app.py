@@ -2242,6 +2242,53 @@ def issue_vault_ticket(issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
     return _sign_ticket(_vault_key(), VAULT_TICKET_PURPOSE, issuer, audience, ttl, now)
 
 
+# ---- 「监控」标签页：把 CF-Server-Monitor 整个嵌进来，并替已解锁的管理员登录（可选）----
+#
+# 与「笔记」同一种票据和同一条路（/monitor/open 的隐藏表单 POST 给 <HUB_MONITOR_URL>/auth/hub/sso），另起一把密钥：
+#   HUB_MONITOR_EMBED_SECRET（Worker 的 HUB_MONITOR_EMBED_SECRET 填同一个值），派生前缀 hub-monitor-admin|。
+# 那边给的是完整管理员会话（12 小时）。它只有这一种登录身份，这也是管理密码不合格时绝不签票的原因。
+MONITOR_URL = _clean_origin(os.environ.get("HUB_MONITOR_URL", "")) if os.environ.get("HUB_MONITOR_URL", "").strip() else ""
+MONITOR_EMBED_SECRET = os.environ.get("HUB_MONITOR_EMBED_SECRET", "").strip()
+MONITOR_TICKET_PURPOSE = "monitor"
+
+if os.environ.get("HUB_MONITOR_URL", "").strip() and not MONITOR_URL:
+    sys.stderr.write("[gyqd-web] 警告：HUB_MONITOR_URL 不是完整的源（形如 https://host:port），"
+                     "已忽略，监控标签页不会出现\n")
+if MONITOR_EMBED_SECRET and len(MONITOR_EMBED_SECRET) < CHAT_SECRET_MIN_LEN:
+    sys.stderr.write("[gyqd-web] 警告：HUB_MONITOR_EMBED_SECRET 少于 {0} 个字符，已忽略；"
+                     "请用 python3 -c \"import secrets; print(secrets.token_hex(32))\" 重新生成\n"
+                     .format(CHAT_SECRET_MIN_LEN))
+
+
+def monitor_embed_enabled():
+    """有没有「监控」标签页。配了地址和密钥就有；密钥不合格时标签页照样在，框里说明原因。"""
+    return bool(MONITOR_URL and MONITOR_EMBED_SECRET)
+
+
+def monitor_sso_blocker():
+    """现在能不能替管理员登录监控站。能 → 空串；不能 → 一个词的原因。"""
+    if not monitor_embed_enabled():
+        return "monitor_off"
+    if len(MONITOR_EMBED_SECRET) < CHAT_SECRET_MIN_LEN:
+        return "secret_unset"
+    return _admin_password_blocker()
+
+
+def _monitor_key():
+    return hashlib.sha256(("hub-monitor-admin|" + MONITOR_EMBED_SECRET).encode("utf-8")).digest()
+
+
+def issue_monitor_ticket(issuer, audience, ttl=CHAT_TICKET_TTL, now=None):
+    """签一张登录监控站的票。调用方负责确认「现在可以签」（monitor_sso_blocker）。"""
+    return _sign_ticket(_monitor_key(), MONITOR_TICKET_PURPOSE, issuer, audience, ttl, now)
+
+
+def public_monitor_embed():
+    """/api/configs 里「监控」标签页那一段：地址 + 能不能免登录。没有任何凭据。"""
+    blocker = monitor_sso_blocker()
+    return {"url": MONITOR_URL, "sso": not blocker, "reason": blocker}
+
+
 def public_vault_embed():
     """/api/configs 里「笔记」标签页那一段：地址 + 能不能免登录 + 不能时的原因。没有任何凭据。"""
     blocker = vault_sso_blocker()
@@ -2565,14 +2612,15 @@ CONTENT_SECURITY_POLICY_BASE = (
 
 def content_security_policy():
     """本站是外层页面：
-    - frame-src：default-src 'self' 下外站一律嵌不进来，只为「AI 聊天」（HUB_CHAT_URL）与「笔记」
-      （HUB_VAULT_URL，配了 HUB_VAULT_EMBED_SECRET 才算）这两个配置的源开口；
-    - connect-src：同源，外加「笔记」的源——锁定时页面要请它结束由本站登录的会话（一次 no-cors 的 POST）；
+    - frame-src：default-src 'self' 下外站一律嵌不进来，只为「AI 聊天」（HUB_CHAT_URL）、「笔记」
+      （HUB_VAULT_URL，配了 HUB_VAULT_EMBED_SECRET 才算）与「监控」（HUB_MONITOR_URL + 密钥）这几个配置的源开口；
+    - connect-src：同源，外加「笔记」「监控」的源——锁定时页面要请它们结束由本站登录的会话（一次 no-cors 的 POST）；
     - frame-ancestors 'none'：本站自己不被任何人嵌（外壳、解锁面板、票据签发都不该出现在别人的框里）。
-      唯一的例外是 /vault/open 自己的响应头：它就是要待在本站自己的框里。"""
+      唯一的例外是 /vault/open、/monitor/open 自己的响应头：它们就是要待在本站自己的框里。"""
     vault = VAULT_URL if vault_embed_enabled() else ""
-    connect_src = "connect-src 'self'{0}; ".format(" " + vault if vault else "")
-    frame_src = "frame-src 'self'{0}; ".format("".join(" " + o for o in (CHAT_URL, vault) if o))
+    monitor = MONITOR_URL if monitor_embed_enabled() else ""
+    connect_src = "connect-src 'self'{0}; ".format("".join(" " + o for o in (vault, monitor) if o))
+    frame_src = "frame-src 'self'{0}; ".format("".join(" " + o for o in (CHAT_URL, vault, monitor) if o))
     return CONTENT_SECURITY_POLICY_BASE + connect_src + frame_src + "frame-ancestors 'none'"
 
 
@@ -2586,10 +2634,10 @@ HSTS_ENABLED = os.environ.get("GYQD_HSTS", "0") == "1"
 #  - api_auth / api_logout：解锁与锁定的入口，堵掉就没法解锁了；
 #  - api_configs：自己会在未解锁时返回空壳（见函数内），不走这里的拦截。
 #  - vault_open：「笔记」框的第一页，自己会在未解锁时只回一张「请先解锁」的说明页（不签票），
-#    比这里统一回的 JSON 403 更适合出现在框里。
+#    比这里统一回的 JSON 403 更适合出现在框里。monitor_open（「监控」框的第一页）同理。
 _PRIVATE_OPEN_ENDPOINTS = frozenset({
     "index", "static", "service_worker", "health", "api_auth", "api_logout", "api_configs",
-    "vault_open",
+    "vault_open", "monitor_open",
 })
 
 
@@ -2681,7 +2729,7 @@ _GZIP_MIMETYPES = frozenset({
 # 会回真实凭据的接口不压缩：「压缩 + 密文长度可观测」是 BREACH 一类攻击的前提。这些响应里没有
 # 攻击者可控的回显、会话 Cookie 也是 SameSite=Lax，本就构不成条件；不压只是把这条路彻底关死。
 # /vault/open 的页面里有一张登录 WebObsidian 的票据，旁边还回显着请求里的 to=，同理不压。
-_GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "api_export", "vault_open"})
+_GZIP_SKIP_ENDPOINTS = frozenset({"api_config_secret", "api_bookmark_secret", "api_export", "vault_open", "monitor_open"})
 # 带 ETag 的响应（首页外壳、静态文件）内容不变、压缩结果也不变：按 (路径, ETag) 记下来，
 # 不必每个请求重压一遍。条目只有外壳那几个文件，设个上限防意外膨胀。
 _GZIP_CACHE_MAX = 32
@@ -3282,7 +3330,7 @@ def api_configs():
             "deck": _coerce_deck({}), "deck_locked": True, "deck_error": "",
             "holidays": {"plans": {}},
             # 未解锁：连「有没有 AI 聊天 / 笔记服务、它们在哪」都不说。
-            "chat": None, "vault": None, "vault_embed": None,
+            "chat": None, "vault": None, "vault_embed": None, "monitor_embed": None,
         })
     schedule = store.get("schedule") or {}
     refresh = store.get("refresh") or {}
@@ -3364,6 +3412,8 @@ def api_configs():
         "vault": {"url": VAULT_URL, "inbox": VAULT_INBOX} if vault_enabled() and unlocked else None,
         # 「笔记」标签页：同样只给已解锁的人。框里放的是本站的 /vault/open，票据不经过这里。
         "vault_embed": public_vault_embed() if vault_embed_enabled() and unlocked else None,
+        # 「监控」标签页：同样只给已解锁的人，票据走 /monitor/open。
+        "monitor_embed": public_monitor_embed() if monitor_embed_enabled() and unlocked else None,
     }))
 
 
@@ -6898,21 +6948,26 @@ _VAULT_THEMES = ("dark", "light", "neural")
 
 
 def _vault_open_page(state, status, message="", ticket="", to="/", target="", theme=""):
-    """/vault/open 的响应：自己一套收得很紧的响应头。
-
-    - frame-ancestors 'self' + SAMEORIGIN：只能待在本站自己的框里（全站其余响应仍是 'none' / DENY）；
-    - form-action 只许 WebObsidian 的源，script-src 只许这一页带 nonce 的那一行；
-    - no-store：票据一次性、60 秒，不许任何一层缓存留着它；
-    - Referrer-Policy: strict-origin（全站是 no-referrer）：no-referrer 会让浏览器在跨源表单 POST 上
-      把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。
+    """/vault/open 的响应（说明见 _embed_open_page）。
 
     theme（dark / light，星核场景下是 neural）挂在表单地址的 # 上：对面登录后 303 到笔记页时浏览器把 # 带过去（重定向的
     Location 没有 # 时沿用原地址的），WebObsidian 据此在「跟随系统」时跟着 Hub 的深浅色。# 不会发给服务器。"""
-    nonce = secrets.token_urlsafe(16)
     theme = theme if theme in _VAULT_THEMES else ""
     action = VAULT_URL + "/auth/hub/sso" + ("#hub_theme=" + theme if theme else "")
+    return _embed_open_page(VAULT_URL, "笔记", action, state, status, message, ticket, to, target, theme)
+
+
+def _embed_open_page(origin, label, action, state, status, message, ticket, to, target, theme):
+    """框里第一页（/vault/open、/monitor/open）的响应：自己一套收得很紧的响应头。
+
+    - frame-ancestors 'self' + SAMEORIGIN：只能待在本站自己的框里（全站其余响应仍是 'none' / DENY）；
+    - form-action 只许对面（origin）的源，script-src 只许这一页带 nonce 的那一行；
+    - no-store：票据一次性、60 秒，不许任何一层缓存留着它；
+    - Referrer-Policy: strict-origin（全站是 no-referrer）：no-referrer 会让浏览器在跨源表单 POST 上
+      把 Origin 写成 null，对面就认不出这是本站的页面。strict-origin 只多带出本站的源，不带路径。"""
+    nonce = secrets.token_urlsafe(16)
     body = render_template("vault_open.html", state=state, message=message, ticket=ticket, to=to, target=target,
-                           action=action, vault_host=VAULT_URL.split("://", 1)[-1],
+                           action=action, vault_host=origin.split("://", 1)[-1], label=label,
                            nonce=nonce, theme="dark" if theme == "neural" else theme)
     resp = app.response_class(body, status=status, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-store"
@@ -6920,8 +6975,47 @@ def _vault_open_page(state, status, message="", ticket="", to="/", target="", th
     resp.headers["Referrer-Policy"] = "strict-origin"
     resp.headers["Content-Security-Policy"] = (
         "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{0}'; "
-        "form-action {1}; base-uri 'none'; frame-ancestors 'self'".format(nonce, VAULT_URL))
+        "form-action {1}; base-uri 'none'; frame-ancestors 'self'".format(nonce, origin))
     return resp
+
+
+_MONITOR_SSO_HINTS = {
+    "secret_unset": "HUB_MONITOR_EMBED_SECRET 少于 32 个字符，已被忽略：不能替你登录监控。",
+    "no_password": "本站没有设管理密码，不会替任何人登录监控。",
+    "password_public": "本站的管理密码曾以明文出现在公开的代码仓库历史里，换掉之前不会用它替你登录监控。",
+    "password_short": "本站的管理密码少于 {0} 位，不会用它替你登录监控。".format(MIN_ADMIN_PASSWORD_LEN),
+    "issuer_unknown": "认不出本站对外的地址，票据没法写签发方。请在 .env 里设置 HUB_PUBLIC_ORIGIN。",
+}
+_MONITOR_FRAME_NAME = re.compile(r"hub-fleet-[0-9]{1,9}")
+_MONITOR_THEMES = ("dark", "light")
+
+
+@app.get("/monitor/open")
+def monitor_open():
+    """「监控」标签页的第一页，流程与 /vault/open 相同。已解锁且管理密码、密钥都合格才签票；
+    ?target= 是 Hub 监控框的名字，?theme= 是 Hub 此刻的深浅色（对面校验后带到落地页地址上）。"""
+    if not monitor_embed_enabled():
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    theme = request.args.get("theme") or ""
+    theme = theme if theme in _MONITOR_THEMES else ""
+    action = MONITOR_URL + "/auth/hub/sso" + ("?theme=" + theme if theme else "")
+
+    def page(state, status, message="", ticket="", target=""):
+        return _embed_open_page(MONITOR_URL, "监控", action, state, status, message, ticket, "/", target, theme)
+
+    if request.headers.get("Sec-Fetch-Site", "").strip().lower() == "cross-site":
+        return page("refused", 403, "只能从本站打开监控。")
+    if ADMIN_PASSWORD and not admin_ok():
+        return page("locked", 401, "请先在 Bookmark Hub 里解锁，监控会跟着登录。")
+    blocker = monitor_sso_blocker()
+    issuer = request_public_origin()
+    if not blocker and not issuer:
+        blocker = "issuer_unknown"
+    if blocker:
+        return page("blocked", 403, _MONITOR_SSO_HINTS.get(blocker, blocker))
+    target = request.args.get("target") or ""
+    target = target if _MONITOR_FRAME_NAME.fullmatch(target) else ""
+    return page("ok", 200, ticket=issue_monitor_ticket(issuer, MONITOR_URL), target=target)
 
 
 @app.get("/vault/open")

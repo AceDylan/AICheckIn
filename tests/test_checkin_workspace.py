@@ -35,7 +35,7 @@ class CheckinMarkupTest(unittest.TestCase):
     def test_management_panels_and_buttons_live_inside_checkin(self):
         markup = WorkspaceMarkup()
         markup.feed(Path(TEMPLATE).read_text())
-        self.assertEqual(markup.tabs, ['bookmarks', 'chat', 'vault', 'checkin', 'settings'])
+        self.assertEqual(markup.tabs, ['bookmarks', 'chat', 'vault', 'fleet', 'checkin', 'settings', None])   # None =「更多」
         for panel in ('checkinOverview', 'view-configs', 'view-history'):
             self.assertEqual(markup.parents[panel], ['view-checkin'])
         self.assertEqual(markup.tools, [('overview', ['view-checkin']), ('configs', ['view-checkin']), ('history', ['view-checkin'])])

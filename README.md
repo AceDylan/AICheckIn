@@ -403,6 +403,10 @@ Service Worker 的缓存版本随这两次改动升到 v18。
 HUB_VAULT_EMBED_SECRET=<现场生成的随机值>
 ```
 
+### 「监控」标签页（可选）
+
+配了 `HUB_MONITOR_URL` 和 `HUB_MONITOR_EMBED_SECRET` 后，解锁时多一个「监控」标签，点进去就是自己的 CF-Server-Monitor，**本站解锁 = 监控已登录**（完整管理员，12 小时），锁定时结束这个会话。框里可以打开它的管理后台；已在监控页时再点一下标签回到监控首页。手机底栏会把签到中心、系统设置收进「更多」。Worker 那边要配同一把密钥和 `HUB_EMBED_ORIGIN`。
+
 WebObsidian 那边：`.env` 写 `WEBOBSIDIAN_HUB_URL=<本站地址>` 和同一个 `WEBOBSIDIAN_HUB_EMBED_SECRET`，
 拉新镜像重建容器；它前面的 nginx 要让「由本站登录的会话」也能过 Basic Auth，并给登录桥单开两个 `location`——
 完整步骤、nginx 配置和验证命令在 WebObsidian 仓库的 `docs/HUB_EMBED.md`。

@@ -161,8 +161,8 @@ class GzipTest(TransportCase):
 
     def test_every_secret_endpoint_is_on_the_skip_list(self):
         endpoints = {rule.endpoint for rule in app.url_map.iter_rules()}
-        # vault_open：页面里有一张登录 WebObsidian 的票据，旁边还回显着请求里的 to=。
-        secret = {name for name in endpoints if name.endswith("_secret")} | {"api_export", "vault_open"}
+        # vault_open：页面里有一张登录 WebObsidian 的票据，旁边还回显着请求里的 to=。monitor_open 同样带票据。
+        secret = {name for name in endpoints if name.endswith("_secret")} | {"api_export", "vault_open", "monitor_open"}
         self.assertTrue(secret <= endpoints)
         self.assertEqual(secret, set(app_module._GZIP_SKIP_ENDPOINTS))
 

@@ -96,7 +96,7 @@
   自动刷新、代理、部署自检、配置恢复这几节也收起（空壳里的数值只是占位，不显示出来误导人）；
 - 仍然开放的只有应用外壳（`/`、`/static/*`、`/sw.js`）、`/api/health`
   （容器 HEALTHCHECK 在调，堵掉会让容器被反复重启）与 `/api/auth`、`/api/logout`；
-  另有 `/vault/open`（「笔记」框的第一页），它自己把关：未解锁只回一张「请先解锁」的说明页，不签票；
+  另有 `/vault/open`（「笔记」框的第一页）、`/monitor/open`（「监控」框的第一页，规则相同），它自己把关：未解锁只回一张「请先解锁」的说明页，不签票；
 - 确实要把首页当公开导航页给路人看的，显式设 `HUB_PUBLIC_LIBRARY=1`。旧开关 `GYQD_PRIVATE=1` 仍然强制私密
   （压过 `HUB_PUBLIC_LIBRARY`）；`GYQD_PRIVATE=0` 不再有任何作用——部署里的 `.env` 多半原样留着这一行，
   继续认它就等于「默认公开」；
@@ -326,6 +326,8 @@
 | `HUB_VAULT_TIMEOUT` | `5` | 调用笔记服务的超时秒数，夹在 1..15 之间 |
 | `HUB_VAULT_TODO_MIRROR` | `0` | 设 `1` 时待办每次变动都在后台重写一遍镜像；默认只在点「同步到笔记」时写 |
 | `HUB_VAULT_EMBED_SECRET` | 空 | 「笔记」标签页：与 WebObsidian（`WEBOBSIDIAN_HUB_EMBED_SECRET`）共享的密钥，≥ 32 字符，替已解锁的管理员登录笔记。部署时现场生成，**绝不入库**。空 = 没有这个标签页 |
+| `HUB_MONITOR_URL` | 空 | 「监控」标签页：CF-Server-Monitor 的完整源。空 = 没有这个标签页，`/monitor/open` 回 404 |
+| `HUB_MONITOR_EMBED_SECRET` | 空 | 「监控」标签页：与 Worker 共享的免登录密钥，少于 32 个字符视为没配。不要与另外两把共用 |
 
 ---
 

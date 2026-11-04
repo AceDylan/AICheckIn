@@ -28,7 +28,7 @@
     Object.assign(pill.style, { width: a.width + 'px', height: a.height + 'px', transform: `translate(${a.left - b.left}px,${a.top - b.top}px)` });
   };
   const nav = (tab, view) => {
-    const order = [...document.querySelectorAll('.tab')].map(el => el.dataset.view);
+    const order = [...document.querySelectorAll('.tab[data-view]')].map(el => el.dataset.view);
     const direction = order.indexOf(tab.dataset.view) < order.indexOf(previous) ? -1 : 1;
     root.style.setProperty('--cine-direction', direction);
     placePill();
@@ -38,7 +38,7 @@
   };
   const change = (update, name) => {
     if (!enabled() || typeof document.startViewTransition !== 'function' || name === previous) { update(); return; }
-    const order = [...document.querySelectorAll('.tab')].map(el => el.dataset.view);
+    const order = [...document.querySelectorAll('.tab[data-view]')].map(el => el.dataset.view);
     root.style.setProperty('--cine-direction', order.indexOf(name) < order.indexOf(previous) ? -1 : 1);
     transition?.skipTransition();
     root.classList.add('cine-nav-running');
@@ -527,7 +527,8 @@
   };
   const IRIS_CAP = 10000;    // 十秒还没就绪：先照亮，框上的加载层自己接着等
   const RING_R = 184;        // 刻度环在 400×400 的光圈元素里的半径
-  const FRAME_VIEWS = ['chat', 'vault'];
+  const FRAME_VIEWS = ['chat', 'vault', 'fleet'];
+  const STAGE_IDS = { chat: 'chatStage', vault: 'vaultStage', fleet: 'fleetStage' };
   let iris = null, irisSkipping = false;
   const irisTier = () => desktop.matches ? 'desk' : innerWidth <= 760 ? 'narrow' : 'touch';
   const ease = t => t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
@@ -543,7 +544,7 @@
     return null;
   };
   const stageAperture = (name) => {
-    const b = rectOf(document.getElementById(name === 'chat' ? 'chatStage' : 'vaultStage')) || { left: 0, top: 0, width: innerWidth, height: innerHeight };
+    const b = rectOf(document.getElementById(STAGE_IDS[name])) || { left: 0, top: 0, width: innerWidth, height: innerHeight };
     return { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(56, Math.min(120, Math.min(b.width, b.height) * .15)), kind: 'star' };
   };
   const iconAperture = (tab) => {
@@ -647,7 +648,7 @@
     el.innerHTML = '<div class="hub-iris__veil"></div><i class="hub-iris__trail"></i>'
       + `<div class="hub-iris__ring">${reactorSvg('hubIrisArc')}<i class="hub-iris__core"></i><i class="hub-iris__star"></i></div>`
       + '<i class="hub-iris__wave"></i><i class="hub-iris__bloom"></i>'
-      + `<div class="hub-iris__hud"><b>${to === 'chat' ? 'HALO · WEBUI' : to === 'vault' ? 'NEURAL · VAULT' : 'BOOKMARK HUB'}</b><div></div></div>`;
+      + `<div class="hub-iris__hud"><b>${to === 'chat' ? 'HALO · WEBUI' : to === 'vault' ? 'NEURAL · VAULT' : to === 'fleet' ? 'SERVER · FLEET' : 'BOOKMARK HUB'}</b><div></div></div>`;
     document.body.append(el);
     const [veil, trail, ring, wave, bloom, hud] = el.children;
     const ir = { to, el, veil, trail, ring, wave, bloom, hud, lines: hud.lastChild, tier, still, t: IRIS_T[tier === 'desk' ? 'desk' : 'touch'],
