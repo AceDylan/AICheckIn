@@ -79,6 +79,10 @@ setTimeout(async () => {
   openChat(true); openVault(true); await tick(); snap('reopened under starcore');
   setTheme('light'); await tick(); snap('light under starcore');
   writePref('bh_wallpaper', 'galaxy'); applyLook(); await tick(); snap('starcore to galaxy');
+  __RESPONSES['/api/chat/ticket'] = { ok: true, sso: true,
+    url: __HALO__ + '/auth?redirect=%2Fc%2Fabc-123#hub_ticket=T' };
+  openChat(true); await tick(); snap('reopened on a chat');
+  openChat(true); await tick(); snap('same entry reopened');
   out.errors = __CALLS.errors;
   console.log(JSON.stringify(out));
 }, 60);
@@ -114,10 +118,18 @@ class FrameThemeScriptTest(unittest.TestCase):
     def test_script_runs_without_errors(self):
         self.assertEqual(self.out["errors"], [])
 
+    def test_fresh_entry_keeps_the_redirect_and_ticket(self):
+        self.assertEqual(self.steps["reopened on a chat"]["chat"],
+                         HALO + "/auth?redirect=%2Fc%2Fabc-123&hub_entry=20261105#hub_ticket=T&hub_theme=light")
+
+    def test_reopening_does_not_create_unlimited_cache_entries(self):
+        self.assertEqual(self.steps["reopened on a chat"]["chat"],
+                         self.steps["same entry reopened"]["chat"])
+
     def test_a_new_chat_frame_carries_the_hubs_theme_after_the_ticket(self):
         step = self.steps["chat opened"]
         self.assertEqual(step["theme"], "dark")   # 没有 Cookie：本站默认深色
-        self.assertEqual(step["chat"], HALO + "/auth#hub_ticket=T&hub_theme=dark")
+        self.assertEqual(step["chat"], HALO + "/auth?hub_entry=20261105#hub_ticket=T&hub_theme=dark")
 
     def test_the_note_frames_sign_in_page_is_told_the_theme(self):
         hop = self.steps["vault opened"]["hop"]
@@ -133,7 +145,7 @@ class FrameThemeScriptTest(unittest.TestCase):
 
     def test_frames_opened_later_start_in_the_current_theme(self):
         step = self.steps["reopened while light"]
-        self.assertEqual(step["chat"], HALO + "/#hub_theme=light")   # 签不了票的普通地址也带上
+        self.assertEqual(step["chat"], HALO + "/?hub_entry=20261105#hub_theme=light")   # 签不了票的普通地址也带上
         self.assertIn("&theme=light&target=hub-vault-", step["hop"])
         self.assertEqual(step["posted"], [])
 
@@ -145,9 +157,9 @@ class FrameThemeScriptTest(unittest.TestCase):
     def test_the_wallpaper_does_not_change_the_frames_theme(self):
         # 开着壁纸时工作区固定是深色玻璃，但框里的页面跟主题 / 设备走：开、关壁纸都不给框发消息，
         # 壁纸下新开的框也还是此刻的主题。
-        self.assertEqual(self.steps["light, frames open"]["chat"], HALO + "/#hub_theme=light")
+        self.assertEqual(self.steps["light, frames open"]["chat"], HALO + "/?hub_entry=20261105#hub_theme=light")
         self.assertEqual(self.steps["wallpaper turned on"]["posted"], [])
-        self.assertEqual(self.steps["reopened under the wallpaper"]["chat"], HALO + "/#hub_theme=light")
+        self.assertEqual(self.steps["reopened under the wallpaper"]["chat"], HALO + "/?hub_entry=20261105#hub_theme=light")
         self.assertEqual(self.steps["wallpaper turned off"]["posted"], [])
 
     def test_under_the_wallpaper_the_theme_still_reaches_the_frames(self):
@@ -159,7 +171,7 @@ class FrameThemeScriptTest(unittest.TestCase):
         step = self.steps["system (light device) under the wallpaper"]
         self.assertEqual(step["theme"], "light")
         self.assertTrue(step["posted"] and all(p["msg"]["theme"] == "light" for p in step["posted"]), step["posted"])
-        self.assertEqual(self.steps["reopened, system under the wallpaper"]["chat"], HALO + "/#hub_theme=light")
+        self.assertEqual(self.steps["reopened, system under the wallpaper"]["chat"], HALO + "/?hub_entry=20261105#hub_theme=light")
 
 
     def test_the_starcore_wallpaper_puts_both_frames_in_its_scene(self):
@@ -171,7 +183,7 @@ class FrameThemeScriptTest(unittest.TestCase):
 
     def test_frames_opened_under_starcore_start_in_its_scene(self):
         step = self.steps["reopened under starcore"]
-        self.assertEqual(step["chat"], HALO + "/#hub_theme=dark")
+        self.assertEqual(step["chat"], HALO + "/?hub_entry=20261105#hub_theme=dark")
         self.assertIn("&theme=neural&target=hub-vault-", step["hop"])
         sent = {p["kind"]: p["msg"]["theme"] for p in self.steps["light under starcore"]["posted"]}
         self.assertEqual(sent, {"chat": "dark", "vault": "neural"})

@@ -2344,6 +2344,13 @@
     // 说过话就耐心等它的 ready，没说过话的按 load 后 CHAT_SILENT_MS（签了票则 CHAT_WAIT_MS）兜底。
     const CHAT = { src: '', busy: false, queued: '', back: '', sso: false, reenteredAt: 0, ready: false, spoke: false, fallback: 0 };
     const CHAT_SILENT_MS = 3000, CHAT_WAIT_MS = 12000;
+    function freshChatEntry(url) {
+      // 绕过曾被浏览器缓存的旧 HTML（其中的哈希脚本在 HaloWebUI 更新后已不存在）。
+      // 固定版本避免每次开框都往对面的离线缓存里多留一份；后续由 HTML 的 no-cache 保证更新。
+      const entry = new URL(url);
+      entry.searchParams.set('hub_entry', '20261105');
+      return entry.href;
+    }
     function chatPlace(path) { return typeof path === 'string' && /^\/c\/[A-Za-z0-9-]{1,64}$/.test(path) ? path : ''; }
     const CHAT_NOTE_SEEN = ['none', 'secret_unset', 'password_public', 'password_short', 'secret_mismatch', 'peer_not_configured', 'issuer', 'no_session_user', 'no_password', 'framed'];
     function chatAvailable() { return !!(STATE.chat && STATE.chat.url) && canEdit(); }
@@ -2401,7 +2408,7 @@
         } catch (_) { /* 拿不到票据不耽误打开：框里自己登录就是了 */ }
         if (sso) gateStep('chat', '签发通行票据'); else gateStep('chat', '免登录未接通', 'WARN');
         if (!chatAvailable()) return;   // 等票据的工夫被锁定了
-        target = withFrameTheme(target);
+        target = withFrameTheme(freshChatEntry(target));
         showChatNote(note[0], note[1]);
         closeChat();   // 换一个新的框，而不是改 src：旧页面的历史记录不会混进本页的「后退」
         const frame = document.createElement('iframe');
