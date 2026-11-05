@@ -51,7 +51,8 @@
 // 手机不再画跟随时钟的画布星核，滚动推镜与分组浮现只在电脑上。
 // v84：折叠屏内屏 / 平板上光圈接力照亮时不再整屏每帧重画暗幕（孔一次开好、暗幕淡出），辉光不用滤色叠加。
 // v87：聊天框的入口带版本参数，绕过引用旧版 HaloWebUI 哈希脚本的缓存 HTML。
-const CACHE_VERSION = 'bh-shell-v87';
+// v88：光圈接力落到监控站的星核上（监控框回答 beacon），回首页也从星核起飞。
+const CACHE_VERSION = 'bh-shell-v88';
 const SHELL = [
   '/',
   '/static/app-v3.css',

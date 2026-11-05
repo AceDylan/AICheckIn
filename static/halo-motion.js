@@ -551,9 +551,9 @@
     const b = rectOf(tab);
     return b ? { x: b.left + b.width / 2, y: b.top + b.height / 2, r: Math.max(b.width, b.height) * .8, kind: 'icon' } : null;
   };
-  // HaloWebUI 报来的是它那颗光圈（直径 ≈ 88px）本身：刻度环套在它外面一圈。
-  const orbAperture = (b) => b && b.r > 4 ? { x: b.x, y: b.y, r: b.r * 1.6, kind: 'orb' } : null;
-  const askBeacon = (ir, name, ms) => (name === 'chat' && ir.beacon ? Promise.resolve(ir.beacon(name, ms)).catch(() => null) : Promise.resolve(null)).then(orbAperture);
+  // 框里报来的光圈：HaloWebUI 报它那颗光圈（直径 ≈ 88px）本身，刻度环套在它外面一圈；监控站报星核的刻度环，正好叠上去。
+  const orbAperture = (name, b) => b && b.r > 4 ? { x: b.x, y: b.y, r: name === 'chat' ? b.r * 1.6 : b.r, kind: 'orb' } : null;
+  const askBeacon = (ir, name, ms) => Promise.resolve(ir.beacon ? ir.beacon(name, ms) : null).catch(() => null).then(b => orbAperture(name, b));
   const apertureOf = async (ir, view) => {
     if (view === 'bookmarks') return homeAperture() || iconAperture(ir.tab);
     if (FRAME_VIEWS.includes(view)) return (await askBeacon(ir, view, 0)) || stageAperture(view);
@@ -695,7 +695,7 @@
     const update = ir.update; ir.update = null;
     if (update) update();
     if (!alive()) return;
-    await settle(ir, ir.to === 'bookmarks' ? document.querySelector('.home-hero') : document.getElementById(ir.to === 'chat' ? 'chatStage' : 'vaultStage'));
+    await settle(ir, ir.to === 'bookmarks' ? document.querySelector('.home-hero') : document.getElementById(STAGE_IDS[ir.to]));
     if (!alive()) return;
     if (ir.still) {   // 减弱动态效果：等就绪（或十秒兜底），暗幕淡出
       if (!ir.ready) { showHud(ir, stageAperture(ir.to)); await new Promise(r => { ir.wake = r; }); }
@@ -719,7 +719,7 @@
       ir.el.classList.remove('is-waiting');
     }
     const dest = ir.to === 'bookmarks' ? (homeAperture() || stageAperture('chat'))
-      : ir.to === 'chat' && !ir.fail ? (await askBeacon(ir, 'chat', 900)) || stageAperture('chat') : stageAperture(ir.to);
+      : !ir.fail ? (await askBeacon(ir, ir.to, 900)) || stageAperture(ir.to) : stageAperture(ir.to);
     if (!alive()) return;
     ir.el.classList.toggle('is-star', dest.kind === 'star');
     if (moved(at, dest) && !await fly(ir, at, dest, waited ? tFly * .7 : tFly)) return;

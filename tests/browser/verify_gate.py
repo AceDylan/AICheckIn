@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""光圈接力（收藏首页 ⇄ AI 聊天 / 笔记的过渡，halo-motion.js 的 iris，外壳 v81）的真实浏览器回归。
+"""光圈接力（收藏首页 ⇄ AI 聊天 / 笔记 / 监控的过渡，halo-motion.js 的 iris，外壳 v81）的真实浏览器回归。
 
     python tests/browser/verify_gate.py
 
@@ -15,7 +15,8 @@
 布置：一个隔离的本站实例（配了 HUB_CHAT_URL + 共享密钥、HUB_VAULT_URL + 嵌入密钥），一个扮演 HaloWebUI 的假站
 （/auth 按 MODE 说话：ready = 先报「验票中」过一会儿说 ready、再画出新对话的光圈并回答 beacon；form = 报「登录表单」；
 silent = 一声不吭，像旧版），一个扮演 WebObsidian 的假站（/auth/hub/sso 303 到首页，首页过一会儿说 ready）。
-两个假站都把收到的 enter 记在页面上。
+一个扮演 CF 监控主题的假站（同样 303 到首页，首页画出星核并回答 beacon；/admin 像内置后台一样不说话）。
+三个假站都把收到的 enter 记在页面上。
 """
 import http.server
 import json
@@ -28,7 +29,7 @@ from common import *   # noqa: F401,F403
 from common import _free_port
 
 RESULTS = []
-MODE = {"halo": "ready", "halo_delay": 1500, "vault_delay": 900}
+MODE = {"halo": "ready", "halo_delay": 1500, "vault_delay": 900, "fleet_delay": 900}
 ORB = {"left": "50%", "top": "34%"}   # 假 HaloWebUI 新对话光圈的位置（框内）
 
 
@@ -55,6 +56,20 @@ addEventListener('message', e => {
   const o = document.querySelector('.fake-orb'), b = o && o.getBoundingClientRect();
   post(b ? { type: 'beacon', id: d.id, x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), r: Math.round(b.width / 2) } : { type: 'beacon', id: d.id, none: true });
 });
+"""
+
+
+# CF 监控主题：首页画星核（真站上由 HubCore 画，这里用类名）、ready，按 hubEmbed.ts 的协议回答。
+_FLEET = """
+const core = document.createElement('div'); core.className = 'fake-core';
+core.style.cssText = 'position:absolute;left:50%%;top:150px;width:228px;height:228px;margin:-114px 0 0 -114px;border-radius:50%%;border:1px solid cyan';
+addEventListener('message', e => {
+  const d = e.data; if (!d || d.source !== 'hub' || d.type !== 'beacon') return;
+  window.__beacons++;
+  const b = core.isConnected && core.getBoundingClientRect();
+  post(b ? { type: 'beacon', id: d.id, x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), r: Math.round(b.width * 184 / 400) } : { type: 'beacon', id: d.id, none: true });
+});
+setTimeout(() => { document.body.append(core); post({ type: 'ready' }); }, %d);
 """
 
 
@@ -108,6 +123,14 @@ class _Vault(_Peer):
         self.end_headers()
 
 
+class _Fleet(_Vault):
+    def do_GET(self):
+        if self.path.startswith("/admin"):   # 内置后台不是主题：不说 ready，也不回答 beacon
+            self._html("fleet-admin", "<script>window.__enters = 0;</script>")
+            return
+        self._html("fleet-home", _FRAME_SCRIPT % {"source": "cfsm", "hub": self.hub_origin, "body": _FLEET % MODE["fleet_delay"]})
+
+
 def start_peer(handler, hub_origin):
     handler.hub_origin = hub_origin
     server = http.server.ThreadingHTTPServer(("127.0.0.1", _free_port()), handler)
@@ -142,8 +165,8 @@ WATCH = """([loadingId]) => {
     if (ir) {
       ir.className.split(' ').forEach(c => w.classes.add(c));
       ir.querySelectorAll('.hub-iris__hud b, .hub-iris__hud p span').forEach(el => w.lines.add(el.textContent));   // 读数只留最近三行：攒下见过的每一行
-      const b = ir.querySelector('.hub-iris__ring').getBoundingClientRect();
-      ring = [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2), Math.round(b.width)];
+      const el = ir.querySelector('.hub-iris__ring'), b = el.getBoundingClientRect(), m = new DOMMatrix(getComputedStyle(el).transform);
+      ring = [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2), Math.round(b.width), Math.hypot(m.a, m.b)];   // 最后一项：缩放（飞行时带旋转，宽度量不准大小）
       const v = ir.querySelector('.hub-iris__veil');
       veil = parseFloat(getComputedStyle(v).opacity); hole = v.style.getPropertyValue('--ir');
     }
@@ -156,7 +179,7 @@ WATCH = """([loadingId]) => {
 
 
 def watch(page, view, click=None, limit=9000):
-    loading = "chatLoading" if view == "chat" else "vaultLoading"
+    loading = {"chat": "chatLoading", "fleet": "fleetLoading"}.get(view, "vaultLoading")
     page.evaluate(WATCH, [loading])
     page.click(click or '.tab[data-view="%s"]' % view)
     t0 = time.time()
@@ -182,7 +205,7 @@ def orb_center(page, halo):
 
 def stage_center(page, view):
     return page.evaluate("""(id) => { const b = document.getElementById(id).getBoundingClientRect();
-        return [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2)]; }""", "chatStage" if view == "chat" else "vaultStage")
+        return [Math.round(b.left + b.width / 2), Math.round(b.top + b.height / 2)]; }""", {"chat": "chatStage", "fleet": "fleetStage"}.get(view, "vaultStage"))
 
 
 def near(a, b, tol=6):
@@ -203,7 +226,7 @@ def landing(w):
 def covered_until_ready(w):
     """就绪（ready / 登录表单）之前的每一帧，舞台要么被暗幕（基本不透明）盖着，要么被加载层盖着。"""
     ready = w["readyAt"]
-    after_switch = [s for s in w["out"] if s["view"] in ("chat", "vault")]
+    after_switch = [s for s in w["out"] if s["view"] in ("chat", "vault", "fleet")]
     bare = [s for s in after_switch if (not ready or s["t"] < ready) and not (s["on"] and s["veil"] > .85) and not s["loading"]]
     return ready > 0 and not bare, {"readyAt": round(ready), "bare": bare[:2]}
 
@@ -437,15 +460,90 @@ def vault_entry(b, halo, vault):
     ctx.close()
 
 
+def fleet_core(page, fleet):
+    frame = peer_frame(page, fleet)
+    fb = page.evaluate("() => { const b = document.querySelector('#fleetStage iframe').getBoundingClientRect(); return [b.left, b.top]; }")
+    cb = frame.evaluate("() => { const b = document.querySelector('.fake-core').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2, b.width * 184 / 400]; }")
+    return [round(fb[0] + cb[0]), round(fb[1] + cb[1]), cb[2] * 2]
+
+
+def ring_matches(ring, core, tol=6):
+    """光圈元素的刻度环半径 184：落定时圆心和刻度环都要和星核叠上。"""
+    return near(ring, core, tol) and ring is not None and abs(ring[3] * 184 * 2 - core[2]) <= tol * 2
+
+
+def settled(page):
+    page.wait_for_function("() => !document.querySelector('.hub-iris')", timeout=9000)
+
+
+def fleet_entry(b, fleet):
+    MODE.update(fleet_delay=2000)   # 比接力飞到舞台中央慢、比 2.5 秒兜底快：看得到「停在中央等」
+    ctx, page, errors = open_hub(b, 1440, 900)
+    home = reactor_center(page)
+    w = watch(page, "fleet")
+    start = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("监控·进入：光圈从首页星核出发", start is not None and near(start["ring"], home), (start and start["ring"], home))
+    dark = first(w, lambda s: s["view"] == "fleet")
+    check("监控·进入：全暗时才换页（孔已合上）", dark is not None and dark["on"] and dark["veil"] > .75 and dark["hole"] == "0px", dark)
+    ok, detail = covered_until_ready(w)
+    check("监控·冷进入：主题说 ready 之前一直盖着", ok, detail)
+    waiting = first(w, lambda s: "is-waiting" in s["cls"])
+    check("监控·冷进入：先停在舞台中央等", waiting is not None and near(waiting["ring"], stage_center(page, "fleet"), 8), (waiting and waiting["ring"], stage_center(page, "fleet")))
+    for text in ("SERVER · FLEET", "建立链路 HUB ⇄ FLEET"):
+        check("监控·冷进入：读数里有「%s」" % text, text in w["lines"], w["lines"])
+    land, flare = landing(w)
+    core = fleet_core(page, fleet)
+    check("监控·进入：光圈落在星核上，大小叠合", ring_matches(land, core), (land, core))
+    check("监控·进入：落点不是十字星光", flare is not None and "is-star" not in flare["cls"], flare and flare["cls"])
+    check("监控·进入：点亮后层删干净、加载层撤掉", gone(page) and page.evaluate("() => document.getElementById('fleetLoading').hidden"))
+    frame = peer_frame(page, fleet)
+    check("监控·进入：点亮时把 enter 发进框（只发一次）", frame is not None and frame.evaluate("() => window.__enters") == 1, frame and frame.evaluate("() => window.__enters"))
+
+    w = watch(page, "bookmarks")
+    early = first(w, lambda s: s["on"] and s["veil"] > .05)
+    check("监控 → 首页：先暗下去，从星核出发", early is not None and early["view"] == "fleet" and near(early["ring"], core), (early, core))
+    land, flare = landing(w)
+    check("监控 → 首页：落回首页星核", near(land, reactor_center(page)), (land, reactor_center(page)))
+
+    w = watch(page, "fleet")
+    check("监控·热进入：不停在中央等", not any("is-waiting" in s["cls"] for s in w["out"]), w["classes"])
+    land, _ = landing(w)
+    check("监控·热进入：直接落在星核上", ring_matches(land, fleet_core(page, fleet)), (land, fleet_core(page, fleet)))
+    check("监控·热进入：框又收到 enter（恢复实时）", frame.evaluate("() => window.__enters") >= 2, frame.evaluate("() => window.__enters"))
+
+    # 框里滚走 / 到了没有星核的页面：落到舞台中央的星光上
+    frame.evaluate("() => document.querySelector('.fake-core').remove()")
+    page.click('.tab[data-view="bookmarks"]')
+    settled(page)
+    w = watch(page, "fleet")
+    land, flare = landing(w)
+    check("监控·没有星核：落到舞台中央的星光", near(land, stage_center(page, "fleet"), 8) and "is-star" in (flare or {}).get("cls", ""), (land, flare and flare["cls"]))
+
+    # 框里跳到内置后台（不回答 beacon）：只干等一次，之后不再等
+    page.evaluate("(u) => { document.querySelector('#fleetStage iframe').src = u; }", fleet + "/admin")
+    page.wait_for_timeout(500)
+    page.click('.tab[data-view="bookmarks"]')
+    settled(page)
+    w = watch(page, "fleet")
+    check("监控·内置后台：不说话也照常收尾", w["end"] > 0 and gone(page), round(w["end"]))
+    frame_admin = peer_frame(page, fleet)
+    check("监控·内置后台：框还在", frame_admin is not None and "/admin" in frame_admin.url, frame_admin and frame_admin.url)
+    check("监控：页面没有脚本错误", not errors, errors[:3])
+    ctx.close()
+
+
 def main():
     t0 = time.time()
     halo = start_peer(_Halo, BASE)
     vault = start_peer(_Vault, BASE)
+    fleet = start_peer(_Fleet, BASE)
     # start_server() 把当前进程的环境变量带给子进程：地址与密钥只活在这里，不落盘。
     os.environ["HUB_CHAT_URL"] = halo
     os.environ["HUB_TRUSTED_EMBED_ADMIN_SECRET"] = secrets.token_hex(32)
     os.environ["HUB_VAULT_URL"] = vault
     os.environ["HUB_VAULT_EMBED_SECRET"] = secrets.token_hex(32)
+    os.environ["HUB_MONITOR_URL"] = fleet
+    os.environ["HUB_MONITOR_EMBED_SECRET"] = secrets.token_hex(32)
     for name in ("HUB_PUBLIC_ORIGIN", "HUB_PUBLIC_LIBRARY", "GYQD_PRIVATE", "HUB_VAULT_API_KEY"):
         os.environ.pop(name, None)
     start_server()
@@ -457,6 +555,11 @@ def main():
                 fn(b, halo, vault)
             except Exception as exc:
                 check(fn.__name__ + " 运行完毕", False, repr(exc))
+        print("== fleet_entry", flush=True)
+        try:
+            fleet_entry(b, fleet)
+        except Exception as exc:
+            check("fleet_entry 运行完毕", False, repr(exc))
         b.close()
     failed = [r for r in RESULTS if not r["ok"]]
     print(f"\n{len(RESULTS)} checks, {len(failed)} failed, {time.time() - t0:.0f}s")

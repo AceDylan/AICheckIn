@@ -1170,13 +1170,16 @@
       return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
     }
     function withFrameTheme(url) { return url + (url.includes('#') ? '&' : '#') + 'hub_theme=' + frameTheme('chat'); }
-    function tellFrame(name, type) {
-      const [frame, origin] = name === 'chat' ? [chatFrame(), chatOrigin()]
+    function frameTarget(name) {
+      return name === 'chat' ? [chatFrame(), chatOrigin()]
         : name === 'vault' ? [vaultFrame(), vaultOrigin()] : [fleetFrame(), fleetOrigin()];
+    }
+    function tellFrame(name, type) {
+      const [frame, origin] = frameTarget(name);
       try { if (frame?.contentWindow && origin) frame.contentWindow.postMessage({ source: 'hub', type }, origin); } catch (_) {}
     }
     function tellFrameEnter(name) { tellFrame(name, 'enter'); }
-    // 光圈接力（halo-motion.js 的 iris，对外仍叫 gate）：进聊天 / 笔记时整屏暗下去、光圈飞到框里的光圈上，
+    // 光圈接力（halo-motion.js 的 iris，对外仍叫 gate）：进聊天 / 笔记 / 监控时整屏暗下去、光圈飞到框里的光圈上，
     // 框里的应用说「好了」才点亮；点亮那一下才告诉框「有人进来了」（框里接着播自己的入场）。
     // 没有接力（科幻特效关、高对比）就照旧直接说。去别处：正在播的收掉（从这两页回首页由接力接手）。
     function frameViewMotion(name, from, tab) {
@@ -1188,18 +1191,18 @@
         : [[name === 'chat' ? '建立链路 HUB ⇄ HALO' : name === 'vault' ? '建立链路 HUB ⇄ VAULT' : '建立链路 HUB ⇄ FLEET', 'SYNC']];
       if (!gate || !gate.enter(name, { ready: frameShown(name), tab, lines, beacon: frameBeacon, onOpen: () => tellFrameEnter(name) })) tellFrameEnter(name);
     }
-    // HaloWebUI 新对话页中间那颗光圈在本页的位置（光圈接力的起落点）。问框里的 HaloWebUI（wait：最多等它多久把光圈画出来），
-    // 它回框内坐标，这里加上框的位置。没有光圈（开着某个对话）、超时：null，接力就用舞台中央。
-    // 旧版 HaloWebUI 不回话：超时一次以后这张框不再问，免得每次切页都干等。笔记框没有光圈，不问。
-    const BEACON = { seq: 0, asks: new Map(), heard: null, mute: null };
+    // 框里的光圈在本页的位置（光圈接力的起落点）：HaloWebUI 新对话页中间那颗、监控首页的星核。问框里的应用（wait：最多等它多久画出来），
+    // 它回框内坐标，这里加上框的位置。没有光圈（开着某个对话 / 详情页）、超时：null，接力就用舞台中央。
+    // 不回话的页面（旧版 HaloWebUI、监控的内置后台）：超时一次以后这一页不再问，免得每次切页都干等。笔记框没有光圈，不问。
+    const BEACON = { seq: 0, asks: new Map(), heard: new WeakSet(), mute: new WeakSet() };
     function frameBeacon(name, wait = 0) {
-      const frame = chatFrame(), origin = chatOrigin();
-      if (name !== 'chat' || !frame || !frame.contentWindow || !origin || BEACON.mute === frame) return Promise.resolve(null);
+      const [frame, origin] = name === 'vault' ? [] : frameTarget(name);
+      if (!frame || !frame.contentWindow || !origin || BEACON.mute.has(frame)) return Promise.resolve(null);
       const id = ++BEACON.seq;
       return new Promise(resolve => {
         const timer = setTimeout(() => {
           BEACON.asks.delete(id);
-          if (BEACON.heard !== frame) BEACON.mute = frame;
+          if (!BEACON.heard.has(frame)) BEACON.mute.add(frame);
           resolve(null);
         }, wait + 250);
         BEACON.asks.set(id, { frame, resolve, timer });
@@ -1208,7 +1211,7 @@
       });
     }
     function onFrameBeacon(frame, data) {
-      BEACON.heard = frame;
+      BEACON.heard.add(frame);
       const ask = BEACON.asks.get(data.id);
       if (!ask || ask.frame !== frame) return;
       BEACON.asks.delete(data.id); clearTimeout(ask.timer);
@@ -2784,6 +2787,8 @@
       frame.addEventListener('load', () => {
         if (frameIsBlank(frame)) return;
         dropFleetHop();
+        // 框里换了一页（主题 ⇄ 内置后台）：回不回话得重新认。
+        BEACON.heard.delete(frame); BEACON.mute.delete(frame);
         if (fleetFrame() !== frame || FLEET.shown) return;
         if (frameSameOrigin(frame)) { showFleetFrame('未能免登录'); return; }   // 框里是本站自己的说明页
         gateStep('fleet', '同步探针');
@@ -2823,6 +2828,7 @@
       if (!frame || e.source !== frame.contentWindow || !e.origin || e.origin !== fleetOrigin()) return;
       const data = e.data;
       if (!data || typeof data !== 'object' || data.source !== 'cfsm') return;
+      if (data.type === 'beacon') { onFrameBeacon(frame, data); return; }
       if (data.type === 'ready') {
         frame.contentWindow.postMessage({ source: 'hub', type: 'theme', theme: frameTheme('fleet') === 'light' ? 'light' : 'dark' }, e.origin);
         if (FLEET.shown) { if (currentViewName() !== 'fleet') tellFrame('fleet', 'leave'); }
