@@ -1725,6 +1725,8 @@
       toggle.setAttribute('aria-label', label);
       const text = toggle.querySelector('.sub-text');
       if (text) text.textContent = label;
+      // 键盘按 Enter / 空格开合时焦点不动、提示也不会重弹：正挂在开关旁的即时提示要跟着换字，否则写的是反话。
+      if (RAIL_TIP.el === toggle && !$('railTip').hidden) $('railTip').textContent = label;
       if (reveal && STATE_LOADED) queueSubnavSync(true);
     }
     $('libSubnavToggle').addEventListener('click', () => {

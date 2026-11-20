@@ -55,6 +55,19 @@ def rail(b):
     check("浅色主题：提示仍是深底浅字", page.evaluate("() => getComputedStyle(document.getElementById('railTip')).backgroundColor") == "rgb(27, 30, 37)" and not page.evaluate(TIP)["hidden"])
     shot(page, "P9-rail-tip-light")
     ctx.close()
+    # 分组托盘开关：键盘 Enter / 空格开合时焦点留在原处，旁边那条提示要跟着换字（T2-01）
+    ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "rail"})
+    toggle = page.locator("#libSubnavToggle")
+    page.locator('.tab[data-view="bookmarks"]').focus(); page.keyboard.press("Tab"); page.wait_for_timeout(120)
+    check("Tab 到分组开关：提示「收起分组」", page.evaluate("() => document.activeElement.id") == "libSubnavToggle" and page.evaluate(TIP)["text"] == "收起分组", page.evaluate(TIP))
+    page.keyboard.press("Enter"); page.wait_for_timeout(120)
+    tip = page.evaluate(TIP)
+    check("Enter 收起：焦点不动，提示换成开关的新名字", page.evaluate("() => document.activeElement.id") == "libSubnavToggle" and toggle.get_attribute("aria-expanded") == "false"
+          and not tip["hidden"] and tip["text"] == toggle.get_attribute("aria-label") and tip["text"].startswith("展开分组"), (tip, toggle.get_attribute("aria-label")))
+    page.keyboard.press("Space"); page.wait_for_timeout(120)
+    tip = page.evaluate(TIP)
+    check("空格展开：提示回到「收起分组」", toggle.get_attribute("aria-expanded") == "true" and not tip["hidden"] and tip["text"] == "收起分组", tip)
+    ctx.close()
     # 完整侧栏：文字看得见 → 不出
     ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "full"})
     it = page.locator("#libSubnav .subnav-item").nth(2); t0 = it.get_attribute("title")
