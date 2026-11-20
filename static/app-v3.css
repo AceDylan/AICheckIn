@@ -3333,3 +3333,47 @@ html.scene-still .hub-film::after { animation: none; }
 /* 减弱动态效果 / 省流量：只有暗幕一淡一出 */
 .hub-iris.is-still :is(.hub-iris__ring, .hub-iris__trail, .hub-iris__bloom, .hub-iris__wave) { display: none; }
 .hub-iris.is-still * { animation: none !important; transition: none !important; }
+
+/* ---------- 侧栏：收藏库分组托盘（只在电脑：宽屏 + 鼠标） ----------
+   原来图标栏一进收藏库就多出一长串彩色方块，和上下的单色线条图标不是一套；换到别的页面又整串消失，侧栏忽长忽短。
+   这里把分组收成「收藏库」名下的一块托盘：图标去掉彩色底块、只留分组色的线条，当前分组 = 分组色浅底 + 细边；
+   托盘可以收起（开关和规则见 syncLibNav）。触屏宽屏（折叠屏内屏、平板横屏）和手机维持原样，由媒体条件排除。
+   放在文件末尾、选择器带 html .sidebar：要压过前面科幻层给 .subnav-item.active 加的外发光。 */
+@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
+  .subnav-toggle {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
+    border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer;
+    transition: background-color .15s var(--ease), color .15s var(--ease);
+  }
+  .subnav-toggle:hover { color: var(--text); background: var(--surface-hover); }
+  .subnav-toggle .sub-text { display: none; }   /* 名字由悬停提示（showRailTip）和 aria-label 给出 */
+  .subnav-toggle svg.ic { width: 14px; height: 14px; transition: transform .2s var(--ease); }
+  .subnav-toggle[aria-expanded="true"] svg.ic { transform: rotate(180deg); }
+  /* 托盘是滚动容器，外扩 2px 的焦点框会被裁掉一半：改成内描边 */
+  .subnav-toggle:focus-visible, html .sidebar .subnav-item:focus-visible { outline-offset: -2px; }
+
+  html .sidebar .subnav-item .sub-ic { background: transparent; box-shadow: none; color: color-mix(in srgb, var(--tone, var(--accent)) 72%, var(--text-2)); transition: color .15s var(--ease); }
+  html .sidebar .subnav-item .sub-ic svg { width: 15px; height: 15px; }
+  html .sidebar .subnav-item:hover .sub-ic { color: var(--tone, var(--accent)); }
+  html .sidebar .subnav-item.active .sub-ic { color: var(--tone, var(--accent)); box-shadow: none; }
+  html .sidebar .subnav-item.active {
+    color: var(--text); background: var(--tone-soft, var(--accent-soft));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 40%, transparent);
+  }
+  html .sidebar .subnav-item.is-add .sub-ic { color: var(--text-3); border: 1px dashed var(--border-strong); }
+  html .sidebar .subnav-item.is-add:hover .sub-ic { color: var(--accent); }
+
+  /* 完整侧栏：开关叠在「收藏库」那一行的右端，数量往左让出位置 */
+  html:not(.nav-rail) .subnav-toggle { position: absolute; top: 5px; right: 5px; z-index: 2; width: 28px; height: 28px; }
+  html:not(.nav-rail) .tab[data-view="bookmarks"] { padding-right: 38px; }
+
+  /* 图标栏：开关是「收藏库」下面一道细条，托盘铺满栏宽（开壁纸时栏更窄，不写死宽度） */
+  html.nav-rail .subnav-toggle { width: 42px; height: 18px; }
+  html.nav-rail .sidebar .subnav {
+    align-self: stretch; gap: 2px; margin: 2px 0 8px; padding: 4px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
+  }
+  html.hub-scifi.nav-rail .sidebar .subnav { border-color: var(--sf-line); }
+  html.nav-rail .sidebar .subnav-item { width: 100%; min-height: 32px; border-radius: 10px; }
+}

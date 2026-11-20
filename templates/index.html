@@ -60,6 +60,11 @@
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.5L6 21z"/></svg>
           <span class="tab-text">收藏库</span><span class="nav-count" id="bmNavCount">0</span>
         </button>
+        <!-- 分组导航的收起 / 展开：只在电脑（宽屏 + 鼠标）上出现，见 syncLibNav；触屏宽屏（折叠屏内屏、平板）和手机维持原样。 -->
+        <button class="subnav-toggle" id="libSubnavToggle" type="button" aria-controls="libSubnav" aria-expanded="true" aria-label="收起分组" hidden>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+          <span class="sub-text">收起分组</span>
+        </button>
         <div class="subnav" id="libSubnav" aria-label="收藏库页面"></div>
         <!-- AI 聊天：框里是自己的 HaloWebUI。解锁后、且部署配置了 HUB_CHAT_URL 才出现（见 syncAdminViews）。 -->
         <button class="tab" data-view="chat" title="AI 聊天" aria-label="AI 聊天" hidden>
@@ -1471,7 +1476,7 @@
     // 提示挂在 <body> 下用 fixed 定位——侧栏的导航是滚动区，伸出去的伪元素会被裁掉。
     // 显示期间把原生 title 暂存起来（否则一秒后两个提示叠在一起），同时补上 aria-label 保住可访问名称，离开时原样还原。
     const RAIL_TIP = { el: null, timer: 0, mute: '' };
-    const RAIL_TIP_TARGETS = '.tab, .subnav-item, .omni-trigger, .install-btn, .lock-pill';
+    const RAIL_TIP_TARGETS = '.tab, .subnav-item, .subnav-toggle, .omni-trigger, .install-btn, .lock-pill';
     const RAIL_TIP_TEXT = '.tab-text, .sub-text, span:not([class])';
     function railTipLabel(el) {
       const text = el.querySelector(RAIL_TIP_TEXT);
@@ -1696,6 +1701,43 @@
       } else if (!toHome && (fromHome || drill) && HISTORY_NAV && hash !== location.hash) history.pushState(null, '', hash);
       else history.replaceState(null, '', hash);
     }
+    // ===== 侧栏里的收藏库分组 =====
+    // 电脑（宽屏 + 鼠标）上，「收藏库」下面那串分组是一段可收起的托盘：在收藏库里默认展开，收起后记在本机 Cookie
+    // （bh_nav_groups，不跨浏览器同步）；在别的页面默认收着，点「展开分组」临时打开，换页就收回去。
+    // 触屏宽屏（折叠屏内屏、平板横屏）和手机不变：只在收藏库里出现，没有开关（手机上本来就收在底栏后面）。
+    const LIB_NAV = { peek: false };
+    const LIB_NAV_DESK = '(min-width: 761px) and (hover: hover) and (pointer: fine)';
+    function libNavDesk() { return !!(window.matchMedia && window.matchMedia(LIB_NAV_DESK).matches); }
+    function libNavOpen() {
+      if (STATE_LOADED && libraryLocked()) return false;
+      const onLib = currentViewName() === 'bookmarks';
+      if (!libNavDesk()) return onLib;
+      return onLib ? readPref('bh_nav_groups', ['open', 'fold'], 'open') === 'open' : LIB_NAV.peek;
+    }
+    function syncLibNav() {
+      const nav = $('libSubnav'), toggle = $('libSubnavToggle'), open = libNavOpen(), reveal = open && nav.hidden;
+      nav.hidden = !open;
+      toggle.hidden = (STATE_LOADED && libraryLocked()) || !libNavDesk();
+      toggle.setAttribute('aria-expanded', String(open));
+      // 收起时把当前在哪个分组写进名字（悬停提示 / 读屏都念得到），托盘收着也知道自己在哪。
+      const page = !open && STATE_LOADED && currentViewName() === 'bookmarks' && libPages().find(p => p.id === LIB.page);
+      const label = open ? '收起分组' : page ? `展开分组（当前：${page.name}）` : '展开分组';
+      toggle.setAttribute('aria-label', label);
+      const text = toggle.querySelector('.sub-text');
+      if (text) text.textContent = label;
+      if (reveal && STATE_LOADED) queueSubnavSync(true);
+    }
+    $('libSubnavToggle').addEventListener('click', () => {
+      const open = $('libSubnav').hidden;
+      if (currentViewName() === 'bookmarks') writePref('bh_nav_groups', open ? 'open' : 'fold');
+      else LIB_NAV.peek = open;
+      syncLibNav();
+    });
+    if (window.matchMedia) {
+      const mq = window.matchMedia(LIB_NAV_DESK);
+      if (mq.addEventListener) mq.addEventListener('change', syncLibNav);
+    }
+
     // updateHash：false = 不动地址（按地址路由时）；'drill' 见 setViewHash；其余照上面的规则记历史。
     function switchView(name, updateHash = true) {
       // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
@@ -1727,7 +1769,8 @@
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
       // 聊天页、笔记页要整块铺满（去掉内容区的留白与最大宽度），由 <html> 上的类统一切换。
       document.documentElement.classList.toggle('chat-on', FRAME_VIEWS.includes(mainName));
-      $('libSubnav').hidden = mainName !== 'bookmarks';
+      LIB_NAV.peek = false;   // 别的页面上临时打开的分组托盘，换页就收回去
+      syncLibNav();
       if (section) {
         CHECKIN.page = section;
         $('checkinOverview').hidden = section !== 'overview';
@@ -2306,7 +2349,8 @@
       const libTab = document.querySelector('.tab[data-view="bookmarks"]');
       if (libTab) libTab.hidden = false;
       document.querySelectorAll('#settingsGrid > .panel.needs-unlock').forEach(p => { p.hidden = locked; });
-      LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && currentViewName() !== 'bookmarks'); });
+      LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && !libNavOpen()); });
+      syncLibNav();
       const chatTab = document.querySelector('.tab[data-view="chat"]');
       if (chatTab) chatTab.hidden = !chatAvailable();
       // 只在真有地方可送时才留入口：没接 AI 聊天 / 笔记服务（或已锁定）就整个收起来。
@@ -3212,6 +3256,7 @@
       ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
       // 锁定时手机顶上这排分组标签也收起（电脑侧栏的分组导航由 syncAdminViews 收）。
       $('libChips').hidden = STATE_LOADED && libraryLocked();
+      syncLibNav();   // 托盘收着时开关上的「当前：…」跟着换
       queueSubnavSync(true);
     }
     // 量侧栏要读 clientHeight / scrollHeight，会逼浏览器当场排版；重画侧栏时首页、看板、签到卡片紧跟着还要重画，
