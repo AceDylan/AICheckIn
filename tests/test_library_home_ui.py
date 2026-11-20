@@ -368,6 +368,19 @@ class LibraryHomeUiTest(unittest.TestCase):
             assert.ok(past.includes('is-error'));
         """)
 
+    def test_enter_while_an_ime_is_composing_belongs_to_the_ime(self):
+        # 中文输入法下打 te 再回车 = 把字母原样上屏。页面若把这一下当「执行搜索」并清空输入框，
+        # 组字随后又上屏一次，框里就成了 tete（偶发：只在输入法处于中文模式时）。
+        self.run_js("""
+            assert.equal(imeComposing({ key: 'Enter', isComposing: true, keyCode: 13 }), true);
+            assert.equal(imeComposing({ key: 'Enter', isComposing: false, keyCode: 229 }), true);   // Safari：先结束组字再发 keydown
+            assert.equal(imeComposing({ key: 'Enter', isComposing: false, keyCode: 13 }), false);
+        """)
+        for handler in ("$('homeSearch').addEventListener('keydown', (e) => {\n      if (imeComposing(e)) return;",
+                        "$('omniInput').addEventListener('keydown', (e) => {\n      if (imeComposing(e)) return;",
+                        "if (e.key === 'Enter' && !imeComposing(e)) { e.preventDefault(); saveTodoEdit(e.target); }"):
+            self.assertIn(handler, _inline_script())
+
     def test_home_search_prefers_bookmarks_then_falls_back_to_the_web(self):
         self.run_js("""
             assert.deepEqual(homeSearchRows('   '), []);

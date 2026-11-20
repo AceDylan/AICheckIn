@@ -98,8 +98,8 @@ class NavBadgeUiTest(unittest.TestCase):
         cls.css = client.get("/static/app-v3.css").get_data(as_text=True)
 
     def test_badge_is_rendered_in_both_navs(self):
-        # 侧栏（桌面）和 chips（移动端）都要有。
-        self.assertEqual(self.html.count("${issueBadge(p)}"), 2)
+        # 分组只剩页面顶上的分段条一处入口（电脑 / 手机共用）。
+        self.assertEqual(self.html.count("${issueBadge(p)}"), 1)
 
     def test_monitor_page_has_no_badge(self):
         start = self.html.index("function issueBadge")

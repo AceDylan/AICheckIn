@@ -226,7 +226,7 @@ def locked(b):
         label = "手机" if mobile else "电脑"
         st = page.evaluate("() => [document.querySelector('.view.active').id, LIB.page, document.getElementById('homeEmpty').innerText, document.querySelectorAll('#homeList .home-tile').length]")
         check("锁定（%s）：起始页还是首页，中间一张「收藏已锁定」卡片、没有任何收藏" % label, st[0] == "view-bookmarks" and st[1] == "@home" and "收藏已锁定" in st[2] and st[3] == 0, st)
-        check("锁定（%s）：分组导航 / 手机顶上的分组标签都收起" % label, page.locator("#libChips").is_hidden() and page.locator("#libSubnav").is_hidden())
+        check("锁定（%s）：顶上的分组分段条收起" % label, page.locator("#libChips").is_hidden())
         page.fill("#homeSearch", "天气"); page.wait_for_timeout(300)
         rows = page.locator("#homeSearchList").inner_text()
         check("锁定（%s）：搜索框照常能网页搜索" % label, "搜索" in rows and "天气" in rows, rows[:80])

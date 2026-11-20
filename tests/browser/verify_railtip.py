@@ -9,20 +9,20 @@ TIP = "() => { const t = document.getElementById('railTip'); const r = t.getBoun
 def rail(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "rail"})
-    item = page.locator("#libSubnav .subnav-item[data-sortable]").nth(1)
-    name = item.locator(".sub-text").text_content()
+    item = page.locator('.tab[data-view="checkin"]')   # 侧栏只剩一级入口（分组在收藏页顶上的分段条里）
+    name = item.locator(".tab-text").text_content()
     title0 = item.get_attribute("title")
     box = item.bounding_box()
     item.hover(); page.wait_for_timeout(60)
     check("悬停 60ms：还没出（有 120ms 防抖，划过不闪）", page.evaluate(TIP)["hidden"])
     page.wait_for_timeout(260)
     tip = page.evaluate(TIP)
-    check("悬停 ~300ms 内出提示，文字 = 分组名", not tip["hidden"] and tip["text"] == name, (tip, name))
+    check("悬停 ~300ms 内出提示，文字 = 入口名", not tip["hidden"] and tip["text"] == name, (tip, name))
     check("提示在图标右侧、垂直居中、没被侧栏裁掉", tip["left"] >= box["x"] + box["width"] + 6 and abs((tip["top"] + tip["h"] / 2) - (box["y"] + box["height"] / 2)) <= 2 and tip["left"] > 72, (tip, box))
     check("显示期间原生 title 暂存、aria-label 顶上", item.get_attribute("title") is None and item.get_attribute("aria-label") == title0)
     shot(page, "P8-rail-tip")
     page.mouse.move(700, 450); page.wait_for_timeout(120)
-    check("移开：提示收起，title 还原、临时 aria-label 撤掉", page.evaluate(TIP)["hidden"] and item.get_attribute("title") == title0 and item.get_attribute("aria-label") is None)
+    check("移开：提示收起，title 还原、自带的 aria-label 原样", page.evaluate(TIP)["hidden"] and item.get_attribute("title") == title0 and item.get_attribute("aria-label") == name)
     # 顶层入口
     page.locator('.tab[data-view="settings"]').hover(); page.wait_for_timeout(300)
     check("顶层入口也有提示", page.evaluate(TIP)["text"] == "系统设置" and not page.evaluate(TIP)["hidden"], page.evaluate(TIP))
@@ -31,8 +31,8 @@ def rail(b):
     # 键盘
     page.locator("#homeSearch").focus()
     page.keyboard.press("Shift+Tab"); page.keyboard.press("Shift+Tab"); page.keyboard.press("Shift+Tab")
-    for _ in range(12):
-        if page.evaluate("() => !!document.activeElement.closest('.sidebar .tab, .sidebar .subnav-item, .sidebar .omni-trigger')"): break
+    for _ in range(40):   # 往回先经过收藏页顶上那排分组标签，再到侧栏
+        if page.evaluate("() => !!document.activeElement.closest('.sidebar .tab, .sidebar .omni-trigger')"): break
         page.keyboard.press("Shift+Tab")
     page.wait_for_timeout(120)
     tip = page.evaluate(TIP)
@@ -42,35 +42,22 @@ def rail(b):
     check("Esc 收起提示", page.evaluate(TIP)["hidden"])
     # 点击：提示让路，导航照常
     item.hover(); page.wait_for_timeout(300); item.click(); page.wait_for_timeout(300)
-    check("点击后提示收起，页面切到该分组", page.evaluate(TIP)["hidden"] and page.evaluate("() => LIB.page") == item.get_attribute("data-lib"))
+    check("点击后提示收起，页面切到该入口", page.evaluate(TIP)["hidden"] and page.evaluate("() => currentViewName()") == "checkin")
     page.wait_for_timeout(300)
-    check("点击后指针没动：重绘出来的同一项不再弹提示", page.evaluate(TIP)["hidden"])
+    check("点击后指针没动：同一项不再弹提示", page.evaluate(TIP)["hidden"])
     page.mouse.move(700, 450); page.wait_for_timeout(80); item.hover(); page.wait_for_timeout(300)
     check("移开再回来：提示恢复", not page.evaluate(TIP)["hidden"])
     page.mouse.move(700, 450); page.wait_for_timeout(80)
     ctx.close()
     # 浅色、无壁纸
     ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "rail", "bh_theme": "light", "bh_wallpaper": "off"})
-    page.locator("#libSubnav .subnav-item").nth(2).hover(); page.wait_for_timeout(300)
+    page.locator('.tab[data-view="checkin"]').hover(); page.wait_for_timeout(300)
     check("浅色主题：提示仍是深底浅字", page.evaluate("() => getComputedStyle(document.getElementById('railTip')).backgroundColor") == "rgb(27, 30, 37)" and not page.evaluate(TIP)["hidden"])
     shot(page, "P9-rail-tip-light")
     ctx.close()
-    # 分组托盘开关：键盘 Enter / 空格开合时焦点留在原处，旁边那条提示要跟着换字（T2-01）
-    ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "rail"})
-    toggle = page.locator("#libSubnavToggle")
-    page.locator('.tab[data-view="bookmarks"]').focus(); page.keyboard.press("Tab"); page.wait_for_timeout(120)
-    check("Tab 到分组开关：提示「收起分组」", page.evaluate("() => document.activeElement.id") == "libSubnavToggle" and page.evaluate(TIP)["text"] == "收起分组", page.evaluate(TIP))
-    page.keyboard.press("Enter"); page.wait_for_timeout(120)
-    tip = page.evaluate(TIP)
-    check("Enter 收起：焦点不动，提示换成开关的新名字", page.evaluate("() => document.activeElement.id") == "libSubnavToggle" and toggle.get_attribute("aria-expanded") == "false"
-          and not tip["hidden"] and tip["text"] == toggle.get_attribute("aria-label") and tip["text"].startswith("展开分组"), (tip, toggle.get_attribute("aria-label")))
-    page.keyboard.press("Space"); page.wait_for_timeout(120)
-    tip = page.evaluate(TIP)
-    check("空格展开：提示回到「收起分组」", toggle.get_attribute("aria-expanded") == "true" and not tip["hidden"] and tip["text"] == "收起分组", tip)
-    ctx.close()
     # 完整侧栏：文字看得见 → 不出
     ctx, page = open_page(b, 1440, 900, cookies={"bh_home_nav": "full"})
-    it = page.locator("#libSubnav .subnav-item").nth(2); t0 = it.get_attribute("title")
+    it = page.locator('.tab[data-view="checkin"]'); t0 = it.get_attribute("title")
     it.hover(); page.wait_for_timeout(320)
     check("完整侧栏：不出提示，title 不动", page.evaluate(TIP)["hidden"] and it.get_attribute("title") == t0)
     ctx.close()

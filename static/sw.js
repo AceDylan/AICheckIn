@@ -52,7 +52,8 @@
 // v84：折叠屏内屏 / 平板上光圈接力照亮时不再整屏每帧重画暗幕（孔一次开好、暗幕淡出），辉光不用滤色叠加。
 // v87：聊天框的入口带版本参数，绕过引用旧版 HaloWebUI 哈希脚本的缓存 HTML。
 // v88：光圈接力落到监控站的星核上（监控框回答 beacon），回首页也从星核起飞。
-const CACHE_VERSION = 'bh-shell-v88';
+// v89：侧栏只留一级入口，收藏库分组挪进页面顶上的分段条；搜索框输入法组字时的回车交给输入法（不再偶发 te → tete）。
+const CACHE_VERSION = 'bh-shell-v89';
 const SHELL = [
   '/',
   '/static/app-v3.css',

@@ -54,7 +54,6 @@ class CheckinRoutingTest(unittest.TestCase):
             assert.equal($('view-configs').hidden, false);
             assert.equal($('view-history').hidden, true);
             assert.equal($('checkinOverview').hidden, true);
-            assert.equal($('libSubnav').hidden, true);
             switchView('history');
             assert.equal(currentViewName(), 'history');
             assert.equal($('view-configs').hidden, true);
@@ -66,7 +65,7 @@ class CheckinRoutingTest(unittest.TestCase):
             assert.equal($('runAllCheckin').hidden, false);
             assert.equal($('view-history').hidden, true);
             switchView('bookmarks');
-            assert.equal($('libSubnav').hidden, false);
+            assert.equal(currentViewName(), 'bookmarks');
         """)
 
     def test_old_and_new_routes_open_the_same_panels(self):

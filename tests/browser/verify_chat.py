@@ -143,7 +143,7 @@ def locked_visitor(b, halo):
     page = ready(ctx.new_page())
     # 锁定时起始页仍是起始页：时钟 + 搜索框 + 「收藏已锁定」卡片（不含任何收藏数据），见 verify_0926。
     check("未解锁：落在首页的解锁卡片", active_view(page) == "view-bookmarks" and "收藏已锁定" in page.locator("#homeEmpty").inner_text(), active_view(page))
-    check("未解锁：侧栏没有分组导航（「收藏库」入口只通到解锁卡片）", page.locator("#libSubnav").is_hidden())
+    check("未解锁：没有分组导航（「收藏库」入口只通到解锁卡片）", page.locator("#libChips").is_hidden() and page.locator(".sidebar [data-lib]").count() == 0)
     check("未解锁：侧栏没有「AI 聊天」", tab_hidden(page, "chat"))
     check("未解锁：侧栏没有「签到中心」", tab_hidden(page, "checkin"))
     state = page.evaluate("() => ({ locked: STATE.locked, private: STATE.private, n: STATE.bookmarks.length, g: STATE.link_groups.length, chat: STATE.chat })")

@@ -60,12 +60,6 @@
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4.8A1.8 1.8 0 0 1 7.8 3h8.4A1.8 1.8 0 0 1 18 4.8V21l-6-3.5L6 21z"/></svg>
           <span class="tab-text">收藏库</span><span class="nav-count" id="bmNavCount">0</span>
         </button>
-        <!-- 分组导航的收起 / 展开：只在电脑（宽屏 + 鼠标）上出现，见 syncLibNav；触屏宽屏（折叠屏内屏、平板）和手机维持原样。 -->
-        <button class="subnav-toggle" id="libSubnavToggle" type="button" aria-controls="libSubnav" aria-expanded="true" aria-label="收起分组" hidden>
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
-          <span class="sub-text">收起分组</span>
-        </button>
-        <div class="subnav" id="libSubnav" aria-label="收藏库页面"></div>
         <!-- AI 聊天：框里是自己的 HaloWebUI。解锁后、且部署配置了 HUB_CHAT_URL 才出现（见 syncAdminViews）。 -->
         <button class="tab" data-view="chat" title="AI 聊天" aria-label="AI 聊天" hidden>
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.2a7.6 7.6 0 0 1-11.2 6.7L4 20.4l1.5-4.6A7.6 7.6 0 1 1 20 12.2z"/><path d="M9 10.8h6M9 13.9h3.6"/></svg>
@@ -1476,8 +1470,8 @@
     // 提示挂在 <body> 下用 fixed 定位——侧栏的导航是滚动区，伸出去的伪元素会被裁掉。
     // 显示期间把原生 title 暂存起来（否则一秒后两个提示叠在一起），同时补上 aria-label 保住可访问名称，离开时原样还原。
     const RAIL_TIP = { el: null, timer: 0, mute: '' };
-    const RAIL_TIP_TARGETS = '.tab, .subnav-item, .subnav-toggle, .omni-trigger, .install-btn, .lock-pill';
-    const RAIL_TIP_TEXT = '.tab-text, .sub-text, span:not([class])';
+    const RAIL_TIP_TARGETS = '.tab, .omni-trigger, .install-btn, .lock-pill';
+    const RAIL_TIP_TEXT = '.tab-text, span:not([class])';
     function railTipLabel(el) {
       const text = el.querySelector(RAIL_TIP_TEXT);
       return ((text && text.textContent) || el.getAttribute('aria-label') || (el.getAttribute('title') || '').split('｜')[0] || '').trim();
@@ -1701,45 +1695,6 @@
       } else if (!toHome && (fromHome || drill) && HISTORY_NAV && hash !== location.hash) history.pushState(null, '', hash);
       else history.replaceState(null, '', hash);
     }
-    // ===== 侧栏里的收藏库分组 =====
-    // 电脑（宽屏 + 鼠标）上，「收藏库」下面那串分组是一段可收起的托盘：在收藏库里默认展开，收起后记在本机 Cookie
-    // （bh_nav_groups，不跨浏览器同步）；在别的页面默认收着，点「展开分组」临时打开，换页就收回去。
-    // 触屏宽屏（折叠屏内屏、平板横屏）和手机不变：只在收藏库里出现，没有开关（手机上本来就收在底栏后面）。
-    const LIB_NAV = { peek: false };
-    const LIB_NAV_DESK = '(min-width: 761px) and (hover: hover) and (pointer: fine)';
-    function libNavDesk() { return !!(window.matchMedia && window.matchMedia(LIB_NAV_DESK).matches); }
-    function libNavOpen() {
-      if (STATE_LOADED && libraryLocked()) return false;
-      const onLib = currentViewName() === 'bookmarks';
-      if (!libNavDesk()) return onLib;
-      return onLib ? readPref('bh_nav_groups', ['open', 'fold'], 'open') === 'open' : LIB_NAV.peek;
-    }
-    function syncLibNav() {
-      const nav = $('libSubnav'), toggle = $('libSubnavToggle'), open = libNavOpen(), reveal = open && nav.hidden;
-      nav.hidden = !open;
-      toggle.hidden = (STATE_LOADED && libraryLocked()) || !libNavDesk();
-      toggle.setAttribute('aria-expanded', String(open));
-      // 收起时把当前在哪个分组写进名字（悬停提示 / 读屏都念得到），托盘收着也知道自己在哪。
-      const page = !open && STATE_LOADED && currentViewName() === 'bookmarks' && libPages().find(p => p.id === LIB.page);
-      const label = open ? '收起分组' : page ? `展开分组（当前：${page.name}）` : '展开分组';
-      toggle.setAttribute('aria-label', label);
-      const text = toggle.querySelector('.sub-text');
-      if (text) text.textContent = label;
-      // 键盘按 Enter / 空格开合时焦点不动、提示也不会重弹：正挂在开关旁的即时提示要跟着换字，否则写的是反话。
-      if (RAIL_TIP.el === toggle && !$('railTip').hidden) $('railTip').textContent = label;
-      if (reveal && STATE_LOADED) queueSubnavSync(true);
-    }
-    $('libSubnavToggle').addEventListener('click', () => {
-      const open = $('libSubnav').hidden;
-      if (currentViewName() === 'bookmarks') writePref('bh_nav_groups', open ? 'open' : 'fold');
-      else LIB_NAV.peek = open;
-      syncLibNav();
-    });
-    if (window.matchMedia) {
-      const mq = window.matchMedia(LIB_NAV_DESK);
-      if (mq.addEventListener) mq.addEventListener('change', syncLibNav);
-    }
-
     // updateHash：false = 不动地址（按地址路由时）；'drill' 见 setViewHash；其余照上面的规则记历史。
     function switchView(name, updateHash = true) {
       // 保留 switchView('configs'/'history') 的既有调用，将它们映射到签到中心内页。
@@ -1771,8 +1726,6 @@
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === view));
       // 聊天页、笔记页要整块铺满（去掉内容区的留白与最大宽度），由 <html> 上的类统一切换。
       document.documentElement.classList.toggle('chat-on', FRAME_VIEWS.includes(mainName));
-      LIB_NAV.peek = false;   // 别的页面上临时打开的分组托盘，换页就收回去
-      syncLibNav();
       if (section) {
         CHECKIN.page = section;
         $('checkinOverview').hidden = section !== 'overview';
@@ -2336,7 +2289,7 @@
     // 收藏库只在登录后出现：私密模式（设了管理密码就是默认）下未解锁，后端一条收藏都不给，
     // 页面也不留任何入口——侧栏只剩「系统设置」里的解锁面板。
     function libraryLocked() { return !!(STATE.private && STATE.locked); }
-    const LIBRARY_ENTRIES = ['omniOpen', 'keysOpen', 'libSubnav'];
+    const LIBRARY_ENTRIES = ['omniOpen', 'keysOpen'];
     function syncAdminViews() {
       const show = canEdit();
       ADMIN_VIEWS.forEach(name => {
@@ -2351,8 +2304,7 @@
       const libTab = document.querySelector('.tab[data-view="bookmarks"]');
       if (libTab) libTab.hidden = false;
       document.querySelectorAll('#settingsGrid > .panel.needs-unlock').forEach(p => { p.hidden = locked; });
-      LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked || (id === 'libSubnav' && !libNavOpen()); });
-      syncLibNav();
+      LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked; });
       const chatTab = document.querySelector('.tab[data-view="chat"]');
       if (chatTab) chatTab.hidden = !chatAvailable();
       // 只在真有地方可送时才留入口：没接 AI 聊天 / 笔记服务（或已锁定）就整个收起来。
@@ -3243,55 +3195,45 @@
       return n ? `<span class="issue-dot" title="${n} 条链接需要处理">${n}</span>` : '';
     }
 
+    // 收藏库的分组只有一处入口：页面顶上这条分段条（电脑、折叠屏内屏、手机同一套）。侧栏只放一级入口，
+    // 不再在「收藏库」下面挂一串分组——那样侧栏一边长一边短，换页还忽隐忽现。
     function renderLibNav() {
       const pages = libPages();
       hideRailTip();
       $('bmNavCount').textContent = (STATE.bookmarks || []).length + totalLinks();
       // 首页和站点看板固定，只有分组参与排序。
-      // 每一项都带 title：侧栏收成图标栏后文字看不见，靠它当提示。
-      const sortHint = (p) => ['@home', 'monitor'].includes(p.id) ? ` title="${escapeHtml(p.name)}"` : ` data-sortable="1" title="${escapeHtml(p.name)}｜按住拖动可调整顺序（Alt+↑/↓）"`;
-      $('libSubnav').innerHTML = pages.map(p =>
-        `<button type="button" class="subnav-item tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)} aria-current="${LIB.page === p.id ? 'page' : 'false'}"><span class="sub-ic">${icon(p.icon)}</span><span class="sub-text">${escapeHtml(p.name)}</span>${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
-      ).join('') + `<button type="button" class="subnav-item is-add" data-act="add-group" title="新建分组"><span class="sub-ic">${icon('plus')}</span><span class="sub-text">新建分组</span></button>`;
-      $('libChips').innerHTML = pages.map(p =>
-        `<button type="button" class="chip tone-${escapeHtml(p.color)}${LIB.page === p.id ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)}>${escapeHtml(p.name)}${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`
-      ).join('') + `<button type="button" class="chip is-add" data-act="add-group">＋ 分组</button>`;
-      // 锁定时手机顶上这排分组标签也收起（电脑侧栏的分组导航由 syncAdminViews 收）。
+      const sortHint = (p) => ['@home', 'monitor'].includes(p.id) ? '' : ` data-sortable="1" title="按住拖动可调整顺序（Alt+←/→）"`;
+      $('libChips').innerHTML = pages.map(p => {
+        const on = LIB.page === p.id;
+        return `<button type="button" class="chip tone-${escapeHtml(p.color)}${on ? ' active' : ''}" data-lib="${escapeHtml(p.id)}"${sortHint(p)} aria-current="${on ? 'page' : 'false'}"><span class="chip-ic">${icon(p.icon)}</span><span class="chip-text">${escapeHtml(p.name)}</span>${issueBadge(p)}<span class="nav-count">${p.count}</span></button>`;
+      }).join('') + `<button type="button" class="chip is-add" data-act="add-group" title="新建分组" aria-label="新建分组"><span class="chip-ic">${icon('plus')}</span></button>`;
+      // 锁定时这排分组也收起（锁定的收藏库只有时钟、搜索框和解锁卡片）。
       $('libChips').hidden = STATE_LOADED && libraryLocked();
-      syncLibNav();   // 托盘收着时开关上的「当前：…」跟着换
-      queueSubnavSync(true);
+      queueLibChipsSync(true);
     }
-    // 量侧栏要读 clientHeight / scrollHeight，会逼浏览器当场排版；重画侧栏时首页、看板、签到卡片紧跟着还要重画，
-    // 当场量完下一帧还得再排一次。挪到下一帧开头统一量：那时 DOM 已经写完，量的就是这一帧本来就要做的那次排版。
-    let SUBNAV_SYNC = null;
-    function queueSubnavSync(reveal) {
-      if (SUBNAV_SYNC) { SUBNAV_SYNC.reveal = SUBNAV_SYNC.reveal || reveal; return; }
-      SUBNAV_SYNC = { reveal };
-      requestAnimationFrame(() => { const r = SUBNAV_SYNC.reveal; SUBNAV_SYNC = null; syncSubnavScroll(r); });
+    // 量分段条要读 scrollWidth / 位置，会逼浏览器当场排版；重画后首页、看板紧跟着还要重画，挪到下一帧开头统一量。
+    let LIB_CHIPS_SYNC = null;
+    function queueLibChipsSync(reveal) {
+      if (LIB_CHIPS_SYNC) { LIB_CHIPS_SYNC.reveal = LIB_CHIPS_SYNC.reveal || reveal; return; }
+      LIB_CHIPS_SYNC = { reveal };
+      requestAnimationFrame(() => { const r = LIB_CHIPS_SYNC.reveal; LIB_CHIPS_SYNC = null; syncLibChips(r); });
     }
-    // 分组多到侧栏放不下时，只有分组这一段滚动（「签到中心 / 系统设置」始终留在原位）。滚动条藏起来了，
-    // 上下还有内容就在那一端淡出作提示；换页后把当前分组带进视野。
-    function syncSubnavScroll(reveal) {
-      // 手机上那排横向的分组标签：切到靠右的分组后把它滚进视野。只改横向 scrollLeft，不用 scrollIntoView（会带着页面纵向跳）。
-      const chips = $('libChips'), chip = reveal === true && chips.clientWidth && chips.querySelector('.chip.active');
+    // 分组多到一行放不下时横向滚动：滚动条藏起来，哪一端还有内容就在哪一端淡出；换页后把当前分组带进视野。
+    // 只改横向 scrollLeft，不用 scrollIntoView（会带着页面纵向跳）。
+    function syncLibChips(reveal) {
+      const chips = $('libChips');
+      if (!chips.clientWidth) return;
+      const chip = reveal === true && chips.querySelector('.chip.active');
       if (chip) {
         const left = chip.getBoundingClientRect().left - chips.getBoundingClientRect().left + chips.scrollLeft, right = left + chip.offsetWidth;
-        if (left < chips.scrollLeft) chips.scrollLeft = left - 12;
-        else if (right > chips.scrollLeft + chips.clientWidth) chips.scrollLeft = right - chips.clientWidth + 12;
+        if (left < chips.scrollLeft) chips.scrollLeft = left - 24;
+        else if (right > chips.scrollLeft + chips.clientWidth) chips.scrollLeft = right - chips.clientWidth + 24;
       }
-      const nav = $('libSubnav');
-      if (!nav.clientHeight) return;
-      const active = reveal === true && nav.querySelector('.subnav-item.active');
-      if (active) {
-        const top = active.getBoundingClientRect().top - nav.getBoundingClientRect().top + nav.scrollTop - nav.clientTop, bottom = top + active.offsetHeight;
-        if (top < nav.scrollTop) nav.scrollTop = top - 6;
-        else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight + 6;
-      }
-      nav.classList.toggle('fade-top', nav.scrollTop > 2);
-      nav.classList.toggle('fade-bottom', nav.scrollTop + nav.clientHeight < nav.scrollHeight - 2);
+      chips.classList.toggle('fade-left', chips.scrollLeft > 2);
+      chips.classList.toggle('fade-right', chips.scrollLeft + chips.clientWidth < chips.scrollWidth - 2);
     }
-    $('libSubnav').addEventListener('scroll', syncSubnavScroll, { passive: true });
-    window.addEventListener('resize', syncSubnavScroll);
+    $('libChips').addEventListener('scroll', syncLibChips, { passive: true });
+    window.addEventListener('resize', syncLibChips);
     function onLibNavClick(e) {
       if (Date.now() < SORT.blockClickUntil) return;  // 拖拽结束后浏览器仍会补一次 click
       const btn = e.target.closest('[data-lib],[data-act="add-group"]');
@@ -3300,14 +3242,13 @@
       switchView('bookmarks', false);
       openLibPage(btn.dataset.lib);
     }
-    $('libSubnav').addEventListener('click', onLibNavClick);
     $('libChips').addEventListener('click', onLibNavClick);
 
     // ===== 收藏库：分组自定义排序 =====
     // 顺序就是 link_groups 数组顺序，落盘在 config.json，刷新后自然恢复；写回走既有的
-    // /api/link_groups/reorder。侧栏为纵向、移动端 chips 为横向，共用同一套拖拽逻辑。
+    // /api/link_groups/reorder。拖的是页面顶上那条横向分段条里的分组。
     // 触摸指针不参与拖拽（会和滚动、点击打架），触摸端仍可用「编辑分组」里的上移 / 下移。
-    const SORT = { el: null, container: null, axis: 'y', start: 0, active: false, pointerId: null, blockClickUntil: 0 };
+    const SORT = { el: null, container: null, start: 0, active: false, pointerId: null, blockClickUntil: 0 };
     function sortableItems(container) {
       return Array.from(container.querySelectorAll('[data-sortable]'));
     }
@@ -3324,7 +3265,7 @@
       if (i < 0 || j < 0 || j >= ids.length) return;
       [ids[i], ids[j]] = [ids[j], ids[i]];
       if (!await applyGroupOrder(ids)) return;
-      const again = document.querySelector(`#libSubnav [data-lib="${gid}"], #libChips [data-lib="${gid}"]`);
+      const again = document.querySelector(`#libChips [data-lib="${gid}"]`);
       if (again) again.focus();
     }
     function endSort(restore) {
@@ -3344,15 +3285,14 @@
       if (!el || sortableItems(container).length < 2) return;
       SORT.el = el;
       SORT.container = container;
-      SORT.axis = container.id === 'libChips' ? 'x' : 'y';
-      SORT.start = SORT.axis === 'x' ? e.clientX : e.clientY;
+      SORT.start = e.clientX;
       SORT.active = false;
       SORT.pointerId = e.pointerId;
       try { el.setPointerCapture(e.pointerId); } catch (_) {}
     }
     function onSortPointerMove(e) {
       if (!SORT.el || e.pointerId !== SORT.pointerId) return;
-      const pos = SORT.axis === 'x' ? e.clientX : e.clientY;
+      const pos = e.clientX;
       if (!SORT.active) {
         if (Math.abs(pos - SORT.start) < 6) return;  // 小幅抖动仍算点击，不误触发排序
         SORT.active = true;
@@ -3366,7 +3306,7 @@
       for (const other of sortableItems(SORT.container)) {
         if (other === SORT.el) continue;
         const rect = other.getBoundingClientRect();
-        const mid = SORT.axis === 'x' ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
+        const mid = rect.left + rect.width / 2;
         if (pos < mid) { before = other; break; }
       }
       SORT.container.insertBefore(SORT.el, before || tail);
@@ -3392,13 +3332,14 @@
       e.preventDefault();
       moveGroup(el.dataset.lib, dir);
     }
-    [$('libSubnav'), $('libChips')].forEach(container => {
-      container.addEventListener('pointerdown', onSortPointerDown);
-      container.addEventListener('pointermove', onSortPointerMove);
-      container.addEventListener('pointerup', onSortPointerUp);
-      container.addEventListener('pointercancel', () => endSort(true));
-      container.addEventListener('keydown', onSortKeyDown);
-    });
+    {
+      const chips = $('libChips');
+      chips.addEventListener('pointerdown', onSortPointerDown);
+      chips.addEventListener('pointermove', onSortPointerMove);
+      chips.addEventListener('pointerup', onSortPointerUp);
+      chips.addEventListener('pointercancel', () => endSort(true));
+      chips.addEventListener('keydown', onSortKeyDown);
+    }
     // ===== 卡片网格拖拽排序（站点看板 / 分组内的网址）=====
     // 只有把手 [data-card-grip] 能发起拖拽：卡片本体是个 <a>，整卡可拖会和点击打架。
     // 把手上 touch-action:none，所以触摸端也能拖，不会被页面滚动抢走。
@@ -5873,7 +5814,7 @@
     });
     $('homeTodo').addEventListener('keydown', (e) => {
       if (e.target.closest('[data-todo-edit]')) {
-        if (e.key === 'Enter') { e.preventDefault(); saveTodoEdit(e.target); }
+        if (e.key === 'Enter' && !imeComposing(e)) { e.preventDefault(); saveTodoEdit(e.target); }
         else if (e.key === 'Escape') { e.stopPropagation(); const id = TODO.editing; TODO.editing = ''; renderTodos(); focusTodo(id, '[data-todo-act="edit"]'); }
         return;
       }
@@ -8076,7 +8017,7 @@
     // 时间框逐段输入时每段都会触发 change：停手半秒再存，免得连弹几条提示。
     $('schedTime').addEventListener('change', () => { clearTimeout(schedSaveTimer); schedSaveTimer = setTimeout(saveSchedNow, 600); });
     // 代理地址是这一页唯一要手动保存的输入框：回车也算「保存」，和其他即时生效的设置一样顺手。
-    $('proxyUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('saveProxy').click(); } });
+    $('proxyUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !imeComposing(e)) { e.preventDefault(); $('saveProxy').click(); } });
     $('saveProxy').addEventListener('click', async () => {
       if (!guardAdmin()) return;
       await saveSettings({ proxy_url: $('proxyUrl').value.trim() }, '代理已保存');
@@ -8517,7 +8458,12 @@
       if (!row) return;
       omniOpen(omniResults[Number(row.dataset.omni)], e.shiftKey);
     });
+    // 中文输入法组字时按回车 = 把拼音字母原样上屏，按方向键 = 在候选词里挑：这些键归输入法，页面不接。
+    // 以前回车照样当成「执行搜索」并清空输入框，组字随后又上屏一次 → 打 te 回车偶尔变成 tete。
+    // keyCode 229：Safari 先结束组字再发 keydown，isComposing 已是 false，只能靠它认出这一下。
+    function imeComposing(e) { return e.isComposing || e.keyCode === 229; }
     $('omniInput').addEventListener('keydown', (e) => {
+      if (imeComposing(e)) return;
       const total = omniResults.length + omniActions.length;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -8730,6 +8676,7 @@
     $('homeSearch').addEventListener('input', () => { if (engineMenuOpen()) setEngineMenu(false); renderHomeSearch(); });
     $('homeSearch').addEventListener('focus', () => renderHomeSearch(true));
     $('homeSearch').addEventListener('keydown', (e) => {
+      if (imeComposing(e)) return;   // 见 imeComposing：组字时的回车 / 方向键归输入法
       const rows = HOME_SEARCH.rows;
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && rows.length) {
         e.preventDefault();

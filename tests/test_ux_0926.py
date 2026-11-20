@@ -109,7 +109,7 @@ class LockedHomeTest(unittest.TestCase):
             assert.equal($('homeDeckBtn').hidden, true);
             assert.equal($('homeAddLink').hidden, true);
             // 带数据的入口都收着：分组导航、全局搜索、签到中心。
-            assert.equal($('libSubnav').hidden, true);
+            assert.equal($('libChips').hidden, true);
             assert.equal($('omniOpen').hidden, true);
             assert.equal(document.querySelector('.tab[data-view="checkin"]').hidden, true);
             // 手敲别的收藏页 / 签到页地址，都回到首页的解锁卡片。

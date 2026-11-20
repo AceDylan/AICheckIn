@@ -415,7 +415,8 @@ class PageShapeTest(unittest.TestCase):
         self.assertIn("function libraryLocked() { return !!(STATE.private && STATE.locked); }", self.html)
         self.assertIn("if (STATE_LOADED && libraryLocked() && mainName !== 'settings' && mainName !== 'bookmarks') { switchView('bookmarks', updateHash); return; }", self.html)
         self.assertIn("if (STATE_LOADED && libraryLocked() && LIB.page !== '@home') { LIB.page = '@home';", self.html)
-        self.assertIn("LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked ||", self.html)
+        self.assertIn("LIBRARY_ENTRIES.forEach(id => { const el = $(id); if (el) el.hidden = locked; });", self.html)
+        self.assertIn("$('libChips').hidden = STATE_LOADED && libraryLocked();", self.html)
 
     def test_the_frame_is_sandboxed_without_top_navigation(self):
         sandbox = re.search(r"frame\.setAttribute\('sandbox', '([^']+)'\)", self.html).group(1).split()

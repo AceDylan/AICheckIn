@@ -76,14 +76,12 @@ class GroupSortUiTest(unittest.TestCase):
 
     def test_only_groups_are_marked_sortable(self):
         # 「收藏首页」与「站点看板」固定，不带 data-sortable；分组项都带。
-        # 固定页只带 title（首页收成图标栏后靠它当提示）。
-        self.assertIn("['@home', 'monitor'].includes(p.id) ? ` title=\"${escapeHtml(p.name)}\"` : ` data-sortable=\"1\"", self.html)
+        self.assertIn("['@home', 'monitor'].includes(p.id) ? '' : ` data-sortable=\"1\"", self.html)
         self.assertIn("querySelectorAll('[data-sortable]')", self.html)
 
-    def test_drag_handlers_are_bound_to_both_navs(self):
-        self.assertIn("[$('libSubnav'), $('libChips')].forEach(container => {", self.html)
+    def test_drag_handlers_are_bound_to_the_group_bar(self):
         for event in ("pointerdown", "pointermove", "pointerup", "pointercancel", "keydown"):
-            self.assertIn("container.addEventListener('%s'" % event, self.html)
+            self.assertIn("chips.addEventListener('%s'" % event, self.html)
         # 触摸指针交给滚动 / 点击，不参与拖拽。
         self.assertIn("if (e.pointerType === 'touch' || e.button !== 0 || !canEdit()) return;", self.html)
         # 小幅抖动仍算点击，拖完那一次 click 不应切页。
@@ -101,9 +99,8 @@ class GroupSortUiTest(unittest.TestCase):
         self.assertIn("if (!await applyGroupOrder(ids)) return;", self.html)
 
     def test_drag_feedback_styles_exist(self):
-        self.assertIn(".subnav-item.is-dragging, .chip.is-dragging", self.css)
-        self.assertIn(".subnav.is-sorting, .chip-row.is-sorting", self.css)
-        self.assertIsNotNone(re.search(r"\.subnav-item\.is-dragging[^{]*\{[^}]*opacity", self.css))
+        self.assertIn(".chip-row.is-sorting {", self.css)
+        self.assertIsNotNone(re.search(r"\n\.chip\.is-dragging \{[^}]*opacity", self.css))
 
 
 if __name__ == "__main__":

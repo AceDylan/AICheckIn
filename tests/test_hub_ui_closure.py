@@ -85,8 +85,8 @@ class ClosureGuardsTest(unittest.TestCase):
         self.assertIn("omni-mask", fn)    # ⌘K 面板有自己的关闭方式
 
     def test_chip_row_scrolls_horizontally_only(self):
-        fn = self.script[self.script.index("function syncSubnavScroll(reveal)"):]
-        fn = fn[:fn.index("const nav = $('libSubnav');")]
+        fn = self.script[self.script.index("function syncLibChips(reveal)"):]
+        fn = fn[:fn.index("\n    }\n")]
         self.assertIn("chips.scrollLeft", fn)
         self.assertNotIn("scrollIntoView(", fn)
 

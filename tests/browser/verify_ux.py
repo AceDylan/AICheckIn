@@ -284,6 +284,28 @@ def home_toolbar(b):
     ctx.close()
 
 
+def ime_enter(b):
+    """中文输入法下打 te 再回车 = 把字母原样上屏，不是「执行搜索」。以前这一下也执行了搜索、清空了输入框，
+    组字随后又上屏一次，偶尔就成了 tete。用 CDP 造一段真的组字（Blink 据此给 keydown 标 isComposing），再上屏。"""
+    reset()
+    ctx, page = open_page(b, 1440, 900)
+    cdp = ctx.new_cdp_session(page)
+    pops = []
+    ctx.on("page", lambda p: pops.append(p))
+    page.locator("#homeSearch").click()
+    cdp.send("Input.imeSetComposition", {"text": "te", "selectionStart": 2, "selectionEnd": 2})
+    page.wait_for_timeout(150)
+    page.evaluate("() => { window.__imeKey = null; document.getElementById('homeSearch').addEventListener('keydown', e => { window.__imeKey = e.isComposing; }, { once: true, capture: true }); }")
+    cdp.send("Input.dispatchKeyEvent", {"type": "rawKeyDown", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 229, "nativeVirtualKeyCode": 229})
+    cdp.send("Input.insertText", {"text": "te"})
+    cdp.send("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13})
+    page.wait_for_timeout(400)
+    st = page.evaluate("() => [document.getElementById('homeSearch').value, window.__imeKey, document.getElementById('homeSearchList').hidden]")
+    check("输入法组字时回车：框里还是 te（不重复、不清空）、没打开任何页面、下拉还在", st[0] == "te" and not pops and st[2] is False, (st, len(pops)))
+    page.keyboard.press("Enter"); page.wait_for_timeout(400)
+    check("组字结束后再回车：照常执行（框被清空）", page.evaluate("() => document.getElementById('homeSearch').value") == "", page.evaluate("() => document.getElementById('homeSearch').value"))
+    ctx.close()
+
 def home_widgets(b):
     reset()
     ctx, page = open_page(b, 1440, 900, cookies={"bh_theme": "light", "bh_wallpaper": "off"})
@@ -301,4 +323,4 @@ def home_widgets(b):
 
 
 if __name__ == "__main__":
-    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, mobile_group_header, settings_toc, home_toolbar, home_widgets))
+    main((checkin_tabs, palette, modal_focus, drop_link, settings_and_toast, locked_settings, move_menu, history_list, mobile_group_header, settings_toc, home_toolbar, home_widgets, ime_enter))

@@ -82,13 +82,16 @@ class HomeLayoutGuardsTest(unittest.TestCase):
 
     # ---- 侧栏 ----
 
-    def test_only_the_group_list_scrolls_in_the_sidebar(self):
-        rule = re.search(r"\n\.subnav \{([^}]*)\}", self.css).group(1)
-        for needle in ("flex: 0 1 auto", "min-height: 78px", "overflow-y: auto", "scrollbar-width: none"):
+    def test_sidebar_has_only_top_level_entries(self):
+        # 分组不再挂在侧栏「收藏库」下面（一边长一边短、换页忽隐忽现），只在收藏页顶上的分段条里。
+        self.assertNotIn('id="libSubnav"', self.html)
+        self.assertNotIn('libSubnavToggle', self.html)
+        self.assertNotIn('.subnav', self.css)
+        rule = re.search(r"\n#libChips \{([^}]*)\}", self.css).group(1)
+        for needle in ("display: flex", "overflow-x: auto", "scrollbar-width: none"):
             self.assertIn(needle, rule)
-        self.assertIn(".subnav > * { flex-shrink: 0; }", self.css)
-        self.assertRegex(self.css, r"\.subnav\.fade-bottom \{[^}]*mask-image: linear-gradient")
-        self.assertIn("queueSubnavSync(true);", self.script)   # 重画侧栏后下一帧再量，不当场逼出排版
+        self.assertRegex(self.css, r"#libChips\.fade-right \{[^}]*mask-image: linear-gradient")
+        self.assertIn("queueLibChipsSync(true);", self.script)   # 重画后下一帧再量，不当场逼出排版
 
     # ---- 编辑首页 ----
 

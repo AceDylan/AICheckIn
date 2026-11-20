@@ -339,15 +339,17 @@ def layout(b):
         check(f"回归：{tag} 正常渲染、不溢出", page.locator("#homeList .home-section").count() >= 7 and page.evaluate("() => document.documentElement.scrollWidth - innerWidth") <= 0)
         shot(page, f"V7-home-{tag}-1440")
         ctx.close()
-    # 侧栏：矮窗口下「签到中心 / 系统设置」仍在视野里，分组段自己滚动
+    # 侧栏只放一级入口；分组在收藏页顶上的分段条里，放不下就横向滑动（不撑宽页面），切到靠后的分组会被带进视野
     for nav in ("rail", "full"):
         ctx, page = open_page(b, 1280, 720, cookies={"bh_home_nav": nav})
-        info = page.evaluate("""() => { const n = document.getElementById('libSubnav'); const foot = document.querySelector('.sidebar-foot').getBoundingClientRect().top;
-          return { scrolls: n.scrollHeight > n.clientHeight + 4, fade: n.classList.contains('fade-bottom'), tabs: [...document.querySelectorAll('.tab')].map(t => t.getBoundingClientRect().bottom <= foot + 1) }; }""")
-        check(f"导航（{nav}，720px 高）：分组段滚动 + 底端淡出，主入口全部可见", info["scrolls"] and info["fade"] and all(info["tabs"]), info)
-        page.locator('#libSubnav [data-lib="wetab"]').evaluate("e => e.click()"); page.wait_for_timeout(500)
-        vis = page.evaluate("() => { const n = document.getElementById('libSubnav'), a = n.querySelector('.active'), r = a.getBoundingClientRect(), nr = n.getBoundingClientRect(); return r.top >= nr.top - 1 && r.bottom <= nr.bottom + 1; }")
-        check(f"导航（{nav}）：切到靠后的分组，当前项被带进视野", vis)
+        info = page.evaluate("""() => { const foot = document.querySelector('.sidebar-foot').getBoundingClientRect().top, row = document.getElementById('libChips');
+          return { groupsInSidebar: document.querySelectorAll('.sidebar [data-lib]').length, tabs: [...document.querySelectorAll('.sidebar .tab:not([hidden])')].map(t => t.getBoundingClientRect().bottom <= foot + 1),
+                   scrolls: row.scrollWidth > row.clientWidth + 4, fade: row.classList.contains('fade-right'), overflow: document.documentElement.scrollWidth - innerWidth }; }""")
+        check(f"导航（{nav}，1280×720）：侧栏没有分组、主入口全部可见；分段条横向滑动 + 右端淡出、页面不超宽",
+              info["groupsInSidebar"] == 0 and all(info["tabs"]) and info["scrolls"] and info["fade"] and info["overflow"] <= 0, info)
+        page.locator('#libChips [data-lib="wetab"]').evaluate("e => e.click()"); page.wait_for_timeout(500)
+        vis = page.evaluate("() => { const n = document.getElementById('libChips'), a = n.querySelector('.active'), r = a.getBoundingClientRect(), nr = n.getBoundingClientRect(); return a.dataset.lib === 'wetab' && r.left >= nr.left - 1 && r.right <= nr.right + 1 && n.classList.contains('fade-left'); }")
+        check(f"导航（{nav}）：切到靠后的分组，当前项被带进视野、左端淡出", vis)
         if nav == "rail":
             shot(page, "V8-nav-rail-1280x720")
         ctx.close()

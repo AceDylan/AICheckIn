@@ -233,42 +233,9 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 }
 @media (prefers-reduced-motion: reduce) { .tab .chat-dot.is-running { animation: none; } }
 
-/* 收藏库子页面（侧栏嵌套树）。分组多到放不下时只有这一段滚动：下面的「签到中心 / 系统设置」不会被挤到折叠线以下。
-   滚动条藏起来（图标栏只有 72px 宽），哪一端还有内容就在哪一端淡出（.fade-top / .fade-bottom 由脚本维护）。 */
-.subnav { display: flex; flex: 0 1 auto; flex-direction: column; gap: 1px; min-height: 78px; margin: 2px 0 4px 20px; padding-left: 8px; border-left: 1px solid var(--border); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.subnav::-webkit-scrollbar { display: none; }
-.subnav > * { flex-shrink: 0; }
-.subnav.fade-top { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 22px); mask-image: linear-gradient(180deg, transparent 0, #000 22px); }
-.subnav.fade-bottom { -webkit-mask-image: linear-gradient(0deg, transparent 0, #000 22px); mask-image: linear-gradient(0deg, transparent 0, #000 22px); }
-.subnav.fade-top.fade-bottom { -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(180deg, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%); }
-.subnav-item {
-  display: flex; align-items: center; gap: 9px;
-  min-height: 32px; padding: 0 8px;
-  border: 0; border-radius: 8px;
-  background: transparent; color: var(--text-2); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer;
-  transition: background-color .15s var(--ease), color .15s var(--ease);
-}
-.subnav-item:hover { color: var(--text); background: var(--surface-hover); }
-.subnav-item.active {
-  color: var(--text);
-  background: var(--raised);
-  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-1);
-}
-.subnav-item .sub-ic {
-  display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border-radius: 6px;
-  background: var(--tone-soft, var(--accent-soft)); color: var(--tone, var(--accent));
-}
-.subnav-item .sub-ic svg { width: 12px; height: 12px; }
-.subnav-item .sub-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subnav-item .nav-count { font-size: 11px; padding: 1px 4px; }
-/* 分组自定义排序：拖拽中的项淡出跟随，容器内禁选文本，避免拖出选区。 */
-.subnav.is-sorting, .chip-row.is-sorting { user-select: none; -webkit-user-select: none; cursor: grabbing; }
-.subnav-item.is-dragging, .chip.is-dragging { opacity: .55; cursor: grabbing; }
-.subnav-item.is-dragging { background: var(--surface-2); }
-.chip.is-dragging { border-color: var(--tone, var(--accent)); }
-.subnav-item.is-add { color: var(--text-3); font-weight: 520; margin-top: 2px; }
-.subnav-item.is-add:hover { color: var(--accent); }
-.subnav-item.is-add .sub-ic { background: transparent; color: inherit; border: 1px dashed var(--border-strong); }
+/* 分组自定义排序（页面顶上的分段条）：拖拽中的项淡出跟随，容器内禁选文本，避免拖出选区。 */
+.chip-row.is-sorting { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.chip.is-dragging { opacity: .55; cursor: grabbing; }
 
 /* PWA 安装入口：浏览器判定可安装时才 unhide，点过 / 装过就不再出现。 */
 .install-btn {
@@ -360,8 +327,6 @@ html[data-theme="light"] .theme-toggle .ic-sun { display: block; }
   background: var(--surface-2); color: var(--text-3); font-family: var(--mono); font-size: 11px; pointer-events: none;
 }
 .toolbar-meta { color: var(--text-3); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 500; }
-.chip-row { display: none; gap: 6px; margin: -6px 0 16px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-.chip-row::-webkit-scrollbar { display: none; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
   min-height: 34px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px;
@@ -1612,17 +1577,13 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   html.wall-on.nav-rail .sidebar { padding-inline: 8px; }
   html.nav-rail .brand { padding: 0 0 14px; }
   html.nav-rail .brand > div:last-child, html.nav-rail .keys-hint, html.nav-rail .nav-label,
-  html.nav-rail .tab-text, html.nav-rail .tab .nav-count, html.nav-rail .sub-text, html.nav-rail .subnav .nav-count,
+  html.nav-rail .tab-text, html.nav-rail .tab .nav-count,
   html.nav-rail .omni-trigger span, html.nav-rail .omni-kbd, html.nav-rail .install-btn span, html.nav-rail .lock-pill span { display: none; }
   html.nav-rail .omni-trigger, html.nav-rail .tab, html.nav-rail .install-btn { width: 42px; min-height: 40px; padding: 0; justify-content: center; }
   html.nav-rail .omni-trigger { border-color: transparent; background: transparent; box-shadow: none; color: var(--text-2); }
   html.nav-rail .omni-trigger:hover { background: var(--surface-hover); color: var(--text); }
   html.nav-rail .tabs { align-items: center; width: 100%; }
   html.nav-rail .tab .dot { position: absolute; top: 8px; right: 8px; }
-  html.nav-rail .subnav { align-items: center; gap: 3px; margin: 6px 0; padding: 6px 0 0; border-left: 0; border-top: 1px solid var(--border); }
-  html.nav-rail .subnav-item { position: relative; width: 42px; min-height: 34px; padding: 0; justify-content: center; border-radius: 9px; }
-  html.nav-rail .subnav-item.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 60%, transparent), var(--shadow-1); }
-  html.nav-rail .subnav-item .issue-dot { position: absolute; top: 1px; right: 1px; min-width: 14px; padding: 0 3px; font-size: 9px; line-height: 14px; }
   html.nav-rail .sidebar-foot { flex-direction: column; width: 100%; padding: 10px 0 0; }
   html.nav-rail .lock-pill { flex: 0 0 auto; width: 38px; height: 34px; padding: 0; justify-content: center; }
   html.nav-rail .lock-pill svg { width: 15px; height: 15px; }
@@ -1696,7 +1657,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
     -webkit-backdrop-filter: blur(24px) saturate(180%);
     box-shadow: 0 -4px 20px rgba(0, 0, 0, .25);
   }
-  .brand, .nav-label, .sidebar-foot, .subnav { display: none; }
+  .brand, .nav-label, .sidebar-foot { display: none; }
   .tabs { flex-direction: row; justify-content: space-around; gap: 6px; overflow: visible; }
   .tab { width: auto; flex: 1; min-width: 56px; min-height: 52px; flex-direction: column; justify-content: center; gap: 3px; padding: 4px 6px; border-radius: 10px; }
   .tab.active { box-shadow: none; background: var(--accent-soft); }
@@ -1706,7 +1667,6 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .nav-count { display: none; }
   .tab .dot { position: absolute; top: 8px; right: 12px; width: 5px; height: 5px; box-shadow: none; }
   .content { width: 100%; padding: 20px 14px calc(96px + env(safe-area-inset-bottom)); }
-  .chip-row { display: flex; }
   .view-header { align-items: flex-start; flex-direction: column; gap: 16px; padding: 2px 2px 18px; margin-bottom: 18px; }
   .view-header h1 { font-size: 24px; }
   .header-actions { width: 100%; }
@@ -1949,12 +1909,6 @@ label.set-row { cursor: pointer; }
   .header-actions { flex-wrap: nowrap; }
   .header-actions .btn { flex: 1 1 0; min-width: 0; min-height: 42px; padding-inline: 10px; }
 
-  /* 顶部分组标签：贴边横滑，右侧渐隐提示「还有」，每个标签高 40px。 */
-  .chip-row {
-    margin: -6px -14px 14px; padding: 2px 14px;
-    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 32px), transparent);
-    mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 32px), transparent);
-  }
   .chip { min-height: 40px; padding: 0 15px; font-size: 13px; }
 
   /* 网址列表：一行一条，按钮加大到 40px。 */
@@ -2020,7 +1974,7 @@ label.set-row { cursor: pointer; }
 
 /* Halo cinematic: one scene change per operation, geometry stays out of data code. */
 .tabs { position: relative; isolation: isolate; }
-.tabs > .tab, .tabs > .subnav { position: relative; z-index: 1; }
+.tabs > .tab { position: relative; z-index: 1; }
 .cine-nav-pill { position: absolute; left: 0; top: 0; border-radius: 11px; background: var(--surface-hover); pointer-events: none; z-index: 0; transition: transform var(--dur-std) var(--spring-smooth), width var(--dur-std) var(--spring-smooth), height var(--dur-std) var(--spring-smooth); }
 .tabs > .tab.active { background: transparent; }
 :is(.modal,.omni,.home-search-list,.engine-menu,.todo-sort-menu) { animation-timing-function: var(--spring-smooth); animation-duration: var(--dur-std); }
@@ -3043,10 +2997,8 @@ html.hub-scifi .brand-mark::before {
 }
 html.hub-scifi .brand-mark .ic { filter: drop-shadow(0 0 5px var(--sf-glow)); }
 @media (width > 760px) { html.hub-scifi .tab.active svg.ic { color: var(--sf-cyan); filter: drop-shadow(0 0 6px var(--sf-glow)); } }
-html.hub-scifi :is(.tab, .omni-trigger, .subnav-item):hover { background: var(--sf-tint); }
+html.hub-scifi :is(.tab, .omni-trigger):hover { background: var(--sf-tint); }
 html.hub-scifi .tab:hover svg.ic, html.hub-scifi .omni-trigger:hover .ic { color: var(--sf-cyan); }
-html.hub-scifi .subnav-item.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent), 0 0 16px -3px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent); }
-html.hub-scifi .subnav-item.active .sub-ic { box-shadow: 0 0 10px -1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 80%, transparent); }
 
 /* 分组标题：图标点亮、数量做成等宽的 HUD 读数框、右边那条渐变线上柔光缓行 */
 html.hub-scifi .home-section .section-label .btn .ic, html.hub-scifi .home-section .section-name .ic { color: var(--sf-cyan); filter: drop-shadow(0 0 5px var(--sf-glow)); }
@@ -3334,46 +3286,52 @@ html.scene-still .hub-film::after { animation: none; }
 .hub-iris.is-still :is(.hub-iris__ring, .hub-iris__trail, .hub-iris__bloom, .hub-iris__wave) { display: none; }
 .hub-iris.is-still * { animation: none !important; transition: none !important; }
 
-/* ---------- 侧栏：收藏库分组托盘（只在电脑：宽屏 + 鼠标） ----------
-   原来图标栏一进收藏库就多出一长串彩色方块，和上下的单色线条图标不是一套；换到别的页面又整串消失，侧栏忽长忽短。
-   这里把分组收成「收藏库」名下的一块托盘：图标去掉彩色底块、只留分组色的线条，当前分组 = 分组色浅底 + 细边；
-   托盘可以收起（开关和规则见 syncLibNav）。触屏宽屏（折叠屏内屏、平板横屏）和手机维持原样，由媒体条件排除。
-   放在文件末尾、选择器带 html .sidebar：要压过前面科幻层给 .subnav-item.active 加的外发光。 */
-@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
-  .subnav-toggle {
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;
-    border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer;
-    transition: background-color .15s var(--ease), color .15s var(--ease);
+/* ---------- 收藏库分组：页面顶上的分段条（电脑、折叠屏内屏、手机同一套） ----------
+   侧栏只放一级入口；分组原来挂在「收藏库」下面一长串，侧栏一边长一边短、换页还忽隐忽现。现在和「签到中心」的
+   概览 / 服务配置 / 运行记录一样放在页内：一条细框托盘，图标只用分组色的线条，当前分组 = 分组色浅底 + 细边。
+   放不下就横向滑动，哪端还有内容哪端淡出（.fade-left / .fade-right 由 syncLibChips 维护）。
+   用 #libChips 选择器：要压过壁纸场景 / 科幻层给通用 .chip 定的反色实心药丸（设置页目录仍用那套）。 */
+#libChips {
+  display: flex; align-items: center; gap: 2px; width: fit-content; max-width: 100%;
+  margin: 0 0 18px; padding: 4px; border: 1px solid var(--border); border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+#libChips::-webkit-scrollbar { display: none; }
+#libChips.fade-right { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+#libChips.fade-left { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px); mask-image: linear-gradient(90deg, transparent, #000 36px); }
+#libChips.fade-left.fade-right { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
+#libChips .chip {
+  gap: 7px; min-height: 32px; padding: 0 12px 0 10px; border: 0; border-radius: 10px;
+  background: transparent; color: var(--text-2); font-size: 13px; font-weight: 520; box-shadow: none;
+}
+#libChips .chip:hover { color: var(--text); background: var(--surface-hover); }
+#libChips .chip.active {
+  color: var(--text); background: var(--tone-soft, var(--accent-soft));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 45%, transparent);
+}
+#libChips .chip:focus-visible { outline-offset: -2px; }   /* 托盘是滚动容器，外扩的焦点框会被裁掉 */
+#libChips .chip-ic { display: grid; place-items: center; flex: none; color: color-mix(in srgb, var(--tone, var(--accent)) 75%, var(--text-2)); }
+#libChips .chip-ic svg { width: 15px; height: 15px; }
+#libChips .chip:hover .chip-ic, #libChips .chip.active .chip-ic { color: var(--tone, var(--accent)); }
+#libChips .chip .nav-count { color: var(--text-3); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+#libChips .chip.active .nav-count { color: var(--text-2); }
+#libChips .chip .issue-dot { margin-left: -2px; }
+#libChips .chip.is-add { padding: 0 9px; color: var(--text-3); }
+#libChips .chip.is-add .chip-ic { color: inherit; }
+#libChips .chip.is-add:hover { color: var(--accent); }
+#libChips .chip.is-dragging { box-shadow: inset 0 0 0 1px var(--tone, var(--accent)); }
+html.wall-on #libChips { border-color: rgba(255, 255, 255, .14); background: rgba(10, 14, 22, .66); }
+html.hub-scifi #libChips { border-color: var(--sf-line); }
+html.hub-scifi #libChips .chip:hover { background: var(--sf-tint); }
+html.hub-scifi #libChips .chip.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--sf-cyan)) 60%, transparent), 0 0 16px -6px color-mix(in srgb, var(--tone, var(--sf-cyan)) 70%, transparent); }
+/* 手机：贴边横滑（左右各借出内容区的 14px 留白），每项高 40px 好点；托盘不画框，只留一条底色。 */
+@media (width <= 760px) {
+  #libChips {
+    width: auto; margin: -6px -14px 14px; padding: 4px 14px; border: 0; border-radius: 0; background: none;
   }
-  .subnav-toggle:hover { color: var(--text); background: var(--surface-hover); }
-  .subnav-toggle .sub-text { display: none; }   /* 名字由悬停提示（showRailTip）和 aria-label 给出 */
-  .subnav-toggle svg.ic { width: 14px; height: 14px; transition: transform .2s var(--ease); }
-  .subnav-toggle[aria-expanded="true"] svg.ic { transform: rotate(180deg); }
-  /* 托盘是滚动容器，外扩 2px 的焦点框会被裁掉一半：改成内描边 */
-  .subnav-toggle:focus-visible, html .sidebar .subnav-item:focus-visible { outline-offset: -2px; }
-
-  html .sidebar .subnav-item .sub-ic { background: transparent; box-shadow: none; color: color-mix(in srgb, var(--tone, var(--accent)) 72%, var(--text-2)); transition: color .15s var(--ease); }
-  html .sidebar .subnav-item .sub-ic svg { width: 15px; height: 15px; }
-  html .sidebar .subnav-item:hover .sub-ic { color: var(--tone, var(--accent)); }
-  html .sidebar .subnav-item.active .sub-ic { color: var(--tone, var(--accent)); box-shadow: none; }
-  html .sidebar .subnav-item.active {
-    color: var(--text); background: var(--tone-soft, var(--accent-soft));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone, var(--accent)) 40%, transparent);
-  }
-  html .sidebar .subnav-item.is-add .sub-ic { color: var(--text-3); border: 1px dashed var(--border-strong); }
-  html .sidebar .subnav-item.is-add:hover .sub-ic { color: var(--accent); }
-
-  /* 完整侧栏：开关叠在「收藏库」那一行的右端，数量往左让出位置 */
-  html:not(.nav-rail) .subnav-toggle { position: absolute; top: 5px; right: 5px; z-index: 2; width: 28px; height: 28px; }
-  html:not(.nav-rail) .tab[data-view="bookmarks"] { padding-right: 38px; }
-
-  /* 图标栏：开关是「收藏库」下面一道细条，托盘铺满栏宽（开壁纸时栏更窄，不写死宽度） */
-  html.nav-rail .subnav-toggle { width: 42px; height: 18px; }
-  html.nav-rail .sidebar .subnav {
-    align-self: stretch; gap: 2px; margin: 2px 0 8px; padding: 4px;
-    border: 1px solid var(--border); border-radius: 14px;
-    background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
-  }
-  html.hub-scifi.nav-rail .sidebar .subnav { border-color: var(--sf-line); }
-  html.nav-rail .sidebar .subnav-item { width: 100%; min-height: 32px; border-radius: 10px; }
+  html.wall-on #libChips { background: none; }
+  #libChips .chip { min-height: 40px; padding: 0 14px 0 12px; border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+  html.wall-on #libChips .chip:not(.active) { background: rgba(10, 14, 22, .55); }
+  #libChips .chip.is-add { padding: 0 12px; }
 }
