@@ -28,6 +28,16 @@ class MenuLayeringTest(unittest.TestCase):
         self.assertGreater(int(z.group(1)), 12)
         self.assertLess(int(z.group(1)), 30)
 
+    def test_home_menu_escapes_section_and_search_layers(self):
+        # 分组的入场 / 滚动浮现动画和聚焦搜索时的半透明都会新建层叠上下文，菜单开着时要把分组和正文抬过搜索框（z-index: 20）。
+        body = re.search(r"\.home-body:has\(\.menu-open\)\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(body)
+        self.assertGreater(int(re.search(r"z-index:\s*(\d+)", body.group(1)).group(1)), 20)
+        section = re.search(r"\.home-section:has\(\.menu-open\)\s*\{([^}]*)\}", self.css)
+        self.assertIsNotNone(section)
+        self.assertIn("z-index", section.group(1))
+        self.assertIn("clip-path: none !important", section.group(1))
+
     def test_popover_is_scrollable_and_height_capped(self):
         rule = re.search(r"\.menu-popover\s*\{([^}]*)\}", self.css)
         self.assertIsNotNone(rule)

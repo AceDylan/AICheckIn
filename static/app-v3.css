@@ -540,6 +540,12 @@ a.bookmark-open:hover .open-mark { color: var(--accent); transform: translate(1p
 }
 .menu-popover.drop-down { bottom: auto; top: calc(100% + 6px); transform-origin: top right; }
 .home-tile.menu-open, .bookmark-card.menu-open, .link-card.menu-open { z-index: 25; }
+/* 首页图标的菜单向上弹时会伸进搜索框（.home-search z-index: 20）的范围：分组的入场 / 滚动浮现动画
+   （filter、scale、translate）和聚焦搜索时 .home-body 的半透明都会新建层叠上下文，把菜单的 z-index 关在里面，
+   菜单就被搜索框、提醒条或下一个分组压住。菜单开着时把所在分组和整块首页正文抬到它们上面；
+   开场 3 秒的 sf-rise 还带 clip-path 会把伸出分组的菜单裁掉，!important 才压得过动画里的值。 */
+.home-body:has(.menu-open) { position: relative; z-index: 21; }
+.home-section:has(.menu-open) { position: relative; z-index: 1; clip-path: none !important; }
 .menu-popover button {
   width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: 8px;
   background: transparent; color: var(--text-2); text-align: left; cursor: pointer;
