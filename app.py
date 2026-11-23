@@ -434,6 +434,124 @@ def _extract_by_path(obj, path):
     return obj
 
 
+# 取值路径也可以写成四则运算算式，路径当变量用，如
+#   vibe_budget.initial_budget * (1 - vibe_budget.usage_percentage / 100)
+# 含 + * / ( ) 或「空格-空格」才按算式算，其余一律当普通路径（键名里带 - 的旧配置不受影响）；
+# 算式里的减号两边要留空格，否则 a-b 会被当成一个键名。
+_EXPR_HINT_RE = re.compile(r"[+*/()]|\s-\s")
+_EXPR_TOKEN_RE = re.compile(r"\s*(?:([+\-*/()])|([^\s+\-*/()][^\s+*/()]*))")
+_EXPR_MAX_TOKENS = 64
+_EXPR_NUM_RE = re.compile(r"^(?:\d+(?:\.\d*)?|\.\d+)$")
+
+
+def _is_path_expr(path):
+    return bool(_EXPR_HINT_RE.search(path or ""))
+
+
+def _parse_path_expr(text):
+    """把算式解析成嵌套元组：('num', x) / ('path', p) / ('neg', a) / (op, a, b)。语法错误抛 ValueError。"""
+    tokens, pos, text = [], 0, str(text).strip()
+    while pos < len(text):
+        m = _EXPR_TOKEN_RE.match(text, pos)
+        if not m or m.end() == pos:
+            raise ValueError("无法识别「{0}」".format(text[pos:pos + 12]))
+        tokens.append(m.group(1) or m.group(2))
+        pos = m.end()
+    if len(tokens) > _EXPR_MAX_TOKENS:
+        raise ValueError("算式过长（最多 {0} 项）".format(_EXPR_MAX_TOKENS))
+    state = {"i": 0}
+
+    def peek():
+        return tokens[state["i"]] if state["i"] < len(tokens) else None
+
+    def take():
+        tok = peek()
+        state["i"] += 1
+        return tok
+
+    def expr():
+        node = term()
+        while peek() in ("+", "-"):
+            node = (take(), node, term())
+        return node
+
+    def term():
+        node = factor()
+        while peek() in ("*", "/"):
+            node = (take(), node, factor())
+        return node
+
+    def factor():
+        tok = take()
+        if tok is None:
+            raise ValueError("算式不完整")
+        if tok in ("+", "-"):
+            inner = factor()
+            return ("neg", inner) if tok == "-" else inner
+        if tok == "(":
+            node = expr()
+            if take() != ")":
+                raise ValueError("括号没有闭合")
+            return node
+        if tok in ("*", "/", ")"):
+            raise ValueError("「{0}」位置不对".format(tok))
+        if _EXPR_NUM_RE.match(tok):
+            return ("num", float(tok))
+        return ("path", tok)
+
+    node = expr()
+    if peek() is not None:
+        raise ValueError("多余的「{0}」".format(peek()))
+    return node
+
+
+def _eval_path_expr(node, data):
+    kind = node[0]
+    if kind == "num":
+        return node[1]
+    if kind == "path":
+        value = _extract_by_path(data, node[1])
+        if value is None:
+            raise LookupError("未找到路径 {0}".format(node[1]))
+        if isinstance(value, bool):
+            raise ValueError("路径 {0} 的值不是数字".format(node[1]))
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError("路径 {0} 的值不是数字：{1}".format(node[1], str(value)[:40]))
+    if kind == "neg":
+        return -_eval_path_expr(node[1], data)
+    left, right = _eval_path_expr(node[1], data), _eval_path_expr(node[2], data)
+    if kind == "+":
+        return left + right
+    if kind == "-":
+        return left - right
+    if kind == "*":
+        return left * right
+    if right == 0:
+        raise ValueError("算式里除数为 0")
+    return left / right
+
+
+def resolve_json_path(data, json_path):
+    """按取值路径或算式从响应里取值。返回 (value, error_msg)。"""
+    if not _is_path_expr(json_path):
+        value = _extract_by_path(data, json_path)
+        if value is None:
+            return None, "未找到路径 {0}".format(json_path)
+        return value, None
+    try:
+        result = _eval_path_expr(_parse_path_expr(json_path), data)
+    except LookupError as exc:
+        return None, str(exc.args[0])
+    except ValueError as exc:
+        return None, "算式计算失败：{0}".format(exc)
+    if result != result or result in (float("inf"), float("-inf")):
+        return None, "算式结果不是有限数字"
+    # 去掉浮点运算尾巴（252.32999999999998 → 252.33），不影响有效精度。
+    return round(result, 10), None
+
+
 def _fetch_url(method, url, headers, body, proxy_url="", timeout=15):
     """单次 HTTP 请求，支持 GET/POST 带 body。proxy_url 显式传入，不依赖全局态。
 
@@ -633,11 +751,7 @@ def _fetch_json_value(cfg, proxy_url):
         snippet = str(resp_body)[:80].replace("\n", " ")
         return None, "响应不是合法 JSON：{0}（响应开头：{1}）".format(exc, snippet)
 
-    value = _extract_by_path(parsed, json_path)
-    if value is None:
-        return None, "未找到路径 {0}".format(json_path)
-
-    return value, None
+    return resolve_json_path(parsed, json_path)
 
 
 # =========================
@@ -922,6 +1036,11 @@ def clean_field(raw, existing=None, taken=()):
         errors.append("body 需为字符串或 null")
     if not json_path:
         errors.append("JSON 取值路径必填")
+    elif _is_path_expr(json_path):
+        try:
+            _parse_path_expr(json_path)
+        except ValueError as exc:
+            errors.append("取值算式有误：{0}".format(exc))
 
     field = {
         "id": "", "label": label, "type": ftype, "enabled": enabled,

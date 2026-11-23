@@ -6877,7 +6877,7 @@
               <textarea class="input mono" data-k="_curl_text" rows="4" placeholder="浏览器开发者工具 → Network → 右键请求 → Copy → Copy as cURL (bash)，整段粘贴">${escapeHtml(d._curl_text || '')}</textarea>
             </div>
             <div class="row-2" style="margin-top:12px">
-              <div class="field"><label>JSON 取值路径 *</label><input class="input" data-k="json_path" value="${escapeHtml(d.json_path || '')}" placeholder="如：data.user.balance"></div>
+              <div class="field"><label>JSON 取值路径 *</label><input class="input" data-k="json_path" value="${escapeHtml(d.json_path || '')}" placeholder="如：data.user.balance"><div class="hint">也能写四则运算，路径当变量、运算符两边留空格，如 <code>quota.total * (1 - quota.used_pct / 100)</code></div></div>
               <div class="field"${hide('amount')}><label>换算除数（可选）</label><input class="input" data-k="divisor" type="number" step="any" min="0" value="${escapeHtml(d.divisor || '')}" placeholder="留空=原值；分→元填 100"></div>
               <div class="field"${hide('time')}><label>时间戳单位</label><select class="input" data-k="ts_unit">${['auto', 's', 'ms'].map(u => `<option value="${u}"${(d.ts_unit || 'auto') === u ? ' selected' : ''}>${TS_UNIT_LABELS[u]}</option>`).join('')}</select></div>
             </div>

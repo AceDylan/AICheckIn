@@ -53,7 +53,8 @@
 // v87：聊天框的入口带版本参数，绕过引用旧版 HaloWebUI 哈希脚本的缓存 HTML。
 // v88：光圈接力落到监控站的星核上（监控框回答 beacon），回首页也从星核起飞。
 // v89：侧栏只留一级入口，收藏库分组挪进页面顶上的分段条；搜索框输入法组字时的回车交给输入法（不再偶发 te → tete）。
-const CACHE_VERSION = 'bh-shell-v89';
+// v90：首页图标「···」菜单不再被搜索框 / 提醒条 / 相邻分组压住；接口字段的取值路径支持四则运算算式。
+const CACHE_VERSION = 'bh-shell-v90';
 const SHELL = [
   '/',
   '/static/app-v3.css',
