@@ -152,7 +152,7 @@ class DeckStyleGuardTest(unittest.TestCase):
         full = self.deck[self.deck.index("@media (min-width: 1280px)"):self.deck.index("@media (min-width: 1440px)")]
         for block, prefix in ((rail, "html.nav-rail "), (full, "")):
             self.assertIn("\n  " + prefix + ".home-body.has-deck { display: grid;", block)
-            self.assertRegex(block, re.escape(prefix) + r"\.home-body\.has-deck \.home-deck \{ position: sticky;[^}]*max-height: calc\(100vh - 48px\);[^}]*overflow-y: auto;")
+            self.assertRegex(block, re.escape(prefix) + r"\.home-body\.has-deck \.home-deck \{ position: sticky;[^}]*max-height: calc\(var\(--app-min\) - 48px\);[^}]*overflow-y: auto;")
             self.assertIn(prefix + ".home-body.has-deck .deck-tabs { display: none; }", block)
             self.assertIn(prefix + ".home-body.has-deck .deck-card:not([hidden]) { display: block;", block)      # 不能把 hidden 的卡片也放出来
             self.assertIn(prefix + ".home-body.has-deck .deck-card.is-folded .deck-body { display: none; }", block)

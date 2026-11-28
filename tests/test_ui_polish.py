@@ -75,13 +75,26 @@ class UiPolishStyleTest(unittest.TestCase):
         self.assertIn("overscroll-behavior: contain", rule)
         # 带 var() 的声明遇到不认识的单位会在计算期整条作废（退成 none）：dvh 版本必须包在 @supports 里。
         self.assertIn("@supports (height: 1dvh) { .home-search-dropdown { max-height: min(60dvh, 440px, var(--dd-max, 440px)); } }", self.css)
-        self.assertEqual(len(re.findall(r"[0-9]dvh", self.css.replace("@supports (height: 1dvh)", ""))), 1)
+        self.assertEqual(len(re.findall(r"[0-9]dvh", self.css.replace("@supports (height: 1dvh)", ""))), 3)   # 下拉 + 下面整屏高度的两处说明 / 定义
         block = self.html[self.html.index("function fitHomeSearchList()"):self.html.index("function clearHomeSearch()")]
         for needle in ("window.visualViewport", "vv.offsetTop + vv.height", "getBoundingClientRect().bottom", "setProperty('--dd-max'",
                        "for (const type of ['resize', 'scroll']) window.visualViewport.addEventListener(type, fitHomeSearchList)"):
             self.assertIn(needle, block)
         self.assertIn("if (!vv || $('homeSearchList').hidden) return;", block)   # 老浏览器没有 visualViewport：保持原上限
         self.assertNotIn("setInterval", block)
+
+    def test_full_height_blocks_follow_the_mobile_address_bar(self):
+        # Chrome 手机 / 折叠屏上 100vh 是「地址栏收起」的大视口：地址栏露着时整屏块比屏幕高、要上下滑。
+        # 铺满一屏的块走 --app-h（dvh），页面最小高度 / 粘性列走 --app-min（svh，不随滚动重排）；新单位只在 @supports 里出现。
+        self.assertIn(":root { --app-h: 100vh; --app-min: 100vh; }", self.css)
+        self.assertIn("@supports (height: 1dvh) { :root { --app-h: 100dvh; --app-min: 100svh; } }", self.css)
+        self.assertEqual(re.findall(r"[0-9]svh", self.css), ["0svh"] * 2)   # 说明里一处 + 定义一处
+        layout = re.sub(r"@keyframes[^{]*\{[^}]*\{[^}]*\}[^}]*\}", "", self.css)   # 动画位移里的 100vh 不算布局高度
+        self.assertNotRegex(re.sub(r"/\*.*?\*/", "", layout, flags=re.S).replace(":root { --app-h: 100vh; --app-min: 100vh; }", ""), r"(?<![0-9])100vh")
+        self.assertIn("height: calc(var(--app-h) - 76px - env(safe-area-inset-bottom));", self.css)
+        self.assertIn("display: flex; flex-direction: column; height: var(--app-h);", self.css)
+        self.assertIn(".omni { width: 100%; max-height: var(--app-h); height: var(--app-h);", self.css)
+        self.assertIn("min-height: var(--app-min); }", self.css)
 
     def test_mobile_clock_row_never_wraps(self):
         mobile = self.css[self.css.index("/* 起始页在手机上"):self.css.index(".home-search { margin-top: 12px; }")]

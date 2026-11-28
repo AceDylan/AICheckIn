@@ -146,10 +146,17 @@ html[data-theme="light"]:not(.wall-on) .tag { color: color-mix(in srgb, var(--to
 html[data-theme="light"]:not(.wall-on) :is(.badge, .pill).green { color: color-mix(in srgb, var(--success) 85%, #000); }
 
 /* ---------- 基础 ---------- */
+/* 整屏高度：Chrome 手机（含折叠屏内屏）上 100vh 按「地址栏收起」的大视口算，地址栏露着时页面比屏幕高出一截、要上下滑才看全。
+   --app-h（100dvh，跟着地址栏伸缩）：聊天 / 笔记 / 监控框、全屏搜索、弹窗这些「正好铺满一屏、页面本身不滚」的块。
+   --app-min（100svh，按地址栏露着时的小视口，固定不变）：页面最小高度、粘性侧栏和看板列——首页滚动时地址栏会收起，
+   用 dvh 它们就要跟着重新排版，手机上读起来是「抖」。
+   不认识这些单位的旧浏览器留 100vh（自定义属性不校验单位，所以新单位包在 @supports 里）。铺满背景的壁纸 / 星空另用 100lvh 锁高。 */
+:root { --app-h: 100vh; --app-min: 100vh; }
+@supports (height: 1dvh) { :root { --app-h: 100dvh; --app-min: 100svh; } }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
 body {
-  min-height: 100vh;
+  min-height: var(--app-min);
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -178,11 +185,11 @@ svg.ic { width: 18px; height: 18px; flex: 0 0 auto; stroke: currentColor; fill: 
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
 
 /* ---------- 布局：侧栏 + 主区 ---------- */
-.app-shell { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.app-shell { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: var(--app-min); }
 .sidebar {
   position: sticky; top: 0; z-index: 30;
   display: flex; flex-direction: column;
-  height: 100vh; padding: 20px 12px 14px;
+  height: var(--app-min); padding: 20px 12px 14px;
   background: var(--sidebar);
 }
 .brand { display: flex; align-items: center; gap: 11px; padding: 2px 8px 18px; }
@@ -879,7 +886,7 @@ details.hist-item[open] .hist-toggle { color: var(--accent); background: var(--a
 }
 .modal-mask.show { display: flex; }
 .modal {
-  width: min(100%, 500px); max-height: calc(100vh - 36px); overflow-y: auto; overscroll-behavior: contain; padding: 24px;
+  width: min(100%, 500px); max-height: calc(var(--app-h) - 36px); overflow-y: auto; overscroll-behavior: contain; padding: 24px;
   border: 1px solid var(--border-strong); border-radius: var(--radius-xl);
   background: var(--surface); box-shadow: var(--shadow-pop);
   animation: modal-in .22s var(--ease) both;
@@ -1551,17 +1558,17 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
    开了壁纸：内容区保持透明、让画面露出来；侧栏离开窗口边缘，浮成一块圆角玻璃。
    页面照旧整页滚动（画布不是滚动容器）：吸顶的组件列、编辑首页的说明条、scrollIntoView 都不受影响。 */
 @media (min-width: 761px) {
-  html:not(.wall-on) .main { min-height: calc(100vh - 16px); margin: 8px 8px 8px 0; border: 1px solid var(--border); border-radius: 16px; background: var(--canvas); box-shadow: var(--shadow-1); }
+  html:not(.wall-on) .main { min-height: calc(var(--app-min) - 16px); margin: 8px 8px 8px 0; border: 1px solid var(--border); border-radius: 16px; background: var(--canvas); box-shadow: var(--shadow-1); }
   html.chat-on:not(.wall-on) .main { overflow: clip; }
   html.wall-on .sidebar {
-    top: 10px; height: calc(100vh - 20px); margin: 10px 0 10px 10px;
+    top: 10px; height: calc(var(--app-min) - 20px); margin: 10px 0 10px 10px;
     border: 1px solid rgba(255, 255, 255, .13); border-radius: 20px;
     box-shadow: 0 24px 60px -24px rgba(0, 0, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .08);
   }
   /* 聊天 / 笔记和侧栏一样浮成一块圆角玻璃面板，四周露出壁纸；框填满整块面板
      （框自己不透明，玻璃只在载入时看得到）。 */
   html.wall-on #view-chat.active, html.wall-on #view-vault.active, html.wall-on #view-fleet.active {
-    height: calc(100vh - 20px); margin: 10px 10px 10px 8px; overflow: hidden;
+    height: calc(var(--app-h) - 20px); margin: 10px 10px 10px 8px; overflow: hidden;
     border: 1px solid rgba(255, 255, 255, .13); border-radius: 20px;
     background: rgba(13, 15, 20, .58);
     backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -1719,7 +1726,7 @@ html.wall-on .home-engine-btn { background: rgba(255, 255, 255, .1); border-colo
   .diag-detail { flex-basis: 100%; padding-left: 22px; }
   .keys-combo { flex-basis: 110px; }
   .omni-mask { align-items: flex-start; padding: 0; }
-  .omni { width: 100%; max-height: 100vh; height: 100vh; border: 0; border-radius: 0; }
+  .omni { width: 100%; max-height: var(--app-h); height: var(--app-h); border: 0; border-radius: 0; }
   .omni-foot { padding-bottom: calc(9px + env(safe-area-inset-bottom)); }
   .omni-foot span:not(.omni-foot-meta) { display: none; }
   .modal-mask { align-items: flex-end; padding: 0; }
@@ -2302,7 +2309,7 @@ a.expiry-name:hover { color: var(--accent); }
   /* 图标视图：主区只占图标网格那么宽（--grid-w 由脚本量出），「图标 + 组件」作为一个整体居中在时钟和搜索框下面。 */
   html.nav-rail .home-body.has-deck.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--deck-col); justify-content: center; }
   html.nav-rail .home-body.has-deck .home-main { grid-column: 1; grid-row: 1; }
-  html.nav-rail .home-body.has-deck .home-deck { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; max-height: calc(100vh - 48px); margin: -3px -8px 0; padding: 3px 8px 12px; overflow-y: auto; scrollbar-width: thin; }
+  html.nav-rail .home-body.has-deck .home-deck { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; max-height: calc(var(--app-min) - 48px); margin: -3px -8px 0; padding: 3px 8px 12px; overflow-y: auto; scrollbar-width: thin; }
   html.nav-rail .home-body.has-deck .deck-tabs { display: none; }
   html.nav-rail .home-body.has-deck .deck-cards { gap: 12px; }
   html.nav-rail .home-body.has-deck .deck-card:not([hidden]) { display: block; margin-top: 0; }
@@ -2315,7 +2322,7 @@ a.expiry-name:hover { color: var(--accent); }
   .home-body.has-deck { display: grid; grid-template-columns: minmax(0, 1fr) var(--deck-col); gap: 0 32px; align-items: start; }
   .home-body.has-deck.is-tiles { grid-template-columns: minmax(0, var(--grid-w, 1fr)) var(--deck-col); justify-content: center; }
   .home-body.has-deck .home-main { grid-column: 1; grid-row: 1; }
-  .home-body.has-deck .home-deck { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; max-height: calc(100vh - 48px); margin: -3px -8px 0; padding: 3px 8px 12px; overflow-y: auto; scrollbar-width: thin; }
+  .home-body.has-deck .home-deck { position: sticky; top: 24px; grid-column: 2; grid-row: 1; width: auto; max-height: calc(var(--app-min) - 48px); margin: -3px -8px 0; padding: 3px 8px 12px; overflow-y: auto; scrollbar-width: thin; }
   .home-body.has-deck .deck-tabs { display: none; }
   .home-body.has-deck .deck-cards { gap: 12px; }
   .home-body.has-deck .deck-card:not([hidden]) { display: block; margin-top: 0; }
@@ -2452,8 +2459,8 @@ html.wall-on .home-todo { --todo-drag-bg: #23262d; }
    整块铺满内容区：<html class="chat-on"> 由 switchView 切换（两个页面都用它），去掉内容区的留白与最大宽度，
    提示条 + 框纵向排开，框吃掉剩下的全部高度（不放工具条：框里的页面从内容区最上沿开始）。笔记页直接复用下面这套 .chat-* 样式。 */
 html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
-#view-fleet.active, #view-chat.active, #view-vault.active { display: flex; flex-direction: column; height: 100vh; animation: none; }
-@media (min-width: 761px) { html:not(.wall-on) #view-chat.active, html:not(.wall-on) #view-vault.active, html:not(.wall-on) #view-fleet.active { height: calc(100vh - 18px); } }
+#view-fleet.active, #view-chat.active, #view-vault.active { display: flex; flex-direction: column; height: var(--app-h); animation: none; }
+@media (min-width: 761px) { html:not(.wall-on) #view-chat.active, html:not(.wall-on) #view-vault.active, html:not(.wall-on) #view-fleet.active { height: calc(var(--app-h) - 18px); } }
 .chat-note {
   display: flex; align-items: flex-start; gap: 10px; flex-shrink: 0;
   padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
@@ -2503,7 +2510,7 @@ html.chat-on .content { width: 100%; max-width: none; margin: 0; padding: 0; }
 @media (max-width: 760px) {
   /* 底部固定标签栏约 66px + 安全区：框到它上沿为止，别让最后一行输入框藏在标签栏后面。 */
   html.chat-on .content { padding: 0; }
-  #view-fleet.active, #view-chat.active, #view-vault.active { height: calc(100vh - 76px - env(safe-area-inset-bottom)); }
+  #view-fleet.active, #view-chat.active, #view-vault.active { height: calc(var(--app-h) - 76px - env(safe-area-inset-bottom)); }
 }
 
 @media (max-width: 760px) {
